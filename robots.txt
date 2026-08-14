@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /tedarikci/
+Disallow: /api/
+Disallow: /config/
+Disallow: /database/
+Disallow: /partials/
+
+Sitemap: https://nexustraveltech.com/sitemap

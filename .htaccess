@@ -1,0 +1,24 @@
+Options -MultiViews
+RewriteEngine On
+
+# API and non-public application folders keep their explicit file routes.
+RewriteRule ^(?:api|config|partials|database)/ - [L]
+
+# Internal working areas must never be indexed.
+RewriteRule ^(?:admin|tedarikci)/ - [E=NOINDEX:1]
+Header set X-Robots-Tag "noindex, nofollow" env=NOINDEX
+
+# Keep one URL format: public pages never use a trailing slash.
+RewriteCond %{THE_REQUEST} \s/+nexustraveltech/(.+)/+[?\s] [NC]
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.+)/$ /nexustraveltech/$1 [R=301,L,NE]
+
+# Every normal PHP page has one canonical, extension-free address.
+# This rule also applies automatically to future public PHP pages.
+RewriteCond %{THE_REQUEST} \s/+nexustraveltech/(.+?)\.php[?\s] [NC]
+RewriteRule ^(.+)\.php$ /nexustraveltech/$1 [R=301,L,NE]
+
+# Internally serve an existing PHP page when its clean address is requested.
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^(.+?)/?$ $1.php [L]

@@ -1,0 +1,16 @@
+# Local and production secrets
+.env
+.env.*
+!.env.example
+config/secrets.php
+
+# Runtime uploads and logs
+uploads/
+storage/
+*.log
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

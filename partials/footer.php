@@ -1,0 +1,2 @@
+<footer class="footer"><div class="shell"><a class="brand" href="/nexustraveltech/">N<span>&#8767;</span>XUS</a><p data-i18n="footer_copy">Turizmin canlı bilgi ağı.</p><div class="footer-links"><a href="/nexustraveltech/iletisim">İletişim</a><a href="/nexustraveltech/gizlilik">Gizlilik</a><a href="/nexustraveltech/cerezler">Çerezler</a></div><span>nexustraveltech.com &copy; 2026</span></div></footer>
+<script defer src="/nexustraveltech/assets/i18n.js"></script>
