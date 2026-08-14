@@ -8,6 +8,6 @@ return [
   'db_pass' => 'CHANGE_ME',
   'admin_username' => 'admin',
   'admin_password' => 'CHANGE_ME',
-  'deepseek_api_key' => 'CHANGE_ME',
-  'deepseek_model' => 'deepseek-chat',
+  // Do not store API keys in this file. Generate a unique 32+ character value.
+  'app_encryption_key' => 'GENERATE_A_RANDOM_32_PLUS_CHARACTER_SECRET',
 ];

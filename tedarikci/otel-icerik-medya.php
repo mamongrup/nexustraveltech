@@ -1,14 +1,14 @@
 <?php
-$active_module = 'properties'; require_once __DIR__ . '/layout.php'; require_once __DIR__ . '/../config/hotel_form.php';
+$active_module = 'properties'; require_once __DIR__ . '/layout.php'; require_once __DIR__ . '/../config/hotel_form.php'; require_once __DIR__ . '/../config/ai_settings.php';
 $u=$supplier_user; $id=filter_input(INPUT_GET,'product',FILTER_VALIDATE_INT); if(!$id){header('Location: /nexustraveltech/tedarikci/tesisler');exit;}
 $q=db()->prepare("SELECT * FROM properties WHERE id=? AND supplier_id=? AND property_type='hotel'");$q->execute([$id,$u['supplier_id']]);$hotel=$q->fetch();if(!$hotel){http_response_code(404);exit('Otel bulunamadı.');}
 $locales=['en'=>'English','de'=>'Deutsch','ru'=>'Русский','ar'=>'العربية','fr'=>'Français']; $scopes=['property'=>'Genel tesis','room'=>'Oda','bathroom'=>'Banyo','activity'=>'Aktivite','event'=>'Etkinlik','kids_club'=>'Çocuk kulübü']; $error='';$notice=isset($_GET['saved'])?'Medya kaydedildi.':(isset($_GET['translated'])?'AI çevirileri kaydedildi.':'');
 function translation_upsert(int $propertyId,string $entityType,int $entityId,string $locale,string $field,string $value):void{db()->prepare('INSERT INTO property_content_translations (property_id,entity_type,entity_id,locale,field_key,value,translation_source) VALUES (?,?,?,?,?,?,?) ON CONFLICT (property_id,entity_type,entity_id,locale,field_key) DO UPDATE SET value=EXCLUDED.value,translation_source=EXCLUDED.translation_source,updated_at=now()')->execute([$propertyId,$entityType,$entityId,$locale,$field,$value,'ai']);}
 function ai_translate_nexus(string $text,string $locale):string{
-  $settings=db_config();$key=(string)($settings['deepseek_api_key']??'');
-  if($key==='')throw new RuntimeException('AI çevirisi için config/secrets.php içine deepseek_api_key eklenmelidir.');
+  $settings=deepseek_settings();$key=(string)$settings['api_key'];
+  if($key==='')throw new RuntimeException('AI çevirisi için yönetici panelinden DeepSeek API anahtarını ekleyin.');
   $language=['en'=>'English','de'=>'German','ru'=>'Russian','ar'=>'Arabic','fr'=>'French'][$locale]??$locale;
-  $body=['model'=>$settings['deepseek_model']??'deepseek-chat','messages'=>[
+  $body=['model'=>$settings['model'],'messages'=>[
     ['role'=>'system','content'=>'You translate tourism listing content accurately. Return only the requested translation.'],
     ['role'=>'user','content'=>"Translate the following Turkish tourism listing text into {$language}. Keep proper names, numbers, concise sales tone and HTML-free formatting.\n\n".$text]
   ],'stream'=>false,'temperature'=>0.2];

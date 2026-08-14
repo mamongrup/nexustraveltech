@@ -36,7 +36,7 @@ $total = (int) db()->query('SELECT COUNT(*) FROM early_access_leads')->fetchColu
       </div>
     </div>
 
-    <p><a class="logout" href="/nexustraveltech/admin/otel-siniflandirma">Otel tipleri, yıldızlar ve temaları yönet →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/otel-cevirileri">6 dilde çevirileri yönet →</a></p>
+    <p><a class="logout" href="/nexustraveltech/admin/otel-siniflandirma">Otel tipleri, yıldızlar ve temaları yönet →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/otel-cevirileri">6 dilde çevirileri yönet →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/ai-ayarlari">DeepSeek AI anahtarını yönet →</a></p>
 
     <?php if ($leads === []): ?>
       <div class="empty">Henuz basvuru yok.</div>
