@@ -2,7 +2,10 @@
 require_once __DIR__ . '/database.php';
 
 function supplier_session(): void {
-  if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+  if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_name('nexus_supplier');
+    session_start(['cookie_httponly' => true, 'cookie_samesite' => 'Lax']);
+  }
 }
 
 function supplier_user(): ?array {

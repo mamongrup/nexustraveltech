@@ -48,12 +48,31 @@ function decrypt_ai_secret(string $payload): string
     return $value;
 }
 
-function deepseek_settings(): array
+function ai_provider_settings(string $provider, string $defaultModel): array
 {
-    $row = db()->query("SELECT encrypted_api_key, model FROM ai_provider_settings WHERE provider = 'deepseek' LIMIT 1")->fetch();
+    $query = db()->prepare('SELECT encrypted_api_key, model FROM ai_provider_settings WHERE provider = ? LIMIT 1');
+    $query->execute([$provider]);
+    $row = $query->fetch();
 
     return [
         'api_key' => !empty($row['encrypted_api_key']) ? decrypt_ai_secret((string) $row['encrypted_api_key']) : '',
-        'model' => trim((string) ($row['model'] ?? '')) ?: 'deepseek-chat',
+        'model' => trim((string) ($row['model'] ?? '')) ?: $defaultModel,
+    ];
+}
+
+function deepseek_settings(): array { return ai_provider_settings('deepseek', 'deepseek-chat'); }
+function gemini_settings(): array { return ai_provider_settings('gemini', 'gemini-3.6-flash'); }
+
+function netgsm_settings(): array
+{
+    $stored = ai_provider_settings('netgsm', 'https://api.netgsm.com.tr/sms/send/get/');
+    $credentials = $stored['api_key'] !== '' ? json_decode($stored['api_key'], true) : [];
+    $credentials = is_array($credentials) ? $credentials : [];
+
+    return [
+        'usercode' => (string) ($credentials['usercode'] ?? ''),
+        'password' => (string) ($credentials['password'] ?? ''),
+        'header' => (string) ($credentials['header'] ?? ''),
+        'endpoint' => $stored['model'],
     ];
 }

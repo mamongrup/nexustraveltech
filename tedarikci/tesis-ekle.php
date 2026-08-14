@@ -2,16 +2,29 @@
 $active_module = 'properties';
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/../config/product_types.php';
+require_once __DIR__ . '/../config/supplier_verification.php';
+require_once __DIR__ . '/../config/listing_integrity.php';
 $u = $supplier_user;
 $types = product_types();
+$allowedTypes = supplier_allowed_product_types((int) $u['supplier_id']);
+if (!$allowedTypes) {
+  header('Location: /nexustraveltech/tedarikci/hesap-dogrulama');
+  exit;
+}
+$types = array_intersect_key($types, array_flip($allowedTypes));
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $name = trim((string)($_POST['name'] ?? ''));
   $type = $_POST['property_type'] ?? 'hotel';
   $city = trim((string)($_POST['city'] ?? ''));
   $country = strtoupper(trim((string)($_POST['country_code'] ?? 'TR')));
-  if ($name === '' || !isset($types[$type]) || strlen($country) !== 2) {
-    $error = 'Lütfen tesis adı, türü ve ülke bilgisini kontrol edin.';
+  $duplicateKey = listing_duplicate_key((string) $type, $name, $city, $country);
+  $duplicateCheck = db()->prepare('SELECT id FROM properties WHERE duplicate_key=? AND supplier_id<>? LIMIT 1');
+  $duplicateCheck->execute([$duplicateKey, (int) $u['supplier_id']]);
+  if ($name === '' || !isset($types[$type]) || !supplier_can_add_product_type((int) $u['supplier_id'], (string) $type) || strlen($country) !== 2) {
+    $error = 'Lütfen tesis adı, yetkili ürün türü ve ülke bilgisini kontrol edin.';
+  } elseif ($duplicateCheck->fetch()) {
+    $error = 'Bu ürün tedarik zincirinde zaten kayıtlı. Aynı ilan farklı bir tedarikçi tarafından yeniden eklenemez.';
   } else {
     $details = [];
     foreach ($types[$type]['fields'] as $field) {
@@ -21,9 +34,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo = db();
     $pdo->beginTransaction();
     try {
-      $q = $pdo->prepare("INSERT INTO properties (supplier_id, property_type, name, city, country_code, product_details, status) VALUES (?, ?, ?, ?, ?, ?::jsonb, 'draft') RETURNING id");
-      $q->execute([$u['supplier_id'], $type, $name, $city ?: null, $country, json_encode($details, JSON_UNESCAPED_UNICODE)]);
+      $q = $pdo->prepare("INSERT INTO properties (supplier_id, property_type, name, city, country_code, product_details, duplicate_key, status) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, 'draft') RETURNING id");
+      $q->execute([$u['supplier_id'], $type, $name, $city ?: null, $country, json_encode($details, JSON_UNESCAPED_UNICODE), $duplicateKey]);
       $propertyId = (int)$q->fetchColumn();
+      record_audit_event('supplier', (int) $u['id'], 'property.created', 'property', $propertyId, ['type' => $type, 'duplicate_key' => $duplicateKey]);
       if ($type === 'hotel') {
         $roomNames = $_POST['room_name'] ?? [];
         $roomCapacities = $_POST['room_capacity'] ?? [];

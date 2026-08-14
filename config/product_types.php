@@ -1,6 +1,8 @@
 <?php
 
-function product_types(): array {
+require_once __DIR__ . '/database.php';
+
+function default_product_types(): array {
   return [
     'hotel' => ['label' => 'Otel', 'unit' => 'Oda tipi', 'steps' => ['Tesis bilgisi', 'Oda & pansiyon', 'Fiyat & kontenjan', 'Satış kuralları'], 'fields' => [['key'=>'stars','label'=>'Yıldız / sınıf','type'=>'text','placeholder'=>'Örn. 4 yıldız'],['key'=>'room_count','label'=>'Toplam oda','type'=>'number','placeholder'=>'Örn. 48'],['key'=>'board','label'=>'Varsayılan konaklama tipi','type'=>'select','options'=>['Sadece oda','Oda + kahvaltı','Yarım pansiyon','Tam pansiyon','Her şey dahil','Alkolsüz her şey dahil','Ultra her şey dahil']]], 'room_setup'=>true, 'hint' => 'Oda ve villa tiplerinizi, kapasitelerini ve konaklama türlerini bu ilk kurulumda tanımlayın.'],
     'villa' => ['label' => 'Villa', 'unit' => 'Konaklama birimi', 'steps' => ['Villa bilgisi', 'Oda & kapasite', 'Müsaitlik takvimi', 'Fiyat & kurallar'], 'fields' => [['key'=>'bedrooms','label'=>'Yatak odası','type'=>'number','placeholder'=>'Örn. 4'],['key'=>'max_guests','label'=>'Maksimum misafir','type'=>'number','placeholder'=>'Örn. 8'],['key'=>'pool','label'=>'Havuz tipi','type'=>'select','options'=>['Özel havuz','Ortak havuz','Havuz yok']]], 'hint' => 'Kapasite, giriş-çıkış günleri ve villa takvimi ile satışa açılır.'],
@@ -17,4 +19,24 @@ function product_types(): array {
     'beach' => ['label' => 'Plaj', 'unit' => 'Şezlong / alan', 'steps' => ['Plaj bilgisi', 'Alan & şezlong', 'Oturum & kapasite', 'Fiyat & giriş kuralları'], 'fields' => [['key'=>'beach_type','label'=>'Plaj türü','type'=>'select','options'=>['Özel plaj','Beach club','Halk plajı hizmeti']],['key'=>'sunbeds','label'=>'Şezlong sayısı','type'=>'number','placeholder'=>'Örn. 120'],['key'=>'capacity','label'=>'Günlük kapasite','type'=>'number','placeholder'=>'Örn. 250']], 'hint' => 'Alanlar, günlük giriş, şezlong paketleri ve saat aralıkları ile satışa açılır.'],
     'event' => ['label' => 'Etkinlik', 'unit' => 'Etkinlik / bilet', 'steps' => ['Etkinlik bilgisi', 'Mekân & tarih', 'Kategori & kapasite', 'Bilet & kurallar'], 'fields' => [['key'=>'venue','label'=>'Mekân','type'=>'text','placeholder'=>'Örn. Antik Tiyatro'],['key'=>'event_date','label'=>'Etkinlik tarihi','type'=>'date'],['key'=>'capacity','label'=>'Katılımcı kapasitesi','type'=>'number','placeholder'=>'Örn. 1000']], 'hint' => 'Bilet kategorileri, oturma düzeni, tarih ve iade kuralları sonraki adımda eklenir.'],
   ];
+}
+
+function product_types(): array {
+  try {
+    $rows = db()->query('SELECT code,label,unit,steps,fields,room_setup,hint FROM product_type_catalog WHERE is_active=true ORDER BY sort_order,code')->fetchAll();
+    if ($rows) {
+      $types=[];
+      foreach($rows as $row) $types[$row['code']]=['label'=>$row['label'],'unit'=>$row['unit'],'steps'=>json_decode($row['steps'],true)?:[],'fields'=>json_decode($row['fields'],true)?:[],'room_setup'=>(bool)$row['room_setup'],'hint'=>$row['hint']];
+      return $types;
+    }
+  } catch (Throwable) {}
+  return default_product_types();
+}
+
+function seed_product_type_catalog(): void {
+  try {
+    if ((int)db()->query('SELECT COUNT(*) FROM product_type_catalog')->fetchColumn() > 0) return;
+    $insert=db()->prepare('INSERT INTO product_type_catalog(code,label,unit,steps,fields,room_setup,hint,sort_order) VALUES (?,?,?,?,?::jsonb,?,?,?)');
+    $sort=10; foreach(default_product_types() as $code=>$type){$insert->execute([$code,$type['label'],$type['unit'],json_encode($type['steps'],JSON_UNESCAPED_UNICODE),json_encode($type['fields'],JSON_UNESCAPED_UNICODE),$type['room_setup'],$type['hint'],$sort]);$sort+=10;}
+  } catch (Throwable) {}
 }

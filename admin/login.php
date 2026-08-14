@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../config/auth.php';
 
-session_start();
+admin_session();
 
 $error = '';
 

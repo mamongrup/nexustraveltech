@@ -10,9 +10,20 @@ function admin_credentials(): array
     return ['username' => $config['admin_username'], 'password' => $config['admin_password']];
 }
 
+function admin_session(): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_name('nexus_admin');
+        session_start([
+            'cookie_httponly' => true,
+            'cookie_samesite' => 'Lax',
+        ]);
+    }
+}
+
 function require_admin(): void
 {
-    session_start();
+    admin_session();
 
     if (($_SESSION['admin_logged_in'] ?? false) !== true) {
         header('Location: /nexustraveltech/admin/login');
