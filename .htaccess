@@ -1,6 +1,10 @@
 Options -MultiViews
 RewriteEngine On
 
+# The local Laragon app lives below /nexustraveltech; production is the domain
+# root. Redirect legacy local-prefixed links to the production root on Plesk.
+RewriteRule ^nexustraveltech/?(.*)$ /$1 [R=301,L,NE]
+
 # API and non-public application folders keep their explicit file routes.
 RewriteRule ^(?:api|config|partials|database)/ - [L]
 
