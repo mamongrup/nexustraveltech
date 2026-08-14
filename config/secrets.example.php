@@ -8,4 +8,6 @@ return [
   'db_pass' => 'CHANGE_ME',
   'admin_username' => 'admin',
   'admin_password' => 'CHANGE_ME',
+  'deepseek_api_key' => 'CHANGE_ME',
+  'deepseek_model' => 'deepseek-chat',
 ];
