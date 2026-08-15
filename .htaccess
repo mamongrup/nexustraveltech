@@ -6,7 +6,7 @@ RewriteEngine On
 RewriteRule ^nexustraveltech/?(.*)$ /$1 [R=301,L,NE]
 
 # API and non-public application folders keep their explicit file routes.
-RewriteRule ^(?:api|config|partials|database|private)/ - [F,L]
+RewriteRule ^(?:api|config|partials|database|private|cron)/ - [F,L]
 
 # Internal working areas must never be indexed.
 RewriteRule ^(?:admin|tedarikci)/ - [E=NOINDEX:1]

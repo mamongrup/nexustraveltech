@@ -1,0 +1,2 @@
+<?php
+declare(strict_types=1);require_once __DIR__.'/../config/ical.php';$token=(string)($_GET['token']??'');if(!preg_match('/^[a-f0-9]{64}$/',$token)){http_response_code(404);exit;} $calendar=ical_export_calendar($token);if($calendar===null){http_response_code(404);exit;}header('Content-Type: text/calendar; charset=utf-8');header('Content-Disposition: inline; filename="nexus-calendar.ics"');header('Cache-Control: no-store');echo $calendar;
