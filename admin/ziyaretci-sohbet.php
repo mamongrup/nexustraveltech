@@ -83,14 +83,16 @@ if (($_GET['export'] ?? '') === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="ziyaretci-sohbet-' . date('Ymd-His') . '.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Zaman', 'IP', 'Soru', 'Yanıt', 'Durum']);
+    fputcsv($out, ['Zaman', 'IP', 'Soru', 'Konu', 'Yanıt', 'Durum']);
     $qRows = db()->prepare("SELECT m.created_at,m.ip,m.user_message,m.ai_reply,b.action ip_action FROM public_chat_messages m LEFT JOIN blocked_ips b ON b.ip=m.ip WHERE $sqlWhere ORDER BY m.id DESC");
     $qRows->execute($params);
     while ($row = $qRows->fetch()) {
+        $jm = mb_strlen(trim((string) $row['user_message'])) < $minLen || ($requireSpace && !str_contains(trim((string) $row['user_message']), ' '));
         fputcsv($out, [
             (string) $row['created_at'],
             (string) ($row['ip'] ?? ''),
             (string) $row['user_message'],
+            $jm ? '' : implode(', ', chat_classify((string) $row['user_message'])),
             (string) $row['ai_reply'],
             (string) ($row['ip_action'] ?? ''),
         ]);
