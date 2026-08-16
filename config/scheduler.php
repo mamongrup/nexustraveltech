@@ -31,7 +31,7 @@ function scheduler_jobs(): array
     return db()->query('SELECT * FROM scheduled_jobs ORDER BY id')->fetchAll();
 }
 
-/** Tek bir cron alanını (örn. '*/15', '0-30/5', '1,15') değerle eşleştirir. */
+// Tek bir cron alanını değerle eşleştirir (örn. '*/15', '0-30/5', '1,15').
 function cron_field_matches(string $spec, int $value): bool
 {
     foreach (explode(',', $spec) as $part) {

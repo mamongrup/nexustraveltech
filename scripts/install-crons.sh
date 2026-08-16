@@ -36,6 +36,8 @@ while IFS= read -r line || [ -n "$line" ]; do
   if [[ "$line" == \#\ * ]]; then
     marker="${line#\# }"
     if grep -qF "$marker" <<<"$OLD_MARKERS"; then REMOVE_NEXT=1; continue; fi
+    # Eski nexus-tick yorum satırlarını da tekleştir (komut satırı her zaman yeniden yazılır)
+    if [[ "$marker" == "nexus-tick" ]]; then continue; fi
   fi
   # Bozuk/eski tick satırlarını da ayıkla (düzeltme her zaman yeniden yazılır)
   if grep -qF "cron/tick.php" <<<"$line"; then continue; fi

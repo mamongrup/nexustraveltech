@@ -11,6 +11,8 @@ declare(strict_types=1);
  */
 function ai_public_widget(): void
 {
+    // Ortam duyarlı API adresi: yerel (Laragon, /nexustraveltech öneki) ve üretim (kök) farklıdır.
+    $apiUrl = (str_contains((string) ($_SERVER['REQUEST_URI'] ?? ''), '/nexustraveltech/') ? '/nexustraveltech' : '') . '/api/public-chat.php';
     ?>
 <style>
 #nxpub-fab{position:fixed;right:18px;bottom:18px;z-index:99990;width:58px;height:58px;border-radius:50%;border:0;cursor:pointer;background:#10211f;color:#d7ff48;font-weight:800;font-size:11px;font-family:'DM Sans',Arial,sans-serif;box-shadow:0 8px 22px rgba(0,0,0,.38);display:grid;place-items:center;line-height:1.15;letter-spacing:.5px;transition:transform .15s}
@@ -42,7 +44,7 @@ function ai_public_widget(): void
 </div>
 <script>
 (function(){
-  var URL = '/nexustraveltech/api/public-chat.php';
+  var URL = <?= json_encode($apiUrl, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG) ?>;
   var hist = [];
   var busy = false;
   var panel = document.getElementById('nxpub-panel');
