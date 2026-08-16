@@ -71,8 +71,11 @@ KAMUYA AÇIK (ÖNYÜZ) AI ASİSTAN
 - Suiistimal taraması: nexus-flag-abusive-ips (06 3 * * *) son 24 saatte hız sınırını aşan
   (red >= 5), aşırı soru gönderen (>= 40) veya aynı soruyu tekrarlayan (>= 10 kez)
   IP'leri otomatik bayraklar; 7 gün içinde tekrar kötü davranan bayraklı IP'leri tam
-  engellemeye yükseltir. Yeni bayrak/yükseltmeleri admin_alert_email'e e-postalar
+  engellemeye yükseltir. Yeni bayrak/yükseltmeleri  admin_alert_email'e e-postalar
   (endpoint 429 reddini error_logs'a kaydeder).
+- Kalitesiz girdi filtresi: 5 karakterden kısa veya tek kelimelik sorular AI'ya
+  gitmez (nazikçe daha açık yazmaya yönlendirilir); admin sayfasında varsayılan
+  gizlidir ("Kalitesiz girdileri göster" ile açılır) ve günlük özete dahil edilmez.
 
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):

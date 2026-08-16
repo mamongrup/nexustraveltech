@@ -40,6 +40,7 @@ $from = trim((string) ($_GET['from'] ?? ''));
 $to = trim((string) ($_GET['to'] ?? ''));
 $ip = trim((string) ($_GET['ip'] ?? ''));
 $q = trim((string) ($_GET['q'] ?? ''));
+$quality = (string) ($_GET['quality'] ?? 'good');
 
 $where = ['1=1'];
 $params = [];
@@ -47,6 +48,16 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) { $where[] = 'm.created_at>=?'; 
 if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) { $where[] = 'm.created_at<=?'; $params[] = $to . ' 23:59:59'; }
 if ($ip !== '') { $where[] = 'm.ip::text LIKE ?'; $params[] = '%' . $ip . '%'; }
 if ($q !== '') { $where[] = '(m.user_message ILIKE ? OR m.ai_reply ILIKE ?)'; $params[] = '%' . $q . '%'; $params[] = '%' . $q . '%'; }
+
+// Kalitesiz girdiler (5 karakterden kısa veya tek kelime) varsayılan olarak gizlenir.
+$qualitySql = "CHAR_LENGTH(BTRIM(m.user_message)) >= 5 AND POSITION(' ' IN BTRIM(m.user_message)) > 0";
+$junkSql = "(CHAR_LENGTH(BTRIM(m.user_message)) < 5 OR POSITION(' ' IN BTRIM(m.user_message)) = 0)";
+$junkStmt = db()->prepare('SELECT COUNT(*) FROM public_chat_messages m WHERE ' . implode(' AND ', $where) . ' AND ' . $junkSql);
+$junkStmt->execute($params);
+$junkCount = (int) $junkStmt->fetchColumn();
+if ($quality === 'good') {
+    $where[] = $qualitySql;
+}
 $sqlWhere = implode(' AND ', $where);
 
 // CSV dışa aktarma (aynı filtrelerle).
@@ -107,8 +118,8 @@ foreach ($chartRows as $r) {
 $chartMax = 1;
 foreach ($chartDays as $v) $chartMax = max($chartMax, $v['blocks'] + $v['flags']);
 
-$qs = function (array $extra) use ($from, $to, $ip, $q): string {
-    $p = ['from' => $from, 'to' => $to, 'ip' => $ip, 'q' => $q];
+$qs = function (array $extra) use ($from, $to, $ip, $q, $quality): string {
+    $p = ['from' => $from, 'to' => $to, 'ip' => $ip, 'q' => $q, 'quality' => $quality];
     foreach ($extra as $k => $v) $p[$k] = $v;
     return '?' . http_build_query(array_filter($p, fn($v) => $v !== ''));
 };
@@ -133,6 +144,7 @@ $qs = function (array $extra) use ($from, $to, $ip, $q): string {
   <input type="text" name="ip" value="<?=htmlspecialchars($ip)?>" placeholder="IP ara…" style="width:150px">
   <input type="text" name="q" value="<?=htmlspecialchars($q)?>" placeholder="Soru/yanıt içinde ara…" style="width:220px">
   <button>Filtrele</button>
+  <a class="exp" href="<?=htmlspecialchars($qs(['quality' => $quality === 'good' ? 'all' : 'good', 'page' => 1]))?>"><?= $quality === 'good' ? 'Kalitesiz girdileri göster (' . (int)$junkCount . ')' : 'Kalitesiz girdileri gizle' ?></a>
   <a class="exp" href="<?=htmlspecialchars($qs(['export' => 'csv']))?>">⬇ CSV indir</a>
 </form>
 <?php if ($banned): ?>
@@ -162,7 +174,7 @@ $qs = function (array $extra) use ($from, $to, $ip, $q): string {
 <form method="post" action="/nexustraveltech/admin/ziyaretci-sohbet"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="unblock"><input type="hidden" name="ip" value="<?=htmlspecialchars((string)$r['ip'])?>"><button class="kaldir">Bayrağı kaldır</button></form>
 <?php endif; ?>
 </div></td>
-<td class="msg"><?=htmlspecialchars((string)$r['user_message'])?></td><td class="msg"><?=htmlspecialchars((string)$r['ai_reply'])?></td></tr>
+<td class="msg"><?php $junkMsg = mb_strlen(trim((string)$r['user_message'])) < 5 || !str_contains(trim((string)$r['user_message']), ' '); if ($junkMsg): ?><span class="badge bd-flag">Kalitesiz</span> <?php endif; ?><?=htmlspecialchars((string)$r['user_message'])?></td><td class="msg"><?=htmlspecialchars((string)$r['ai_reply'])?></td></tr>
 <?php endforeach; ?>
 </table>
 <?php if ($pages > 1): ?><div class="pages"><?php for ($i = 1; $i <= $pages; $i++): ?><a class="<?=$i===$page?'on':''?>" href="<?=htmlspecialchars($qs(['page' => $i]))?>"><?=$i?></a><?php endfor; ?></div><?php endif; ?>

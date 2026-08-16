@@ -32,20 +32,23 @@ if ((int) $exists->fetchColumn() > 0) {
 
 $since = date('Y-m-d H:i:s', time() - 86400);
 
+// Kalitesiz girdiler (5 karakterden kısa veya tek kelime) özetten çıkarılır.
+$quality = "CHAR_LENGTH(BTRIM(user_message)) >= 5 AND POSITION(' ' IN BTRIM(user_message)) > 0";
+
 $topQ = db()->prepare(
     "SELECT LOWER(TRIM(user_message)) q, COUNT(*) c
        FROM public_chat_messages
-      WHERE created_at>=?
+      WHERE created_at>=? AND $quality
       GROUP BY 1 ORDER BY c DESC, MAX(created_at) DESC LIMIT 5"
 );
 $topQ->execute([$since]);
 $top = $topQ->fetchAll();
 
-$totalQ = db()->prepare('SELECT COUNT(*) FROM public_chat_messages WHERE created_at>=?');
+$totalQ = db()->prepare("SELECT COUNT(*) FROM public_chat_messages WHERE created_at>=? AND $quality");
 $totalQ->execute([$since]);
 $total = (int) $totalQ->fetchColumn();
 
-$ipQ = db()->prepare('SELECT COUNT(DISTINCT ip) FROM public_chat_messages WHERE created_at>=?');
+$ipQ = db()->prepare("SELECT COUNT(DISTINCT ip) FROM public_chat_messages WHERE created_at>=? AND $quality");
 $ipQ->execute([$since]);
 $ips = (int) $ipQ->fetchColumn();
 
