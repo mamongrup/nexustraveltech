@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 require __DIR__ . '/../config/auth.php';
 require __DIR__ . '/../config/database.php';
+require __DIR__ . '/../config/platform_settings.php';
+require __DIR__ . '/../config/ai_settings.php';
 
 require_admin();
 
@@ -15,6 +17,17 @@ $total = (int) db()->query('SELECT COUNT(*) FROM early_access_leads')->fetchColu
 $identityAlerts = (int) db()->query("SELECT COUNT(*) FROM admin_alerts WHERE is_read=false AND alert_type='identity_verification_failed'")->fetchColumn();
 $blockCount = (int) db()->query("SELECT COUNT(*) FROM blocked_ips WHERE action='block'")->fetchColumn();
 $flagCount = (int) db()->query("SELECT COUNT(*) FROM blocked_ips WHERE action='flag'")->fetchColumn();
+
+// Sohbet ayarları özeti.
+$chatMinLen = max(1, (int) platform_setting('chat_min_length', 5));
+$chatRequireSpace = (bool) platform_setting('chat_require_space', true);
+$chatBlocklist = array_values(array_filter(array_map('trim', (array) platform_setting('chat_blocklist', [])), fn($l) => $l !== ''));
+$aiKeyReady = false;
+try {
+    $aiKeyReady = deepseek_settings()['api_key'] !== '';
+} catch (Throwable $e) {
+    $aiKeyReady = false;
+}
 ?>
 <!doctype html>
 <html lang="tr">
@@ -23,7 +36,7 @@ $flagCount = (int) db()->query("SELECT COUNT(*) FROM blocked_ips WHERE action='f
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>NEXUS Admin Panel</title>
   <style>
-    body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1160px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.pill{display:inline-block;background:#d7ff48;padding:10px 14px;font-weight:800}.logout{color:#10211f}table{width:100%;border-collapse:collapse;margin-top:28px;background:#fff}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:13px;font-size:14px}th{font-size:12px;text-transform:uppercase;color:#64716d}tr:hover td{background:#fbfcf8}.empty{padding:30px;background:#fff;margin-top:28px}.muted{color:#64716d}.ip-stats{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.ip-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;font-size:13px;font-weight:700;text-decoration:none;border-radius:6px}.ip-chip b{font-size:17px}.ip-block{background:#ffe2de;color:#8e2410}.ip-flag{background:#fdf0d8;color:#8a5a10}.ip-chip:hover{opacity:.85}
+    body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1160px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.pill{display:inline-block;background:#d7ff48;padding:10px 14px;font-weight:800}.logout{color:#10211f}table{width:100%;border-collapse:collapse;margin-top:28px;background:#fff}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:13px;font-size:14px}th{font-size:12px;text-transform:uppercase;color:#64716d}tr:hover td{background:#fbfcf8}.empty{padding:30px;background:#fff;margin-top:28px}.muted{color:#64716d}.ip-stats{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.ip-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;font-size:13px;font-weight:700;text-decoration:none;border-radius:6px}.ip-chip b{font-size:17px}.ip-block{background:#ffe2de;color:#8e2410}.ip-flag{background:#fdf0d8;color:#8a5a10}.ip-chip:hover{opacity:.85}.chat-card{background:#fff;border:1px solid #e1e5de;padding:14px 16px;margin:18px 0;display:flex;flex-wrap:wrap;gap:16px 28px;align-items:flex-start}.chat-card h3{margin:0 0 8px;font-size:14px;flex-basis:100%}.chat-card .item{font-size:12px;color:#64716d}.chat-card .item b{font-size:16px;display:block;color:#10211f;margin-top:2px}.chat-card .ok{color:#0d7a4a}.chat-card .warn{color:#a86026}.chat-card .edit{margin-left:auto;font-size:13px;font-weight:700;color:#0d7a4a;text-decoration:none;align-self:center}
   </style>
 </head>
 <body>
@@ -43,6 +56,15 @@ $flagCount = (int) db()->query("SELECT COUNT(*) FROM blocked_ips WHERE action='f
     <div class="ip-stats">
       <a class="ip-chip ip-block" href="/nexustraveltech/admin/ziyaretci-sohbet" title="Kötü niyetli trafik için engellenen IP'ler">🚫 Engelli IP: <b><?= (int)$blockCount ?></b></a>
       <a class="ip-chip ip-flag" href="/nexustraveltech/admin/ziyaretci-sohbet" title="İzlemeye alınan (bayraklı) IP'ler">⚠ Bayraklı IP: <b><?= (int)$flagCount ?></b></a>
+    </div>
+
+    <div class="chat-card">
+      <h3>💬 Sohbet ayarları</h3>
+      <div class="item">Minimum soru uzunluğu<b><?= (int)$chatMinLen ?> karakter</b></div>
+      <div class="item">Tek kelime engeli<b><?= $chatRequireSpace ? 'Açık' : 'Kapalı' ?></b></div>
+      <div class="item">Yasak kelime<b><?= count($chatBlocklist) ?> kayıt</b><?php if ($chatBlocklist): ?><span style="font-size:12px;color:#64716d;display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?=htmlspecialchars(implode(', ', array_slice($chatBlocklist, 0, 3)))?><?= count($chatBlocklist) > 3 ? '…' : '' ?></span><?php endif; ?></div>
+      <div class="item">DeepSeek anahtarı<b class="<?= $aiKeyReady ? 'ok' : 'warn' ?>"><?= $aiKeyReady ? '✅ Ayarlı' : '⚠ Eksik' ?></b></div>
+      <a class="edit" href="/nexustraveltech/admin/kontrol-merkezi">Düzenle →</a>
     </div>
 
     <p><a class="logout" href="/nexustraveltech/admin/kontrol-merkezi">Platform kontrol merkezi →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/uyari-merkezi">Operasyon uyarıları →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/acenteler">Acente yönetimi →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/otel-siniflandirma">Otel tipleri, yıldızlar ve temaları yönet →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/otel-cevirileri">6 dilde çevirileri yönet →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/tedarikci-onaylari">Tedarikçi kimlik ve yetki onayları →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/ai-ayarlari">DeepSeek metin AI →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/gemini-ayarlari">Gemini görsel AI →</a></p>
