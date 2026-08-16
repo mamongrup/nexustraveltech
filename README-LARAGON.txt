@@ -63,6 +63,9 @@ KAMUYA AÇIK (ÖNYÜZ) AI ASİSTAN
   sorgu+yanıt kaydı (public_chat_messages, migration 035). İç veriye erişimi yoktur; fiyat/müsaitlik
   gibi canlı bilgi uydurmaz, ilgili sayfaya yönlendirir.
 - Kurulum: DeepSeek API anahtarı admin → DeepSeek metin AI'dan girildiğinde otomatik çalışır.
+- Günlük özet: zamanlayıcı görevi nexus-chat-digest (varsayılan 45 8 * * *) son 24 saatin en çok
+  sorulan 5 sorusunu e-postayla gönderir (alıcı: admin → Kontrol merkezi'ndeki admin_alert_email;
+  gönderim process-emails kuyruğu üzerinden, günde bir kez idempotent).
 
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):
