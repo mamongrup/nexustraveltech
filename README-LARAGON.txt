@@ -56,6 +56,14 @@ YAPAY ZEKA ASİSTANI
 - Örnek sorular: "Bugün kaç misafir geliyor?", "REF-1234 durumu nedir?", "Son hataları göster",
   "Antalya'da 15-18 Ağustos 2 yetişkin müsaitlik var mı?", "e-posta görevini şimdi çalıştır".
 
+KAMUYA AÇIK (ÖNYÜZ) AI ASİSTAN
+- Ziyaretçileri karşılayan, platform hakkındaki soruları yanıtlayan ve doğru sayfaya yönlendiren
+  chatbox: tüm genel sayfalarda sağ altta (partials/footer.php üzerinden). Oturum gerekmez.
+- Endpoint: api/public-chat.php — IP başına 5 dakikada 10 soru hız sınırı, mesaj uzunluk sınırı,
+  sorgu+yanıt kaydı (public_chat_messages, migration 035). İç veriye erişimi yoktur; fiyat/müsaitlik
+  gibi canlı bilgi uydurmaz, ilgili sayfaya yönlendirir.
+- Kurulum: DeepSeek API anahtarı admin → DeepSeek metin AI'dan girildiğinde otomatik çalışır.
+
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):
    composer install --no-interaction --prefer-dist
