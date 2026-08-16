@@ -23,6 +23,18 @@ $pdo = db();
 $jobs = $pdo->query('SELECT id,code,name,command,schedule,last_fail_alert_at FROM scheduled_jobs WHERE enabled=true')->fetchAll();
 $sent = 0;
 
+// Son 24 saat hata özeti — uyarı e-postalarına bağlam olarak eklenir.
+$totalErr24 = (int) $pdo->query("SELECT COUNT(*) FROM scheduled_job_runs WHERE status='error' AND created_at >= now() - interval '24 hours'")->fetchColumn();
+$topErr = $pdo->query("SELECT j.name,j.code,COUNT(r.id) c FROM scheduled_job_runs r JOIN scheduled_jobs j ON j.id=r.job_id WHERE r.status='error' AND r.created_at >= now() - interval '24 hours' GROUP BY j.id,j.name,j.code ORDER BY c DESC LIMIT 3")->fetchAll();
+$summaryRows = '';
+foreach ($topErr as $te) {
+    $summaryRows .= '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de"><b>' . htmlspecialchars((string) $te['name']) . '</b><br><code style="font-size:11px;color:#64716d">' . htmlspecialchars((string) $te['code']) . '</code></td>'
+        . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center">' . (int) $te['c'] . '</td></tr>';
+}
+$summaryHtml = '<h2 style="font-family:Arial;color:#10211f;margin:22px 0 6px">Son 24 saat hata özeti</h2>'
+    . '<p style="font-family:Arial;color:#64716d;margin:0 0 8px">Toplam hata: <b style="color:' . ($totalErr24 > 0 ? '#b0301a' : '#0d7a4a') . '">' . $totalErr24 . '</b></p>'
+    . ($summaryRows !== '' ? '<table style="border-collapse:collapse;font-family:Arial;color:#10211f;width:100%;max-width:480px"><tr><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">En sık hata veren görevler</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d;text-align:center">Hata</th></tr>' . $summaryRows . '</table>' : '<p style="font-family:Arial;color:#64716d">Son 24 saatte başka hata kaydı yok.</p>');
+
 foreach ($jobs as $job) {
     $q = $pdo->prepare('SELECT id,status,output,created_at FROM scheduled_job_runs WHERE job_id=? ORDER BY id DESC LIMIT 3');
     $q->execute([$job['id']]);
@@ -70,7 +82,7 @@ foreach ($jobs as $job) {
         . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/zamanlayici-gecmisi?job=' . (int) $job['id'] . '&status=error" style="color:#0d7a4a">Çalışma geçmişini görüntüle →</a></p>'
         . '</div>';
 
-    queue_email($to, 'Zamanlayıcı uyarısı: ' . htmlspecialchars((string) $job['name']) . ' 3 kez hata verdi', $body, 'job_fail_alert', (int) $job['id']);
+    queue_email($to, 'Zamanlayıcı uyarısı: ' . htmlspecialchars((string) $job['name']) . ' 3 kez hata verdi', $body . $summaryHtml, 'job_fail_alert', (int) $job['id']);
     $pdo->prepare('UPDATE scheduled_jobs SET last_fail_alert_at=now() WHERE id=?')->execute([$job['id']]);
     $sent++;
     echo 'Uyarı kuyruğa eklendi: ' . $job['code'] . "\n";
