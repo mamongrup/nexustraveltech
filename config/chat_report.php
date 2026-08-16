@@ -203,6 +203,7 @@ function panel_chat_weekly_data(string $role, int $actorId): array
 {
     $since = date('Y-m-d H:i:s', time() - 7 * 86400);
     $nowStr = date('Y-m-d H:i:s');
+    $prevStart = date('Y-m-d H:i:s', time() - 14 * 86400);
 
     $minLen = max(1, (int) platform_setting('chat_min_length', 5));
     $requireSpace = (bool) platform_setting('chat_require_space', true);
@@ -210,12 +211,18 @@ function panel_chat_weekly_data(string $role, int $actorId): array
 
     $scope = 'role=? AND created_at>=?';
     $params = [$role, $since];
+    $prevScope = 'role=? AND created_at>=? AND created_at<?';
+    $prevParams = [$role, $prevStart, $since];
     if ($role === 'supplier' && $actorId > 0) {
         $scope = 'role=? AND supplier_id=? AND created_at>=?';
         $params = [$role, $actorId, $since];
+        $prevScope = 'role=? AND supplier_id=? AND created_at>=? AND created_at<?';
+        $prevParams = [$role, $actorId, $prevStart, $since];
     } elseif ($role === 'agency' && $actorId > 0) {
         $scope = 'role=? AND agency_id=? AND created_at>=?';
         $params = [$role, $actorId, $since];
+        $prevScope = 'role=? AND agency_id=? AND created_at>=? AND created_at<?';
+        $prevParams = [$role, $actorId, $prevStart, $since];
     }
 
     $q = db()->prepare("SELECT COUNT(*) FROM panel_chat_messages WHERE $scope");
@@ -234,16 +241,38 @@ function panel_chat_weekly_data(string $role, int $actorId): array
     $topQ->execute($params);
     $topQuestions = $topQ->fetchAll();
 
-    $topics = array_fill_keys(array_keys(chat_topic_defs()), 0);
-    $tq = db()->prepare("SELECT user_message FROM panel_chat_messages WHERE $scope AND $quality LIMIT 20000");
-    $tq->execute($params);
-    foreach ($tq->fetchAll() as $r) {
-        foreach (chat_classify((string) $r['user_message']) as $t) $topics[$t]++;
-    }
+    $topicCounts = function (string $sqlScope, array $sqlParams) use ($quality): array {
+        $counts = array_fill_keys(array_keys(chat_topic_defs()), 0);
+        $q = db()->prepare("SELECT user_message FROM panel_chat_messages WHERE $sqlScope AND $quality LIMIT 20000");
+        $q->execute($sqlParams);
+        foreach ($q->fetchAll() as $r) {
+            foreach (chat_classify((string) $r['user_message']) as $t) $counts[$t]++;
+        }
+        return $counts;
+    };
+    $topics = $topicCounts($scope, $params);
+    $topicsPrev = $topicCounts($prevScope, $prevParams);
     arsort($topics);
 
+    // Geçen hafta karşılaştırması: mesaj sayısı değişimi (▲/▼ % veya 'yeni').
+    $p = db()->prepare("SELECT COUNT(*) FROM panel_chat_messages WHERE $prevScope");
+    $p->execute($prevParams);
+    $totalPrev = (int) $p->fetchColumn();
+
+    if ($totalPrev > 0) {
+        $totalDelta = (int) round(($total - $totalPrev) / $totalPrev * 100);
+        $totalDeltaTxt = ($totalDelta >= 0 ? '▲ %' : '▼ %') . abs($totalDelta);
+        $totalDeltaColor = $totalDelta >= 0 ? '#0d7a4a' : '#b0301a';
+    } elseif ($total > 0) {
+        $totalDeltaTxt = 'yeni';
+        $totalDeltaColor = '#0d7a4a';
+    } else {
+        $totalDeltaTxt = '—';
+        $totalDeltaColor = '#64716d';
+    }
+
     $dateLabel = date('d.m.Y', strtotime($since)) . ' – ' . date('d.m.Y');
-    return compact('since', 'nowStr', 'dateLabel', 'total', 'qualityRows', 'activeDays', 'topQuestions', 'topics');
+    return compact('since', 'nowStr', 'dateLabel', 'total', 'qualityRows', 'activeDays', 'topQuestions', 'topics', 'topicsPrev', 'totalPrev', 'totalDeltaTxt', 'totalDeltaColor');
 }
 
 /**
@@ -256,16 +285,36 @@ function panel_chat_weekly_html(array $d, string $panelLink): string
         $qRows .= '<tr><td style="padding:9px 12px;border-bottom:1px solid #e1e5de">' . htmlspecialchars(mb_substr((string) $row['q'], 0, 140)) . '</td>'
             . '<td style="padding:9px 12px;border-bottom:1px solid #e1e5de;text-align:center"><b>' . (int) $row['c'] . '</b></td></tr>';
     }
-    $topicChips = '';
+    $topicRows = '';
+    $topicCount = 0;
     foreach (array_slice($d['topics'], 0, 5, true) as $t => $c) {
-        if ($c === 0) continue;
-        $topicChips .= '<span style="display:inline-block;background:#f2f4ef;border:1px solid #e1e5de;padding:3px 10px;border-radius:13px;font-size:12px;margin:3px 6px 0 0">' . htmlspecialchars($t) . ' <b style="color:#0d7a4a">' . (int) $c . '</b></span>';
+        $cP = (int) ($d['topicsPrev'][$t] ?? 0);
+        if ($c === 0 && $cP === 0) continue;
+        $topicCount++;
+        if ($cP > 0) {
+            $delta = (int) round(($c - $cP) / $cP * 100);
+            $deltaTxt = ($delta >= 0 ? '▲ %' : '▼ %') . abs($delta);
+            $deltaColor = $delta >= 0 ? '#0d7a4a' : '#b0301a';
+        } elseif ($c > 0) {
+            $deltaTxt = 'yeni';
+            $deltaColor = '#0d7a4a';
+        } else {
+            $deltaTxt = '—';
+            $deltaColor = '#64716d';
+        }
+        $topicRows .= '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de">' . htmlspecialchars($t) . '</td>'
+            . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center">' . (int) $c . '</td>'
+            . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center">' . (int) $cP . '</td>'
+            . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center;color:' . $deltaColor . ';font-weight:700">' . $deltaTxt . '</td></tr>';
     }
+    $topicsHtml = $topicCount > 0
+        ? '<h3 style="margin:18px 0 4px">Konu dağılımı (haftalık karşılaştırma)</h3><table style="border-collapse:collapse;width:100%;max-width:560px"><tr><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Konu</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d;text-align:center">Bu hafta</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d;text-align:center">Geçen hafta</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d;text-align:center">Değişim</th></tr>' . $topicRows . '</table>'
+        : '';
     return '<div style="font-family:Arial,sans-serif;color:#10211f">'
         . '<h2 style="margin:0 0 6px">Haftalık panel sohbet özeti</h2>'
-        . '<p style="color:#64716d;margin:0 0 16px">' . $d['dateLabel'] . ' · ' . $d['total'] . ' mesaj · ' . $d['activeDays'] . ' aktif gün</p>'
+        . '<p style="color:#64716d;margin:0 0 16px">' . $d['dateLabel'] . ' · ' . $d['total'] . ' mesaj · ' . $d['activeDays'] . ' aktif gün · geçen hafta: ' . $d['totalPrev'] . ' mesaj <b style="color:' . $d['totalDeltaColor'] . '">(' . $d['totalDeltaTxt'] . ')</b></p>'
         . ($qRows !== '' ? '<table style="border-collapse:collapse;width:100%;max-width:560px"><tr><th style="text-align:left;padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">En çok sorulanlar</th><th style="padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Sayı</th></tr>' . $qRows . '</table>' : '')
-        . ($topicChips !== '' ? '<h3 style="margin:18px 0 4px">Konu dağılımı</h3><div>' . $topicChips . '</div>' : '')
+        . $topicsHtml
         . '<p style="margin-top:18px"><a href="' . htmlspecialchars($panelLink) . '" style="color:#0d7a4a">Aylık rapor sayfası →</a></p>'
         . '</div>';
 }

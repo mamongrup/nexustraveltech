@@ -143,8 +143,9 @@ HAFTALIK SOHBET ÖZETİ (E-POSTA)
   ve yanıtlanamayan oranı. Haftada bir kez idempotent (ISO hafta anahtarı).
 - Panel katılımı: tedarikçi/acente Sohbet raporu sayfalarındaki "Haftalık sohbet özetimi e-postama gönder"
   onay kutusu (platform ayarı panel_weekly_digest) ile kendi hesapları için haftalık panel asistanı özeti
-  alabilirler: mesaj sayısı, aktif gün, en çok sorulan 5 soru ve konu dağılımı; alıcı, kayıt anındaki
-  kullanıcının e-postasıdır ve yalnızca kendi verisini görür.
+  alabilirler: mesaj sayısı, aktif gün, en çok sorulan 5 soru ve konu dağılımı; mesaj sayısı ve her konu
+  için geçen haftayla karşılaştırma (▲/▼ % veya 'yeni') eklenir. Alıcı, kayıt anındaki kullanıcının
+  e-postasıdır ve yalnızca kendi verisini görür.
 
 AYLIK SOHBET RAPORU (E-POSTA)
 - Zamanlayıcı görevi nexus-monthly-report (varsayılan: her ayın 1'i 07:00) bir önceki ayın raporunu
