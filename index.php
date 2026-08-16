@@ -85,11 +85,19 @@
 
       <section id="erken-erisim" class="signup shell">
         <div><div class="eyebrow"><i></i> <span data-i18n="pilot_eyebrow">Pilot program</span></div><h2 data-i18n-html="pilot_title">İlk bağlananlardan<br />olun.</h2><p data-i18n="pilot_copy">Otel ve villa tedarikçileri ile acenteler için pilot grubumuzu oluşturuyoruz.</p></div>
+        <style>
+          .hp-field{position:absolute!important;left:-9999px!important;width:1px;height:1px;opacity:0;overflow:hidden}
+          .consent-line{display:flex!important;align-items:flex-start;gap:8px;font-size:12px;line-height:1.5;color:#64716d;margin-top:10px}
+          .consent-line input{width:auto;margin-top:2px}
+          .consent-line a{color:inherit;text-decoration:underline}
+        </style>
         <form class="signup-form" id="early-access-form" action="/nexustraveltech/api/lead.php" method="post">
           <input type="hidden" name="language" id="lead-language" value="tr" />
           <input type="hidden" name="currency" id="lead-currency" value="TRY" />
+          <input type="text" name="company_website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true" />
           <label><span data-i18n="form_email">İş e-postanız</span><input type="email" name="email" placeholder="ornek@sirketiniz.com" data-i18n-placeholder="form_placeholder" required /></label>
           <label><span data-i18n="form_role">Rolünüz</span><select name="role"><option data-i18n="role_supplier">Tedarikçi</option><option data-i18n="role_agency">Acente</option><option data-i18n="role_operator">Turizm işletmesi</option><option data-i18n="role_other">Diğer</option></select></label>
+          <label class="consent-line"><input type="checkbox" name="consent" value="1" required><span>Kişisel verilerimin <a href="/nexustraveltech/gizlilik">Gizlilik Politikası</a> kapsamında işlenmesini kabul ediyorum.</span></label>
           <button class="button button-lime" type="submit"><span data-i18n="form_submit">Erken erişim iste</span> <span>&#8594;</span></button>
           <div id="form-result" aria-live="polite"></div>
         </form>

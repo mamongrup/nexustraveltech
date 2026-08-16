@@ -14,3 +14,10 @@ storage/
 Thumbs.db
 .idea/
 .vscode/
+
+# Composer / PHPUnit artifacts
+/vendor/
+.phpunit.cache/
+
+# Local tool state
+.freebuff/

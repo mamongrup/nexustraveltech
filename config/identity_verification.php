@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/mailer.php';
 
 function record_identity_verification_failure(int $supplierId, string $reason): void
 {
@@ -14,6 +15,7 @@ function record_identity_verification_failure(int $supplierId, string $reason): 
             ->execute([$reason ?: 'Kimlik doğrulaması eşleşmedi.', $supplierId]);
         $pdo->prepare("INSERT INTO admin_alerts (alert_type, supplier_id, title, body) VALUES ('identity_verification_failed', ?, 'Kimlik doğrulaması başarısız', ?)")
             ->execute([$supplierId, $reason ?: 'Tedarikçi kimlik doğrulama isteği eşleşmedi.']);
+        queue_admin_alert_email('Kimlik doğrulaması başarısız', $reason ?: 'Tedarikçi kimlik doğrulama isteği eşleşmedi.');
         $pdo->commit();
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) $pdo->rollBack();

@@ -1,0 +1,155 @@
+openapi: 3.0.3
+info:
+  title: NEXUS TravelTech Acente API
+  description: |
+    NEXUS B2B seyahat bilgi ağı — acente API'si. Ürün/müsaitlik/fiyat sorgulama ve
+    rezervasyon işlemleri için programatik erişim sağlar. API anahtarı, acente
+    paneli → API anahtarları bölümünden oluşturulur ve `Authorization: Bearer <key>`
+    başlığıyla gönderilir.
+  version: "1.0.0"
+  contact:
+    name: NEXUS TravelTech
+    url: https://nexustraveltech.com
+servers:
+  - url: https://nexustraveltech.com
+    description: Üretim
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/products:
+    get:
+      operationId: listProducts
+      summary: Aktif ürünleri listeler
+      description: |
+        Satışa açık tüm otel/villa/yat ürünlerini döndürür. Ürün detayları
+        `product_details` içinde JSON olarak gelir (board türü, olanaklar vb.).
+      parameters:
+        - name: property_type
+          in: query
+          schema:
+            type: string
+            enum: [hotel, villa, yacht]
+          description: Ürün türüne göre filtrele (opsiyonel)
+        - name: city
+          in: query
+          schema:
+            type: string
+          description: Şehir adına göre filtrele (opsiyonel, büyük/küçük harf duyarsız)
+      responses:
+        "200":
+          description: Ürün listesi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Product"
+                  meta:
+                    type: object
+                    properties:
+                      count: { type: integer }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/availability:
+    get:
+      operationId: getAvailability
+      summary: "Müsaitlik ve fiyat sorgusu (yakında)"
+      description: |
+        Gece bazlı canlı müsaitlik + kural uygulanmış fiyat. Şu an geliştirme
+        aşamasında; web arayüzü üzerinden (acente → Canlı müsaitlik) kullanılabilir.
+      responses:
+        "501":
+          description: Henüz yayınlanmadı
+  /api/v1/bookings:
+    post:
+      operationId: createBooking
+      summary: "Rezervasyon talebi oluşturma (yakında)"
+      description: |
+        Müsaitlik uygunluğu doğrulandıktan sonra rezervasyon talebi oluşturur;
+        tedarikçi onayı `booking.created` webhook'u ile bildirilir.
+      responses:
+        "501":
+          description: Henüz yayınlanmadı
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Acente API anahtarı (panel → API anahtarları)
+  schemas:
+    Product:
+      type: object
+      properties:
+        id: { type: integer }
+        property_type: { type: string, enum: [hotel, villa, yacht] }
+        name: { type: string }
+        city: { type: string }
+        country_code: { type: string, maxLength: 2 }
+        product_details:
+          type: object
+          description: Board, olanaklar, komisyon oranı gibi JSON detaylar
+  responses:
+    Unauthorized:
+      description: Geçersiz veya eksik API anahtarı
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+webhooks:
+  booking.created:
+    post:
+      summary: Rezervasyon onaylandı
+      description: |
+        Acente talebi tedarikçi tarafından onaylandığında gönderilir.
+        İmza: `X-NEXUS-Signature: HMAC-SHA256(secret, ham gövde)`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agency_id: { type: integer }
+                booking_reference: { type: string }
+                booking_id: { type: integer }
+                property_id: { type: integer }
+                check_in: { type: string, format: date }
+                check_out: { type: string, format: date }
+                total_amount: { type: number }
+                currency: { type: string }
+  booking.cancelled:
+    post:
+      summary: Rezervasyon iptal edildi
+      description: Tedarikçi rezervasyonu iptal ettiğinde gönderilir.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agency_id: { type: integer }
+                booking_reference: { type: string }
+                booking_id: { type: integer }
+                property_id: { type: integer }
+                check_in: { type: string, format: date }
+                check_out: { type: string, format: date }
+                reason: { type: string }
+  booking.request.rejected:
+    post:
+      summary: Rezervasyon talebi reddedildi
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agency_id: { type: integer }
+                request_id: { type: integer }
+                property_id: { type: integer }
+                check_in: { type: string, format: date }
+                check_out: { type: string, format: date }
+                note: { type: string, nullable: true }

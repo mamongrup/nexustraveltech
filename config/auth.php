@@ -16,6 +16,7 @@ function admin_session(): void
         session_name('nexus_admin');
         session_start([
             'cookie_httponly' => true,
+            'cookie_secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
             'cookie_samesite' => 'Lax',
         ]);
     }

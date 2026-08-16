@@ -26,3 +26,8 @@ function db(): PDO
 
     return $pdo;
 }
+
+require_once __DIR__ . '/error_handler.php';
+if (!defined('NEXUS_NO_ERROR_HANDLER')) {
+    nexus_register_error_handler();
+}

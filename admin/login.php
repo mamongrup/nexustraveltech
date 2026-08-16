@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../config/auth.php';
+require __DIR__ . '/../config/database.php';
+require __DIR__ . '/../config/throttle.php';
+require __DIR__ . '/../config/audit.php';
 
 admin_session();
 
@@ -11,15 +14,26 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = (string) ($_POST['username'] ?? '');
     $password = (string) ($_POST['password'] ?? '');
+    $key = throttle_key('admin', $username);
 
-    $credentials = admin_credentials();
-    if (hash_equals($credentials['username'], $username) && hash_equals($credentials['password'], $password)) {
-        $_SESSION['admin_logged_in'] = true;
-        header('Location: /nexustraveltech/admin/');
-        exit;
+    $status = throttle_check($key);
+    if (!$status['allowed']) {
+        $error = 'Çok fazla hatalı deneme. ' . (int) ceil($status['retry_after'] / 60) . ' dakika sonra tekrar deneyin.';
+    } else {
+        $credentials = admin_credentials();
+        if (hash_equals($credentials['username'], $username) && hash_equals($credentials['password'], $password)) {
+            throttle_reset($key);
+            session_regenerate_id(true);
+            $_SESSION['admin_logged_in'] = true;
+            $_SESSION['admin_username'] = $username;
+            audit_log('admin.login', null, null, ['username' => $username]);
+            header('Location: /nexustraveltech/admin/');
+            exit;
+        }
+
+        throttle_hit($key);
+        $error = 'Kullanici adi veya sifre hatali.';
     }
-
-    $error = 'Kullanici adi veya sifre hatali.';
 }
 ?>
 <!doctype html>

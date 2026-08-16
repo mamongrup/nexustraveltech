@@ -1,2 +1,35 @@
 <?php
-declare(strict_types=1);require_once __DIR__.'/../config/agency_auth.php';$u=require_agency();$new='';if($_SERVER['REQUEST_METHOD']==='POST'){if(($_POST['action']??'')==='new'){$token='nxs_'.bin2hex(random_bytes(24));db()->prepare('INSERT INTO agency_api_keys(agency_id,key_prefix,key_hash,label,scopes) VALUES(?,?,?,?,?::jsonb)')->execute([$u['agency_id'],substr($token,0,12),hash('sha256',$token),trim((string)$_POST['label'])?:'Varsayılan',['properties.read','availability.read','booking.create']]);$new=$token;}if(($_POST['action']??'')==='revoke')db()->prepare("UPDATE agency_api_keys SET status='revoked' WHERE id=? AND agency_id=?")->execute([(int)$_POST['id'],$u['agency_id']]);}$q=db()->prepare('SELECT * FROM agency_api_keys WHERE agency_id=? ORDER BY id DESC');$q->execute([$u['agency_id']]);$keys=$q->fetchAll();?><!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>API/XML</title><style>body{font-family:Arial;background:#f7f7f2;margin:0}.w{width:min(900px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}input,button{padding:9px}</style></head><body><main class="w"><a href="/nexustraveltech/acente/">← Panel</a><h1>API / XML erişimi</h1><?php if($new):?><section class="c"><b>Bu anahtarı şimdi kaydedin; tekrar gösterilmez:</b><code><?=htmlspecialchars($new)?></code></section><?php endif;?><form method="post" class="c"><input type="hidden" name="action" value="new"><input name="label" placeholder="Anahtar adı"><button>Yeni API anahtarı oluştur</button></form><?php foreach($keys as $k):?><section class="c"><b><?=htmlspecialchars($k['label'])?></b> · <?=htmlspecialchars($k['key_prefix'])?>… · <?=htmlspecialchars($k['status'])?><?php if($k['status']==='active'):?><form method="post"><input type="hidden" name="action" value="revoke"><input type="hidden" name="id" value="<?=$k['id']?>"><button>İptal et</button></form><?php endif;?></section><?php endforeach;?></main></body></html>
+declare(strict_types=1);
+require_once __DIR__.'/../config/agency_auth.php';
+$u=require_agency();
+if(empty($_SESSION['agency_csrf']))$_SESSION['agency_csrf']=bin2hex(random_bytes(32));
+$new='';$error='';
+if($_SERVER['REQUEST_METHOD']==='POST'){
+  if(!hash_equals($_SESSION['agency_csrf'],(string)($_POST['csrf']??''))){$error='Güvenlik doğrulaması geçersiz.';}
+  else{
+    if(($_POST['action']??'')==='new'){
+      $token='nxs_'.bin2hex(random_bytes(24));
+      db()->prepare('INSERT INTO agency_api_keys(agency_id,key_prefix,key_hash,label,scopes) VALUES(?,?,?,?,?::jsonb)')
+        ->execute([$u['agency_id'],substr($token,0,12),hash('sha256',$token),trim((string)$_POST['label'])?:'Varsayılan','["properties.read","availability.read","booking.create"]']);
+      $new=$token;
+    }
+    if(($_POST['action']??'')==='revoke'){
+      db()->prepare("UPDATE agency_api_keys SET status='revoked' WHERE id=? AND agency_id=?")->execute([(int)$_POST['id'],$u['agency_id']]);
+    }
+  }
+}
+$q=db()->prepare('SELECT * FROM agency_api_keys WHERE agency_id=? ORDER BY id DESC');
+$q->execute([$u['agency_id']]);
+$keys=$q->fetchAll();
+?>
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>API/XML</title>
+<style>body{font-family:Arial;background:#f7f7f2;margin:0}.w{width:min(900px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}input,button{padding:9px}.er{background:#ffe2de;padding:9px}</style>
+</head><body><main class="w"><a href="/nexustraveltech/acente/">← Panel</a><h1>API / XML erişimi</h1>
+<?php if($error):?><p class="er"><?=htmlspecialchars($error)?></p><?php endif;?>
+<?php if($new):?><section class="c"><b>Bu anahtarı şimdi kaydedin; tekrar gösterilmez:</b><code><?=htmlspecialchars($new)?></code></section><?php endif;?>
+<form method="post" class="c"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input type="hidden" name="action" value="new"><input name="label" placeholder="Anahtar adı"><button>Yeni API anahtarı oluştur</button></form>
+<?php foreach($keys as $k):?><section class="c"><b><?=htmlspecialchars($k['label'])?></b> · <?=htmlspecialchars($k['key_prefix'])?>… · <?=htmlspecialchars($k['status'])?>
+<?php if($k['status']==='active'):?><form method="post"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input type="hidden" name="action" value="revoke"><input type="hidden" name="id" value="<?=$k['id']?>"><button>İptal et</button></form><?php endif;?>
+</section><?php endforeach;?>
+</main></body></html>

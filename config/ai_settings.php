@@ -63,6 +63,46 @@ function ai_provider_settings(string $provider, string $defaultModel): array
 function deepseek_settings(): array { return ai_provider_settings('deepseek', 'deepseek-chat'); }
 function gemini_settings(): array { return ai_provider_settings('gemini', 'gemini-3.6-flash'); }
 
+/**
+ * Metni hedef dile çevirir (DeepSeek). Yalnızca çeviriyi döndürür; eklenti metni yok.
+ */
+function ai_translate(string $text, string $targetLanguage = 'Türkçe'): string
+{
+    $settings = deepseek_settings();
+    if ($settings['api_key'] === '') {
+        throw new RuntimeException('AI çevirisi için yönetici panelinden DeepSeek API anahtarı ekleyin.');
+    }
+    $body = [
+        'model' => $settings['model'],
+        'messages' => [
+            ['role' => 'system', 'content' => 'Sen profesyonel bir turizm çevirmenisin. Verilen metni yalnızca ' . $targetLanguage . ' diline çevir; başka hiçbir açıklama yazma, yalnızca çeviriyi döndür.'],
+            ['role' => 'user', 'content' => $text],
+        ],
+        'temperature' => 0.2,
+        'stream' => false,
+    ];
+    $ch = curl_init('https://api.deepseek.com/chat/completions');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $settings['api_key']],
+        CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 45,
+    ]);
+    $raw = curl_exec($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status < 200 || $status >= 300) {
+        throw new RuntimeException('AI çevirisi alınamadı (HTTP ' . $status . ').');
+    }
+    $data = json_decode((string) $raw, true);
+    $translated = trim((string) ($data['choices'][0]['message']['content'] ?? ''));
+    if ($translated === '') {
+        throw new RuntimeException('AI çeviri yanıtı boş.');
+    }
+    return $translated;
+}
+
 function netgsm_settings(): array
 {
     $stored = ai_provider_settings('netgsm', 'https://api.netgsm.com.tr/sms/send/get/');
