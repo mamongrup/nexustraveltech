@@ -37,4 +37,4 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   <button>Şifreyi güncelle</button>
   <p class="muted">Şifrenizi kimseyle paylaşmayın; yöneticiler dahil hiçbir NEXUS çalışanı şifrenizi sormaz.</p>
 </form>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/acente/ai-chat','agency_csrf'); ?></body></html>

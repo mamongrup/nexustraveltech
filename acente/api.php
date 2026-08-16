@@ -32,4 +32,4 @@ $keys=$q->fetchAll();
 <?php foreach($keys as $k):?><section class="c"><b><?=htmlspecialchars($k['label'])?></b> · <?=htmlspecialchars($k['key_prefix'])?>… · <?=htmlspecialchars($k['status'])?>
 <?php if($k['status']==='active'):?><form method="post"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input type="hidden" name="action" value="revoke"><input type="hidden" name="id" value="<?=$k['id']?>"><button>İptal et</button></form><?php endif;?>
 </section><?php endforeach;?>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/acente/ai-chat','agency_csrf'); ?></body></html>

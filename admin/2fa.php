@@ -123,5 +123,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </section>
 <?php endif; ?>
 </main>
-</body>
+<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
 </html>

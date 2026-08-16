@@ -93,5 +93,5 @@ $templates = db()->query('SELECT * FROM email_templates ORDER BY code')->fetchAl
 </section>
 <?php endforeach; ?>
 </main>
-</body>
+<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
 </html>

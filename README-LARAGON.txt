@@ -42,6 +42,19 @@ YEREL GELİŞTİRME
    - Fiyat & kontenjan → İptal politikası: her fiyat planına ücretsiz iptal günü + ücret % girin (boşsa iade "tanımsız").
    - Rezervasyonlar: depozito tanımla → "Alındı olarak işaretle" (folyoya işlenir, acenteye bildirim).
    - Otel ön büro (günlük): check-in → çıkış yapacaklar → Check-out (folyo bakiyesi sıfırlanınca, sadakat puanı otomatik).
+   - AI asistan: Admin → DeepSeek metin AI sayfasından API anahtarı girin; üç panelde de sağ alttaki
+     "NEXUS AI" butonuyla açılan chatbox soruları yanıtlar, sayfalara yönlendirir ve güvenli işlemleri yapar.
+
+YAPAY ZEKA ASİSTANI
+- Motor: config/ai_assistant.php (DeepSeek tool-calling). Rol başına (admin/tedarikçi/acente) yalnızca
+  güvenli araçlar tanımlıdır: okuma sorguları + küçük geri alınabilir eylemler (örn. zamanlayıcıyı şimdi
+  çalıştır, ödeme linki üret). Silme/iptal gibi yıkıcı işlemler yapılmaz; kullanıcı ilgili sayfaya yönlendirilir.
+- Arayüz: config/ai_widget.php → yüzen chatbox; endpoint'ler admin/ai-chat.php, tedarikci/ai-chat.php,
+  acente/ai-chat.php. Sayfalar </body> öncesi ai_widget() çağrısıyla widget'ı gösterir (login/kayıt/çıkış
+  sayfaları hariç). CSRF korumalı, oturum bazlı.
+- Kurulum: yalnızca admin → DeepSeek metin AI sayfasından API anahtarı + model. Veritabanı migration'ı gerekmez.
+- Örnek sorular: "Bugün kaç misafir geliyor?", "REF-1234 durumu nedir?", "Son hataları göster",
+  "Antalya'da 15-18 Ağustos 2 yetişkin müsaitlik var mı?", "e-posta görevini şimdi çalıştır".
 
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):

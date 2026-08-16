@@ -22,4 +22,4 @@ $items=recent_notifications('agency',(int)$u['id'],50);
 <div class="c"><div><b><?=htmlspecialchars($n['message'])?></b><?php if(!$n['is_read']):?> <span class="muted">· yeni</span><?php endif;?><p class="muted"><?=htmlspecialchars($n['type'])?> · <?=htmlspecialchars((string)$n['created_at'])?></p></div><?php if($n['link']):?><a href="<?=htmlspecialchars($n['link'])?>">Görüntüle →</a><?php endif;?></div>
 <?php endforeach;?>
 <?php if($items):?><form method="post"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><button>Tümünü okundu işaretle</button></form><?php endif;?>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/acente/ai-chat','agency_csrf'); ?></body></html>

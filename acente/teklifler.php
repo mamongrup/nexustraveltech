@@ -25,4 +25,4 @@ $rows=$q->fetchAll();
 <?php if($e):?><p class="er"><?=htmlspecialchars($e)?></p><?php endif;?>
 <form method="post" class="c"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input name="quote_number" placeholder="Teklif no" required><input name="valid_until" type="date"><input name="total_amount" type="number" step="0.01" placeholder="Toplam"><select name="currency"><option>EUR</option><option>TRY</option><option>USD</option><option>GBP</option></select><button>Taslak teklif oluştur</button></form>
 <?php foreach($rows as $r):?><article class="c"><b><?=htmlspecialchars($r['quote_number'])?></b> · <?=number_format((float)$r['total_amount'],2)?> <?=htmlspecialchars($r['currency'])?> · <?=htmlspecialchars($r['status'])?></article><?php endforeach;?>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/acente/ai-chat','agency_csrf'); ?></body></html>

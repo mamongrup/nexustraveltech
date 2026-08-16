@@ -61,4 +61,4 @@ $recent = db()->query('SELECT * FROM fx_rates ORDER BY rate_date DESC,base_curre
 <table><tr><th>Çift</th><th>Kur</th><th>Kaynak</th></tr><?php foreach ($latest as $l): ?><tr><td><?=htmlspecialchars($l['base_currency'])?> → <?=htmlspecialchars($l['quote_currency'])?></td><td><?=htmlspecialchars(rtrim(rtrim(number_format((float)$l['rate'], 6, '.', ''), '0'), '.'))?></td><td><?=htmlspecialchars($l['source'])?></td></tr><?php endforeach; ?></table></section>
 <section class="card"><h2 style="margin:0;font-size:18px">Son kayıtlar</h2>
 <table><tr><th>Tarih</th><th>Çift</th><th>Kur</th><th>Kaynak</th></tr><?php foreach ($recent as $l): ?><tr><td><?=htmlspecialchars((string)$l['rate_date'])?></td><td><?=htmlspecialchars($l['base_currency'])?> → <?=htmlspecialchars($l['quote_currency'])?></td><td><?=htmlspecialchars((string)$l['rate'])?></td><td><?=htmlspecialchars($l['source'])?></td></tr><?php endforeach; ?></table></section>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>

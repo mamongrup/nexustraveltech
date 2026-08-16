@@ -24,4 +24,4 @@ $rows=$q->fetchAll();
 <?php if($e):?><p class="er"><?=htmlspecialchars($e)?></p><?php endif;?>
 <form method="post" class="c"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input name="full_name" placeholder="Ad soyad / ünvan" required><input name="email" type="email" placeholder="E-posta"><input name="phone" placeholder="Telefon"><textarea name="notes" placeholder="Notlar"></textarea><button>Müşteri ekle</button></form>
 <?php foreach($rows as $r):?><article class="c"><b><?=htmlspecialchars($r['full_name'])?></b><p><?=htmlspecialchars($r['email']?:'')?> <?=htmlspecialchars($r['phone']?:'')?></p><small><?=htmlspecialchars($r['notes']?:'')?></small></article><?php endforeach;?>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/acente/ai-chat','agency_csrf'); ?></body></html>

@@ -72,4 +72,4 @@ $subscriptions=$q->fetchAll();
 <?php foreach(array_slice($hist,0,15) as $d):?><tr><td style="border-bottom:1px solid #eee"><?=htmlspecialchars((string)$d['created_at'])?></td><td><?=htmlspecialchars($d['event'])?></td><td><?=htmlspecialchars($d['status'])?><?= $d['error_message']?'<br><span style="color:#8e2410">'.htmlspecialchars((string)$d['error_message']).'</span>':''?></td><td><?=$d['http_status']!==null?(int)$d['http_status']:'—'?></td><td><?=(int)$d['attempts']?></td><td><?php if($d['status']!=='sent'):?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input type="hidden" name="action" value="resend"><input type="hidden" name="id" value="<?=$d['id']?>"><button style="margin:0;padding:4px 8px">Yeniden gönder</button></form><?php endif;?></td></tr><?php endforeach;?></table></details><?php endif;?>
 </section>
 <?php endforeach;?>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/acente/ai-chat','agency_csrf'); ?></body></html>

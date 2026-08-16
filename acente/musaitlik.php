@@ -141,4 +141,4 @@ $adjusted=apply_rate_rules((int)$room['property_id'],$ratePlanId,$base,agency_pr
 <?php elseif($checkIn!==''):?><p class="c muted">Seçilen kriterlerde müsaitlik bulunamadı.</p><?php endif;?>
 <section class="c"><h2>Taleplerim</h2><?php if(!$requests):?><p class="muted">Henüz rezervasyon talebiniz yok.</p><?php endif;?>
 <?php foreach($requests as $r):?><p><b><?=htmlspecialchars($r['property_name'])?></b> · <?=htmlspecialchars($r['room_name']?:'—')?> · <?=htmlspecialchars($r['check_in'])?> / <?=htmlspecialchars($r['check_out'])?> · <?=number_format((float)$r['total_amount'],2)?> <?=htmlspecialchars($r['currency'])?> · <strong><?=htmlspecialchars($r['status'])?></strong><?= $r['response_note']?' · <span class="muted">'.htmlspecialchars($r['response_note']).'</span>':''?></p><?php endforeach;?>
-</section></main></body></html>
+</section></main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/acente/ai-chat','agency_csrf'); ?></body></html>

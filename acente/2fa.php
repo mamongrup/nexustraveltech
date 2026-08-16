@@ -62,4 +62,4 @@ $enabled = $loggedIn && !empty($loggedIn['totp_secret']) && empty($_SESSION['age
 <?php endif; ?>
 <p><a href="/nexustraveltech/acente/" style="color:#0d7a4a">← Panele dön</a></p></div>
 <?php endif; ?>
-</body></html>
+<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/acente/ai-chat','agency_csrf'); ?></body></html>

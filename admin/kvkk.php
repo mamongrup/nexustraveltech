@@ -106,5 +106,5 @@ if (empty($_SESSION['admin_csrf'])) $_SESSION['admin_csrf'] = bin2hex(random_byt
 </section>
 <?php endif; ?>
 </main>
-</body>
+<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
 </html>

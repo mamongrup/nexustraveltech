@@ -71,5 +71,5 @@ $identityAlerts = (int) db()->query("SELECT COUNT(*) FROM admin_alerts WHERE is_
       </table>
     <?php endif; ?>
   </main>
-</body>
+<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
 </html>

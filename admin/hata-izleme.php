@@ -60,4 +60,4 @@ $totalNew = (int) db()->query("SELECT COUNT(*) FROM error_logs WHERE status='new
 <?php endforeach; ?>
 </table>
 <form method="post" style="margin-top:16px"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="purge"><button style="background:#ffe3dd;border:0;padding:9px 13px;font-weight:700;cursor:pointer;color:#8e2410">30 günden eski incelenmiş kayıtları temizle</button></form>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>

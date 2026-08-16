@@ -76,5 +76,5 @@ $hasKey = !empty($current['encrypted_api_key']);
       <?php if ($hasKey): ?><form method="post" class="remove" onsubmit="return confirm('API anahtarı silinsin mi? AI çeviri işlemleri çalışmaz.');"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="remove"><button class="danger">API anahtarını sil</button></form><?php endif; ?>
     </section>
   </main>
-</body>
+<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
 </html>

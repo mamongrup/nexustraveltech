@@ -27,4 +27,4 @@ $actions = db()->query('SELECT action,COUNT(*) c FROM admin_audit_logs GROUP BY 
 <tr><td><?=htmlspecialchars((string)$r['created_at'])?></td><td><?=htmlspecialchars($r['admin_username'])?></td><td><code><?=htmlspecialchars($r['action'])?></code></td><td><?=htmlspecialchars((string)($r['entity_type'] ?? ''))?><?= $r['entity_id'] ? ' #' . (int)$r['entity_id'] : '' ?></td><td><?php if ($details): ?><pre><?=htmlspecialchars(json_encode($details, JSON_UNESCAPED_UNICODE))?></pre><?php endif; ?></td><td><?=htmlspecialchars((string)$r['ip'])?></td></tr>
 <?php endforeach; ?>
 </table>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>

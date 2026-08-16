@@ -124,4 +124,4 @@ $quoteTotal=$adjusted['price']*$nights;
 </section>
 <?php elseif($checkIn!==''&&$checkOut!==''):?><p class="c muted">Çözümlenen kriterlerde müsaitlik bulunamadı.</p><?php endif;?>
 <?php endif;?>
-</main></body></html>
+</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/acente/ai-chat','agency_csrf'); ?></body></html>

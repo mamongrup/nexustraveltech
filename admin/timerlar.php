@@ -105,5 +105,5 @@ $tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' .
 <p class="muted">Zamanlama biçimi: <code>dakika saat gün ay hafta</code> — ör. <code>*/5 * * * *</code> (5 dakikada bir), <code>0 8 * * *</code> (her gün 08:00), <code>30 3 * * *</code> (her gün 03:30).</p>
 </section>
 </main>
-</body>
+<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
 </html>
