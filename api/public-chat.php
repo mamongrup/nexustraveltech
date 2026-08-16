@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/ai_settings.php';
+require_once __DIR__ . '/../config/platform_settings.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -43,6 +44,34 @@ try {
     }
 
     $pdo = db();
+
+    // Yasak kelime listesi: eşleşen girdiler AI'ya gitmez (admin → Kontrol merkezi'nde düzenlenir).
+    $blocklist = platform_setting('chat_blocklist', []);
+    if (is_array($blocklist) && $blocklist !== []) {
+        $blocked = false;
+        $lower = mb_strtolower($message);
+        foreach ($blocklist as $entry) {
+            $entry = trim((string) $entry);
+            if ($entry === '') continue;
+            if (strlen($entry) > 2 && str_starts_with($entry, '/') && str_ends_with($entry, '/')) {
+                if (@preg_match('~' . substr($entry, 1, -1) . '~iu', $message) === 1) {
+                    $blocked = true;
+                    break;
+                }
+            } elseif (mb_strpos($lower, mb_strtolower($entry)) !== false) {
+                $blocked = true;
+                break;
+            }
+        }
+        if ($blocked) {
+            try {
+                nexus_log_error('warning', 'AI sohbet engellenen kelime', ['ip' => $ip]);
+            } catch (Throwable $e) {
+                // Kayıt başarısızlığı yanıtı engellemesin.
+            }
+            ai_public_reply_json(200, ['reply' => 'Bu konuda size yardımcı olamıyorum. Başka bir sorunuz varsa memnuniyetle yanıtlarım.']);
+        }
+    }
 
     // IP engeli: engellenmiş IP'ler isteği hiç işlemez (bayraklı IP'ler kayıtla izlenir).
     $blk = $pdo->prepare('SELECT action FROM blocked_ips WHERE ip=?::inet LIMIT 1');

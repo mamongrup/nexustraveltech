@@ -76,6 +76,9 @@ KAMUYA AÇIK (ÖNYÜZ) AI ASİSTAN
 - Kalitesiz girdi filtresi: 5 karakterden kısa veya tek kelimelik sorular AI'ya
   gitmez (nazikçe daha açık yazmaya yönlendirilir); admin sayfasında varsayılan
   gizlidir ("Kalitesiz girdileri göster" ile açılır) ve günlük özete dahil edilmez.
+- Yasak kelime listesi: admin → Kontrol merkezi'nde düzenlenir (her satıra bir tane,
+  /regex/ biçimi de desteklenir); eşleşen sorular AI'ya gitmez ve isabetler suiistimal
+  taramasına sinyal verir (24 saatte >= 3 isabet → otomatik bayrak).
 
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):

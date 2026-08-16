@@ -20,6 +20,7 @@ require_once __DIR__ . '/../config/platform_settings.php';
 const ABUSE_MSG_THRESHOLD = 40; // 24 saatte toplam soru
 const ABUSE_DENY_THRESHOLD = 5; // 24 saatte hız sınırı reddi
 const ABUSE_REPEAT_THRESHOLD = 10; // 24 saatte aynı sorunun tekrar sayısı
+const ABUSE_BLOCKLIST_THRESHOLD = 3; // 24 saatte yasak kelime isabeti
 
 $since = date('Y-m-d H:i:s', time() - 86400);
 $pdo = db();
@@ -30,6 +31,14 @@ $denyQ = $pdo->prepare("SELECT ip, COUNT(*) c FROM error_logs WHERE level='warni
 $denyQ->execute([$since]);
 foreach ($denyQ->fetchAll() as $r) {
     $denials[(string) $r['ip']] = (int) $r['c'];
+}
+
+// 1b) Yasak kelime isabetleri (endpoint reddederken error_logs'a yazar).
+$blockHits = [];
+$blkQ = $pdo->prepare("SELECT ip, COUNT(*) c FROM error_logs WHERE level='warning' AND message LIKE 'AI sohbet engellenen kelime%' AND created_at>=? GROUP BY ip");
+$blkQ->execute([$since]);
+foreach ($blkQ->fetchAll() as $r) {
+    $blockHits[(string) $r['ip']] = (int) $r['c'];
 }
 
 // 2) Soru hacimleri.
@@ -54,18 +63,24 @@ $suspects = [];
 foreach ($volumes as $ip => $c) {
     $d = (int) ($denials[$ip] ?? 0);
     $rp = (int) ($repeats[$ip] ?? 0);
-    if ($c >= ABUSE_MSG_THRESHOLD || $d >= ABUSE_DENY_THRESHOLD || $rp >= ABUSE_REPEAT_THRESHOLD) {
-        $suspects[$ip] = ['msg' => $c, 'deny' => $d, 'repeat' => $rp];
+    $bl = (int) ($blockHits[$ip] ?? 0);
+    if ($c >= ABUSE_MSG_THRESHOLD || $d >= ABUSE_DENY_THRESHOLD || $rp >= ABUSE_REPEAT_THRESHOLD || $bl >= ABUSE_BLOCKLIST_THRESHOLD) {
+        $suspects[$ip] = ['msg' => $c, 'deny' => $d, 'repeat' => $rp, 'blk' => $bl];
     }
 }
 foreach ($denials as $ip => $d) {
     if (!isset($suspects[$ip]) && $d >= ABUSE_DENY_THRESHOLD) {
-        $suspects[$ip] = ['msg' => (int) ($volumes[$ip] ?? 0), 'deny' => $d, 'repeat' => (int) ($repeats[$ip] ?? 0)];
+        $suspects[$ip] = ['msg' => (int) ($volumes[$ip] ?? 0), 'deny' => $d, 'repeat' => (int) ($repeats[$ip] ?? 0), 'blk' => (int) ($blockHits[$ip] ?? 0)];
     }
 }
 foreach ($repeats as $ip => $rp) {
     if (!isset($suspects[$ip]) && $rp >= ABUSE_REPEAT_THRESHOLD) {
-        $suspects[$ip] = ['msg' => (int) ($volumes[$ip] ?? 0), 'deny' => (int) ($denials[$ip] ?? 0), 'repeat' => $rp];
+        $suspects[$ip] = ['msg' => (int) ($volumes[$ip] ?? 0), 'deny' => (int) ($denials[$ip] ?? 0), 'repeat' => $rp, 'blk' => (int) ($blockHits[$ip] ?? 0)];
+    }
+}
+foreach ($blockHits as $ip => $bl) {
+    if (!isset($suspects[$ip]) && $bl >= ABUSE_BLOCKLIST_THRESHOLD) {
+        $suspects[$ip] = ['msg' => (int) ($volumes[$ip] ?? 0), 'deny' => (int) ($denials[$ip] ?? 0), 'repeat' => (int) ($repeats[$ip] ?? 0), 'blk' => $bl];
     }
 }
 
@@ -91,6 +106,7 @@ $reasonFor = function (array $info): string {
     if ($info['msg'] > 0) $parts[] = $info['msg'] . ' soru';
     if ($info['repeat'] > 0) $parts[] = $info['repeat'] . ' kez aynı soru';
     if ($info['deny'] > 0) $parts[] = $info['deny'] . ' hız sınırı reddi';
+    if (($info['blk'] ?? 0) > 0) $parts[] = $info['blk'] . ' kez yasak kelime';
     return 'Otomatik: 24s\'te ' . implode(', ', $parts);
 };
 
@@ -103,7 +119,7 @@ foreach ($suspects as $ip => $info) {
             $flaggedAt = strtotime((string) ($existing['created_at'] ?? ''));
             if ($flaggedAt !== false && ($now - $flaggedAt) <= $window) {
                 // 7 gün içinde tekrar → tam engelle.
-                $escReason = 'Otomatik yükseltme: 7 gün içinde tekrar kötü davranış (' . implode(', ', array_filter([$info['msg'] > 0 ? $info['msg'] . ' soru' : null, $info['repeat'] > 0 ? $info['repeat'] . ' kez aynı soru' : null, $info['deny'] > 0 ? $info['deny'] . ' hız sınırı reddi' : null])) . ')';
+                $escReason = 'Otomatik yükseltme: 7 gün içinde tekrar kötü davranış (' . implode(', ', array_filter([$info['msg'] > 0 ? $info['msg'] . ' soru' : null, $info['repeat'] > 0 ? $info['repeat'] . ' kez aynı soru' : null, $info['deny'] > 0 ? $info['deny'] . ' hız sınırı reddi' : null, ($info['blk'] ?? 0) > 0 ? $info['blk'] . ' kez yasak kelime' : null])) . ')';
                 $escalate->execute([$escReason, $ip]);
                 $escalated[] = ['ip' => $ip, 'msg' => $info['msg'], 'deny' => $info['deny']];
             } else {
