@@ -38,6 +38,14 @@ try {
 
     $pdo = db();
 
+    // IP engeli: engellenmiş IP'ler isteği hiç işlemez (bayraklı IP'ler kayıtla izlenir).
+    $blk = $pdo->prepare('SELECT action FROM blocked_ips WHERE ip=?::inet LIMIT 1');
+    $blk->execute([$ip]);
+    $blkRow = $blk->fetch();
+    if ($blkRow && (string) $blkRow['action'] === 'block') {
+        ai_public_reply_json(403, ['error' => 'Erişiminiz kısıtlanmıştır.']);
+    }
+
     // IP hız sınırı: 5 dakikada en fazla 10 soru.
     $cutoff = date('Y-m-d H:i:s', time() - 300);
     $q = $pdo->prepare('SELECT COUNT(*) FROM public_chat_messages WHERE ip=?::inet AND created_at>=?');

@@ -66,6 +66,8 @@ KAMUYA AÇIK (ÖNYÜZ) AI ASİSTAN
 - Günlük özet: zamanlayıcı görevi nexus-chat-digest (varsayılan 45 8 * * *) son 24 saatin en çok
   sorulan 5 sorusunu e-postayla gönderir (alıcı: admin → Kontrol merkezi'ndeki admin_alert_email;
   gönderim process-emails kuyruğu üzerinden, günde bir kez idempotent).
+- IP engelleme: admin → Ziyaretçi sohbet kayıtları sayfasından tek tıkla engelle/bayrakla/kaldır
+  (blocked_ips tablosu, migration 036); engellenen IP'ler endpoint'ten 403 alır, bayraklananlar izlenir.
 
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):
