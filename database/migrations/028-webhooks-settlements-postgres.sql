@@ -26,5 +26,9 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries(status,created_at);
 
--- Bir rezervasyon için tek mutabakat kaydı
+-- Bir rezervasyon için tek mutabakat kaydı.
+-- Önce olası mükerrer kayıtları temizle (en son kayıt kalır), sonra benzersiz indeksi kur;
+-- aksi halde mevcut verideki aynı booking_id'li satırlar indeks oluşumunu engeller.
+DELETE FROM supplier_settlements a USING supplier_settlements b
+WHERE a.booking_id IS NOT NULL AND a.id < b.id AND a.booking_id = b.booking_id;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_settlements_booking ON supplier_settlements(booking_id) WHERE booking_id IS NOT NULL;
