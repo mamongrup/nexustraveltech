@@ -32,6 +32,19 @@ YEREL GELİŞTİRME
    15 9 * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/send-notification-digest.php >/dev/null 2>&1
    30 3 * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/expire-group-options.php >/dev/null 2>&1
 
+   Tek komutla (root): bash scripts/install-crons.sh — tüm görevleri idempotent kurar.
+
+6. Doğrulama ve test:
+   /opt/plesk/php/8.5/bin/php scripts/verify-platform.php
+   /opt/plesk/php/8.5/bin/php scripts/test-booking-flow.php   (10 bölüm, tek transaction, veri bırakmaz)
+   /opt/plesk/php/8.5/bin/php scripts/audit-performance.php  (eksik indeks raporu)
+
+7. Deploy sonrası aktifleştirme kontrol listesi:
+   - Admin → İki adımlı doğrulama: QR ile 2FA etkinleştir (tedarikçi/acente menülerinde de var).
+   - Fiyat & kontenjan → İptal politikası: her fiyat planına ücretsiz iptal günü + ücret % girin (boşsa iade "tanımsız").
+   - Rezervasyonlar: depozito tanımla → "Alındı olarak işaretle" (folyoya işlenir, acenteye bildirim).
+   - Otel ön büro (günlük): check-in → çıkış yapacaklar → Check-out (folyo bakiyesi sıfırlanınca, sadakat puanı otomatik).
+
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):
    composer install --no-interaction --prefer-dist

@@ -15,6 +15,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/pricing.php';
 require_once __DIR__ . '/../config/settlements.php';
 require_once __DIR__ . '/../config/agency_bookings.php';
+require_once __DIR__ . '/../config/loyalty.php';
 
 $GLOBALS['failures'] = [];
 $GLOBALS['checks'] = 0;
@@ -151,6 +152,49 @@ try {
     $q = $pdo->prepare("SELECT COUNT(*) FROM webhook_deliveries WHERE subscription_id=? AND event='booking.request.rejected'");
     $q->execute([$webhookId]);
     check('Webhook kuyruğa eklendi (booking.request.rejected)', (int) $q->fetchColumn() === 1);
+
+    // --- 8) İptal politikası ----------------------------------------------------
+    echo "\n[8] İptal politikası (iade hesabı)\n";
+    $q = $pdo->prepare('UPDATE rate_plans SET free_cancel_before_days=7,cancel_fee_percent=20 WHERE id=?');
+    $q->execute([$ratePlanId]);
+    $q = $pdo->prepare('SELECT * FROM supplier_bookings WHERE id=?');
+    $q->execute([$booking['id']]);
+    $policy = booking_cancellation_policy($q->fetch(), $pdo);
+    check('Ücretsiz iptal penceresi içinde iade = tam tutar', $policy !== null && $policy['free'] === true && abs((float) $policy['refundable'] - 360.0) < 0.01, $policy !== null ? 'iade: ' . $policy['refundable'] : 'politika yok');
+    $q = $pdo->prepare('UPDATE supplier_bookings SET check_in=CURRENT_DATE+2,check_out=CURRENT_DATE+6 WHERE id=?');
+    $q->execute([$booking['id']]);
+    $q = $pdo->prepare('SELECT * FROM supplier_bookings WHERE id=?');
+    $q->execute([$booking['id']]);
+    $policy2 = booking_cancellation_policy($q->fetch(), $pdo);
+    check('Pencere dışında %20 ücret düşer (iade 288)', $policy2 !== null && $policy2['free'] === false && abs((float) $policy2['refundable'] - 288.0) < 0.01, $policy2 !== null ? 'iade: ' . $policy2['refundable'] : 'politika yok');
+
+    // --- 9) Depozito -------------------------------------------------------------
+    echo "\n[9] Depozito takibi\n";
+    $q = $pdo->prepare("INSERT INTO booking_folios(booking_id,currency,status) VALUES(?, 'EUR', 'open') RETURNING id");
+    $q->execute([$booking['id']]);
+    $folioId = (int) $q->fetchColumn();
+    $pdo->prepare("UPDATE supplier_bookings SET deposit_amount=100,deposit_status='due' WHERE id=?")->execute([$booking['id']]);
+    $q = $pdo->prepare('SELECT deposit_status FROM supplier_bookings WHERE id=?');
+    $q->execute([$booking['id']]);
+    check('Depozito tanımlı ve bekleniyor', $q->fetchColumn() === 'due');
+    $pdo->prepare("UPDATE supplier_bookings SET deposit_status='paid',deposit_paid_at=now() WHERE id=?")->execute([$booking['id']]);
+    $pdo->prepare("INSERT INTO folio_transactions(folio_id,transaction_type,department,description,amount) VALUES(?, 'payment', 'deposit', 'Depozito tahsilatı', ?)")->execute([$folioId, -100.0]);
+    $q = $pdo->prepare("SELECT -SUM(amount) FILTER (WHERE transaction_type='payment') FROM folio_transactions WHERE folio_id=?");
+    $q->execute([$folioId]);
+    check('Depozito tahsilatı folyoya işlendi (100)', abs((float) $q->fetchColumn() - 100.0) < 0.01);
+
+    // --- 10) Sadakat + check-out -------------------------------------------------
+    echo "\n[10] Sadakat puanı ve check-out\n";
+    $pdo->prepare("UPDATE supplier_bookings SET booking_status='checked_in',checked_in_at=now() WHERE id=?")->execute([$booking['id']]);
+    $award = award_loyalty_points((int) $booking['id']);
+    check('Check-out puanı kazandırıldı (4 gece = 40 puan)', $award['ok'] && abs((float) ($award['points'] ?? 0) - 40.0) < 0.01, $award['ok'] ? 'puan: ' . $award['points'] : ($award['message'] ?? ''));
+    $q = $pdo->prepare("SELECT la.points_balance FROM guest_loyalty_accounts la JOIN booking_guests bg ON bg.guest_id=la.guest_id WHERE bg.booking_id=?");
+    $q->execute([$booking['id']]);
+    check('Sadakat hesabı 40 puan taşıyor', abs((float) $q->fetchColumn() - 40.0) < 0.01);
+    $pdo->prepare("UPDATE supplier_bookings SET booking_status='checked_out',checked_out_at=now() WHERE id=?")->execute([$booking['id']]);
+    $q = $pdo->prepare("SELECT booking_status FROM supplier_bookings WHERE id=?");
+    $q->execute([$booking['id']]);
+    check('Check-out tamamlandı', $q->fetchColumn() === 'checked_out');
 
     // --- Temizlik: tüm test verisi geri alınır -------------------------------
     $pdo->rollBack();

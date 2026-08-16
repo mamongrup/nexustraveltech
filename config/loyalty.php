@@ -28,7 +28,8 @@ function award_loyalty_points(int $bookingId): array
     $nights = max(1, (int) ((strtotime((string) $b['check_out']) - strtotime((string) $b['check_in'])) / 86400));
     $points = $nights * LOYALTY_POINTS_PER_NIGHT;
 
-    $pdo->beginTransaction();
+    $ownsTx = !$pdo->inTransaction();
+    if ($ownsTx) $pdo->beginTransaction();
     try {
         $aq = $pdo->prepare('SELECT id FROM guest_loyalty_accounts WHERE guest_id=?');
         $aq->execute([$b['guest_id']]);
@@ -43,10 +44,10 @@ function award_loyalty_points(int $bookingId): array
         $pdo->prepare('UPDATE guest_loyalty_accounts SET points_balance=points_balance+?,lifetime_nights=lifetime_nights+?,lifetime_revenue=lifetime_revenue+? WHERE id=?')
             ->execute([$points, $nights, (float) $b['total_amount'], $accountId]);
         sync_loyalty_tier((int) $accountId, $pdo);
-        $pdo->commit();
+        if ($ownsTx) $pdo->commit();
         return ['ok' => true, 'points' => $points, 'nights' => $nights];
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($ownsTx && $pdo->inTransaction()) $pdo->rollBack();
         return ['ok' => false, 'message' => $e->getMessage()];
     }
 }
@@ -98,7 +99,8 @@ function redeem_loyalty_points(int $accountId, int $folioId, float $points): arr
 
     $credit = round($points * LOYALTY_POINT_VALUE_EUR, 2);
 
-    $pdo->beginTransaction();
+    $ownsTx = !$pdo->inTransaction();
+    if ($ownsTx) $pdo->beginTransaction();
     try {
         $pdo->prepare("INSERT INTO folio_transactions(folio_id,transaction_type,department,description,amount,transaction_at) VALUES(?, 'adjustment', 'loyalty', ?, ?, now())")
             ->execute([$folioId, 'Sadakat puanı ile indirim (' . number_format($points, 0) . ' puan)', -$credit]);
@@ -106,10 +108,10 @@ function redeem_loyalty_points(int $accountId, int $folioId, float $points): arr
             ->execute([$accountId, $row['booking_id'], 'redeem', -$points, 'Folyo indirimi olarak kullanıldı']);
         $pdo->prepare('UPDATE guest_loyalty_accounts SET points_balance=points_balance-? WHERE id=?')
             ->execute([$points, $accountId]);
-        $pdo->commit();
+        if ($ownsTx) $pdo->commit();
         return ['ok' => true, 'credit' => $credit, 'points' => $points];
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($ownsTx && $pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
 }
