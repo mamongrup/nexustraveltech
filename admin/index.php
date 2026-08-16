@@ -28,6 +28,35 @@ try {
 } catch (Throwable $e) {
     $aiKeyReady = false;
 }
+// Konu etiketleme: anahtar kelime tabanlı (Türkçe karakterler normalleştirilir).
+function chat_topic_normalize(string $s): string
+{
+    return strtr(mb_strtolower($s, 'UTF-8'), ['ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'i' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u']);
+}
+$topicsDef = [
+    'Tedarikçi' => ['tedarikci', 'otel', 'tesis', 'villa', 'yat', 'restoran', 'supply', 'pansiyon', 'tur operatörü', 'turoperator'],
+    'Acente' => ['acente', 'agency', 'komisyon', 'bayi'],
+    'API' => ['api', 'xml', 'entegrasyon', 'baglanti', 'webservice'],
+    'Rezervasyon' => ['rezervasyon', 'misafir', 'gezgin', 'kiralama', 'depozito', 'check-in', 'checkin', 'fatura', 'iade'],
+    'Fiyat' => ['fiyat', 'ucret', 'ne kadar', 'maliyet', 'odeme'],
+    'Kayıt/Giriş' => ['kayit', 'giris', 'login', 'uye', 'sifre'],
+    'İletişim' => ['iletisim', 'ulas', 'telefon', 'email', 'mail', 'destek'],
+];
+$topicsCount = array_fill_keys(array_keys($topicsDef), 0);
+foreach (db()->query('SELECT user_message FROM public_chat_messages WHERE created_at >= CURRENT_DATE - 29 LIMIT 10000')->fetchAll() as $tr) {
+    $m = trim((string) $tr['user_message']);
+    if (mb_strlen($m) < $chatMinLen || ($chatRequireSpace && !str_contains($m, ' '))) continue;
+    $nm = chat_topic_normalize($m);
+    foreach ($topicsDef as $topic => $kws) {
+        foreach ($kws as $kw) {
+            if (str_contains($nm, $kw)) { $topicsCount[$topic]++; break; }
+        }
+    }
+}
+arsort($topicsCount);
+$topTopics = array_slice($topicsCount, 0, 3, true);
+$topTopicsTotal = array_sum($topTopics);
+
 $chatToday = (int) db()->query('SELECT COUNT(*) FROM public_chat_messages WHERE created_at >= CURRENT_DATE')->fetchColumn();
 $chatWeek = [];
 for ($i = 6; $i >= 0; $i--) {
@@ -46,7 +75,7 @@ $chatWeekMax = max(1, max($chatWeek));
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>NEXUS Admin Panel</title>
   <style>
-    body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1160px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.pill{display:inline-block;background:#d7ff48;padding:10px 14px;font-weight:800}.logout{color:#10211f}table{width:100%;border-collapse:collapse;margin-top:28px;background:#fff}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:13px;font-size:14px}th{font-size:12px;text-transform:uppercase;color:#64716d}tr:hover td{background:#fbfcf8}.empty{padding:30px;background:#fff;margin-top:28px}.muted{color:#64716d}.ip-stats{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.ip-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;font-size:13px;font-weight:700;text-decoration:none;border-radius:6px}.ip-chip b{font-size:17px}.ip-block{background:#ffe2de;color:#8e2410}.ip-flag{background:#fdf0d8;color:#8a5a10}.ip-chip:hover{opacity:.85}.chat-card{background:#fff;border:1px solid #e1e5de;padding:14px 16px;margin:18px 0;display:flex;flex-wrap:wrap;gap:16px 28px;align-items:flex-start}.chat-card h3{margin:0 0 8px;font-size:14px;flex-basis:100%}.chat-card .item{font-size:12px;color:#64716d}.chat-card .item b{font-size:16px;display:block;color:#10211f;margin-top:2px}.chat-card .ok{color:#0d7a4a}.chat-card .warn{color:#a86026}.chat-card .edit{margin-left:auto;font-size:13px;font-weight:700;color:#0d7a4a;text-decoration:none;align-self:center}.chat-card .week{display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:5px}.chat-card .week i{flex:1;background:#e8a33d;border-radius:2px 2px 0 0;display:block;min-width:5px}
+    body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1160px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.pill{display:inline-block;background:#d7ff48;padding:10px 14px;font-weight:800}.logout{color:#10211f}table{width:100%;border-collapse:collapse;margin-top:28px;background:#fff}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:13px;font-size:14px}th{font-size:12px;text-transform:uppercase;color:#64716d}tr:hover td{background:#fbfcf8}.empty{padding:30px;background:#fff;margin-top:28px}.muted{color:#64716d}.ip-stats{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.ip-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;font-size:13px;font-weight:700;text-decoration:none;border-radius:6px}.ip-chip b{font-size:17px}.ip-block{background:#ffe2de;color:#8e2410}.ip-flag{background:#fdf0d8;color:#8a5a10}.ip-chip:hover{opacity:.85}.chat-card{background:#fff;border:1px solid #e1e5de;padding:14px 16px;margin:18px 0;display:flex;flex-wrap:wrap;gap:16px 28px;align-items:flex-start}.chat-card h3{margin:0 0 8px;font-size:14px;flex-basis:100%}.chat-card .item{font-size:12px;color:#64716d}.chat-card .item b{font-size:16px;display:block;color:#10211f;margin-top:2px}.chat-card .ok{color:#0d7a4a}.chat-card .warn{color:#a86026}.chat-card .edit{margin-left:auto;font-size:13px;font-weight:700;color:#0d7a4a;text-decoration:none;align-self:center}.chat-card .week{display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:5px}.chat-card .week i{flex:1;background:#e8a33d;border-radius:2px 2px 0 0;display:block;min-width:5px}.tchip{display:inline-block;background:#f2f4ef;border:1px solid #e1e5de;padding:3px 10px;border-radius:13px;font-size:12px;margin:4px 6px 0 0;color:#10211f}.tchip b{display:inline;font-size:12px;color:#0d7a4a}
   </style>
 </head>
 <body>
@@ -75,6 +104,7 @@ $chatWeekMax = max(1, max($chatWeek));
       <div class="item">Yasak kelime<b><?= count($chatBlocklist) ?> kayıt</b><?php if ($chatBlocklist): ?><span style="font-size:12px;color:#64716d;display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?=htmlspecialchars(implode(', ', array_slice($chatBlocklist, 0, 3)))?><?= count($chatBlocklist) > 3 ? '…' : '' ?></span><?php endif; ?></div>
       <div class="item">Bugünkü soru<b><?= (int)$chatToday ?></b></div>
       <div class="item" style="min-width:160px">Son 7 gün eğilimi<div class="week"><?php foreach ($chatWeek as $d => $c): ?><i title="<?=htmlspecialchars($d)?>: <?=$c?> soru" style="height:<?=max(2, (int) round($c / $chatWeekMax * 30))?>px"></i><?php endforeach; ?></div></div>
+      <div class="item" style="flex-basis:100%">Popüler konular (son 30 gün)<?php if ($topTopicsTotal > 0): ?><?php foreach ($topTopics as $topic => $c): if ($c === 0) continue; ?><span class="tchip"><?=htmlspecialchars($topic)?> <b><?=(int)$c?></b></span><?php endforeach; ?><?php else: ?><span class="muted" style="margin-left:8px">henüz veri yok</span><?php endif; ?></div>
       <div class="item">DeepSeek anahtarı<b class="<?= $aiKeyReady ? 'ok' : 'warn' ?>"><?= $aiKeyReady ? '✅ Ayarlı' : '⚠ Eksik' ?></b></div>
       <a class="edit" href="/nexustraveltech/admin/kontrol-merkezi">Düzenle →</a>
     </div>
