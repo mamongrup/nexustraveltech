@@ -12,6 +12,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/ai_settings.php';
 require_once __DIR__ . '/../config/platform_settings.php';
+require_once __DIR__ . '/../config/chat_topics.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -95,6 +96,36 @@ try {
             // Kayıt başarısızlığı yanıtı engellemesin.
         }
         ai_public_reply_json(429, ['error' => 'Çok fazla soru gönderdiniz. Lütfen birkaç dakika sonra tekrar deneyin.']);
+    }
+
+    // Konuya göre anında yanıt: soru bir konuyla eşleşiyorsa ve o konu için tanımlı
+    // karşılama metni/bağlantı varsa AI çağrısı yapılmaz (admin → Kontrol merkezi'nde düzenlenir).
+    $topicInstant = (bool) platform_setting('chat_topic_instant', true);
+    $topicResp = (array) platform_setting('chat_topic_responses', []);
+    if ($topicInstant && $topicResp !== []) {
+        foreach (chat_classify($message) as $t) {
+            $cfg = (array) ($topicResp[$t] ?? []);
+            $text = trim((string) ($cfg['text'] ?? ''));
+            $link = trim((string) ($cfg['link'] ?? ''));
+            if ($text === '' && $link === '') continue;
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = (string) ($_SERVER['HTTP_HOST'] ?? 'nexustraveltech.com');
+            $base = str_contains((string) ($_SERVER['REQUEST_URI'] ?? ''), '/nexustraveltech/') ? '/nexustraveltech' : '';
+            $abs = str_starts_with($link, '/') ? $scheme . '://' . $host . $base . $link : $link;
+            $reply = str_replace('{link}', $abs, $text);
+            if ($link !== '' && !str_contains($text, '{link}')) {
+                $reply .= ($reply !== '' ? "\n\n" : '') . $abs;
+            }
+            if ($reply === '') continue;
+            // Sorgu + yanıtı kaydet (yönetim görünürlüğü + hız sınırlama verisi).
+            try {
+                $pdo->prepare('INSERT INTO public_chat_messages(ip,user_message,ai_reply) VALUES(?::inet,?,?)')
+                    ->execute([$ip, mb_substr($message, 0, 1000), mb_substr($reply, 0, 3000)]);
+            } catch (Throwable $e) {
+                // Kayıt başarısızlığı yanıtı engellemesin.
+            }
+            ai_public_reply_json(200, ['reply' => $reply]);
+        }
     }
 
     $settings = deepseek_settings();

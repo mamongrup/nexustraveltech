@@ -110,6 +110,13 @@ CANLIYA AÇMADAN ÖNCE
        psql -U nexus_app -d nexus_traveltech -c "UPDATE supplier_users SET password_hash='<üretilen-hash>' WHERE email='pilot@nexustraveltech.com';"
 - Eski MySQL şemaları (database/legacy/) artık kullanılmaz; yalnızca arşiv amaçlıdır.
 
+KONUYA GÖRE ANINDA YANITLAR (ZİYARETÇİ ASİSTANI)
+- Admin → Kontrol merkezi'nde her konu (Tedarikçi, Acente, API, Rezervasyon, Fiyat, Kayıt/Giriş, İletişim)
+  için özel karşılama metni + yönlendirme bağlantısı tanımlanabilir. Metinde {link} yazılırsa yerine mutlak
+  bağlantı konur. Eşleşen konu için tanımlı yanıt varsa AI çağrısı yapılmaz (API maliyeti korunur, DeepSeek
+  anahtarı olmasa bile çalışır); ikisi de boşsa o konu için AI yanıtlar. chat_topic_instant ayarıyla topluca
+  aç/kapat yapılabilir. Yanıtlar yine kayıt altına alınır ve hız sınırına sayılır.
+
 HAFTALIK SOHBET ÖZETİ (E-POSTA)
 - Zamanlayıcı görevi nexus-chat-weekly (varsayılan: pazartesi 08:00) son 7 günün özetini admin_alert_email'e
   gönderir: en çok sorulan 5 soru, konu dağılımı (bu hafta vs geçen hafta değişim), yönlendirme/red sayıları
