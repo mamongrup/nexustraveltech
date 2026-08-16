@@ -51,6 +51,12 @@ try {
     $q = $pdo->prepare('SELECT COUNT(*) FROM public_chat_messages WHERE ip=?::inet AND created_at>=?');
     $q->execute([$ip, $cutoff]);
     if ((int) $q->fetchColumn() >= 10) {
+        // Suiistimal taraması için reddi kaydet (günlük görev bunları bayraklar).
+        try {
+            nexus_log_error('warning', 'AI sohbet hız sınırı aşıldı', ['ip' => $ip]);
+        } catch (Throwable $e) {
+            // Kayıt başarısızlığı yanıtı engellemesin.
+        }
         ai_public_reply_json(429, ['error' => 'Çok fazla soru gönderdiniz. Lütfen birkaç dakika sonra tekrar deneyin.']);
     }
 

@@ -68,6 +68,9 @@ KAMUYA AÇIK (ÖNYÜZ) AI ASİSTAN
   gönderim process-emails kuyruğu üzerinden, günde bir kez idempotent).
 - IP engelleme: admin → Ziyaretçi sohbet kayıtları sayfasından tek tıkla engelle/bayrakla/kaldır
   (blocked_ips tablosu, migration 036); engellenen IP'ler endpoint'ten 403 alır, bayraklananlar izlenir.
+- Suiistimal taraması: nexus-flag-abusive-ips (06 3 * * *) son 24 saatte hız sınırını aşan
+  (red >= 5) veya aşırı soru gönderen (>= 40) IP'leri otomatik bayraklar; yeni işaretleri
+  admin_alert_email'e e-postalar (endpoint 429 reddini error_logs'a kaydeder).
 
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):
