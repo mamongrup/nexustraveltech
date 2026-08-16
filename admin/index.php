@@ -6,6 +6,7 @@ require __DIR__ . '/../config/auth.php';
 require __DIR__ . '/../config/database.php';
 require __DIR__ . '/../config/platform_settings.php';
 require __DIR__ . '/../config/ai_settings.php';
+require __DIR__ . '/../config/chat_topics.php';
 
 require_admin();
 
@@ -28,29 +29,13 @@ try {
 } catch (Throwable $e) {
     $aiKeyReady = false;
 }
-// Konu etiketleme: anahtar kelime tabanlı (Türkçe karakterler normalleştirilir).
-function chat_topic_normalize(string $s): string
-{
-    return strtr(mb_strtolower($s, 'UTF-8'), ['ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'i' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u']);
-}
-$topicsDef = [
-    'Tedarikçi' => ['tedarikci', 'otel', 'tesis', 'villa', 'yat', 'restoran', 'supply', 'pansiyon', 'tur operatörü', 'turoperator'],
-    'Acente' => ['acente', 'agency', 'komisyon', 'bayi'],
-    'API' => ['api', 'xml', 'entegrasyon', 'baglanti', 'webservice'],
-    'Rezervasyon' => ['rezervasyon', 'misafir', 'gezgin', 'kiralama', 'depozito', 'check-in', 'checkin', 'fatura', 'iade'],
-    'Fiyat' => ['fiyat', 'ucret', 'ne kadar', 'maliyet', 'odeme'],
-    'Kayıt/Giriş' => ['kayit', 'giris', 'login', 'uye', 'sifre'],
-    'İletişim' => ['iletisim', 'ulas', 'telefon', 'email', 'mail', 'destek'],
-];
-$topicsCount = array_fill_keys(array_keys($topicsDef), 0);
+// Konu etiketleme: ortak sınıflandırıcı (config/chat_topics.php).
+$topicsCount = array_fill_keys(array_keys(chat_topic_defs()), 0);
 foreach (db()->query('SELECT user_message FROM public_chat_messages WHERE created_at >= CURRENT_DATE - 29 LIMIT 10000')->fetchAll() as $tr) {
     $m = trim((string) $tr['user_message']);
     if (mb_strlen($m) < $chatMinLen || ($chatRequireSpace && !str_contains($m, ' '))) continue;
-    $nm = chat_topic_normalize($m);
-    foreach ($topicsDef as $topic => $kws) {
-        foreach ($kws as $kw) {
-            if (str_contains($nm, $kw)) { $topicsCount[$topic]++; break; }
-        }
+    foreach (chat_classify($m) as $topic) {
+        $topicsCount[$topic]++;
     }
 }
 arsort($topicsCount);

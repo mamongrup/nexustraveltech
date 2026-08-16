@@ -79,6 +79,9 @@ KAMUYA AÇIK (ÖNYÜZ) AI ASİSTAN
 - Yasak kelime listesi: admin → Kontrol merkezi'nde düzenlenir (her satıra bir tane,
   /regex/ biçimi de desteklenir); eşleşen sorular AI'ya gitmez ve isabetler suiistimal
   taramasına sinyal verir (24 saatte >= 3 isabet → otomatik bayrak).
+- Konu etiketleme: config/chat_topics.php ortak sınıflandırıcı (anahtar kelime tabanlı,
+  Türkçe karakter normalizasyonlu); admin ana sayfasında popüler konular ve ziyaretçi
+  sohbet listesinde konu filtresi (SQL tarafı aynı normalizasyonu kullanır) olarak geçer.
 
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):

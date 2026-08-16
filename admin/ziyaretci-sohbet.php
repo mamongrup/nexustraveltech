@@ -6,6 +6,7 @@ require __DIR__ . '/../config/auth.php';
 require __DIR__ . '/../config/database.php';
 require __DIR__ . '/../config/audit.php';
 require __DIR__ . '/../config/platform_settings.php';
+require __DIR__ . '/../config/chat_topics.php';
 
 require_admin();
 if (empty($_SESSION['admin_csrf'])) $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
@@ -49,6 +50,20 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) { $where[] = 'm.created_at>=?'; 
 if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) { $where[] = 'm.created_at<=?'; $params[] = $to . ' 23:59:59'; }
 if ($ip !== '') { $where[] = 'm.ip::text LIKE ?'; $params[] = '%' . $ip . '%'; }
 if ($q !== '') { $where[] = '(m.user_message ILIKE ? OR m.ai_reply ILIKE ?)'; $params[] = '%' . $q . '%'; $params[] = '%' . $q . '%'; }
+$topic = trim((string) ($_GET['topic'] ?? ''));
+if ($topic !== '') {
+    $kws = chat_topic_defs()[$topic] ?? null;
+    if ($kws !== null && $kws !== []) {
+        // SQL tarafında da aynı normalizasyon: Türkçe karakterler düz ASCII'ye.
+        $normExpr = "translate(lower(btrim(m.user_message)),'çğıiöşüİ','cgiiosui')";
+        $ors = [];
+        foreach ($kws as $kw) {
+            $ors[] = "$normExpr LIKE ?";
+            $params[] = '%' . chat_topic_normalize($kw) . '%';
+        }
+        $where[] = '(' . implode(' OR ', $ors) . ')';
+    }
+}
 
 // Kalitesiz girdiler (eşikler admin → Kontrol merkezi'nde düzenlenir) varsayılan olarak gizlenir.
 $minLen = max(1, (int) platform_setting('chat_min_length', 5));
@@ -121,8 +136,8 @@ foreach ($chartRows as $r) {
 $chartMax = 1;
 foreach ($chartDays as $v) $chartMax = max($chartMax, $v['blocks'] + $v['flags']);
 
-$qs = function (array $extra) use ($from, $to, $ip, $q, $quality): string {
-    $p = ['from' => $from, 'to' => $to, 'ip' => $ip, 'q' => $q, 'quality' => $quality];
+$qs = function (array $extra) use ($from, $to, $ip, $q, $quality, $topic): string {
+    $p = ['from' => $from, 'to' => $to, 'ip' => $ip, 'q' => $q, 'quality' => $quality, 'topic' => $topic];
     foreach ($extra as $k => $v) $p[$k] = $v;
     return '?' . http_build_query(array_filter($p, fn($v) => $v !== ''));
 };
@@ -146,6 +161,7 @@ $qs = function (array $extra) use ($from, $to, $ip, $q, $quality): string {
   <input type="date" name="to" value="<?=htmlspecialchars($to)?>" title="Bitiş">
   <input type="text" name="ip" value="<?=htmlspecialchars($ip)?>" placeholder="IP ara…" style="width:150px">
   <input type="text" name="q" value="<?=htmlspecialchars($q)?>" placeholder="Soru/yanıt içinde ara…" style="width:220px">
+  <select name="topic" style="padding:8px 10px;border:1px solid #d8ded8;font:inherit;font-size:13px"><option value="">Tüm konular</option><?php foreach (array_keys(chat_topic_defs()) as $t): ?><option value="<?=htmlspecialchars($t)?>" <?=$topic===$t?'selected':''?>><?=htmlspecialchars($t)?></option><?php endforeach; ?></select>
   <button>Filtrele</button>
   <a class="exp" href="<?=htmlspecialchars($qs(['quality' => $quality === 'good' ? 'all' : 'good', 'page' => 1]))?>"><?= $quality === 'good' ? 'Kalitesiz girdileri göster (' . (int)$junkCount . ')' : 'Kalitesiz girdileri gizle' ?></a>
   <a class="exp" href="<?=htmlspecialchars($qs(['export' => 'csv']))?>">⬇ CSV indir</a>
