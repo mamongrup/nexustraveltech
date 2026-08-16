@@ -28,7 +28,7 @@ OLD_MARKERS="nexus-sync-ical nexus-revenue-rec nexus-netgsm-sms nexus-process-em
 
 CURRENT="$(crontab -l 2>/dev/null || true)"
 
-# 1) Eski 8 görevi (marker + komut satırı çiftlerini) kaldır
+# 1) Eski 8 görevi (marker + komut satırı çiftlerini) ve tick.php içeren bozuk satırları kaldır
 FILTERED=""
 REMOVE_NEXT=0
 while IFS= read -r line || [ -n "$line" ]; do
@@ -37,16 +37,14 @@ while IFS= read -r line || [ -n "$line" ]; do
     marker="${line#\# }"
     if grep -qF "$marker" <<<"$OLD_MARKERS"; then REMOVE_NEXT=1; continue; fi
   fi
+  # Bozuk/eski tick satırlarını da ayıkla (düzeltme her zaman yeniden yazılır)
+  if grep -qF "cron/tick.php" <<<"$line"; then continue; fi
   FILTERED+="$line"$'\n'
 done <<<"$CURRENT"
 
-# 2) Nabız satırını eksikse ekle
-if ! grep -qF "# nexus-tick" <<<"$FILTERED"; then
-  FILTERED+="# nexus-tick"$'\n'"$TICK_LINE"$'\n'
-  echo "eklendi : nexus-tick ($TICK_LINE)"
-else
-  echo "mevcut  : nexus-tick"
-fi
+# 2) Nabız satırını her zaman temiz haliyle yaz (idempotent)
+FILTERED+="# nexus-tick"$'\n'"$TICK_LINE"$'\n'
+echo "kuruldu : $TICK_LINE"
 
 # 3) crontab'a yaz
 printf '%s' "$FILTERED" | crontab -

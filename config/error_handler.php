@@ -45,7 +45,7 @@ function nexus_exception_handler(Throwable $e): void
 {
     nexus_log_exception($e);
     if (PHP_SAPI === 'cli') {
-        fwrite(STDERR, '[NEXUS] ' . $e->getMessage() . PHP_EOL);
+        fwrite(STDERR, '[NEXUS] ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine() . PHP_EOL);
         return;
     }
     http_response_code(500);
