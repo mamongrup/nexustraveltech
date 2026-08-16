@@ -6,6 +6,105 @@ require_once __DIR__ . '/platform_settings.php';
 require_once __DIR__ . '/chat_topics.php';
 
 /**
+ * Panel (tedarikçi/acente) AI sohbet raporu verisi — rol + hesap kimliğine göre
+ * daraltılmış aylık görünüm: toplam/kaliteli mesaj, aktif gün, konu trendi ve
+ * en çok sorulan 5 soru. tedarikci/sohbet-raporu ve acente/sohbet-raporu kullanır.
+ */
+function panel_chat_report_data(string $role, int $actorId, string $ay): array
+{
+    if (!preg_match('/^\d{4}-\d{2}$/', $ay)) $ay = date('Y-m');
+    $start = $ay . '-01 00:00:00';
+    $end = date('Y-m-01 00:00:00', strtotime($start . ' +1 month'));
+
+    $minLen = max(1, (int) platform_setting('chat_min_length', 5));
+    $requireSpace = (bool) platform_setting('chat_require_space', true);
+    $quality = 'CHAR_LENGTH(BTRIM(user_message)) >= ' . $minLen . ($requireSpace ? " AND POSITION(' ' IN BTRIM(user_message)) > 0" : '');
+
+    $scope = 'role=? AND created_at>=? AND created_at<?';
+    $params = [$role, $start, $end];
+    if ($role === 'supplier' && $actorId > 0) {
+        $scope = 'role=? AND supplier_id=? AND created_at>=? AND created_at<?';
+        $params = [$role, $actorId, $start, $end];
+    } elseif ($role === 'agency' && $actorId > 0) {
+        $scope = 'role=? AND agency_id=? AND created_at>=? AND created_at<?';
+        $params = [$role, $actorId, $start, $end];
+    }
+
+    $c = db()->prepare("SELECT COUNT(*) FROM panel_chat_messages WHERE $scope");
+    $c->execute($params);
+    $totalRows = (int) $c->fetchColumn();
+
+    $c2 = db()->prepare("SELECT COUNT(*) FROM panel_chat_messages WHERE $scope AND $quality");
+    $c2->execute($params);
+    $qualityRows = (int) $c2->fetchColumn();
+
+    $c3 = db()->prepare("SELECT COUNT(DISTINCT created_at::date) FROM panel_chat_messages WHERE $scope");
+    $c3->execute($params);
+    $activeDays = (int) $c3->fetchColumn();
+
+    $topicWeek = [];
+    $topicTotal = array_fill_keys(array_keys(chat_topic_defs()), 0);
+    for ($w = 1; $w <= 5; $w++) {
+        foreach (array_keys(chat_topic_defs()) as $t) $topicWeek[$t][$w] = 0;
+    }
+    $q = db()->prepare("SELECT user_message, created_at FROM panel_chat_messages WHERE $scope AND $quality LIMIT 20000");
+    $q->execute($params);
+    foreach ($q->fetchAll() as $r) {
+        $w = min(5, intdiv((int) date('j', strtotime((string) $r['created_at'])) - 1, 7) + 1);
+        foreach (chat_classify((string) $r['user_message']) as $t) {
+            $topicWeek[$t][$w]++;
+            $topicTotal[$t]++;
+        }
+    }
+    arsort($topicTotal);
+    $topicTopKeys = array_slice(array_keys($topicTotal), 0, 8, true);
+
+    $topQ = db()->prepare("SELECT LOWER(TRIM(user_message)) q, COUNT(*) c FROM panel_chat_messages WHERE $scope AND $quality GROUP BY 1 ORDER BY c DESC, MAX(created_at) DESC LIMIT 5");
+    $topQ->execute($params);
+    $topQuestions = $topQ->fetchAll();
+
+    $monthLabel = [1 => 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'][(int) substr($ay, 5, 2)] . ' ' . substr($ay, 0, 4);
+
+    return compact('ay', 'start', 'end', 'monthLabel', 'totalRows', 'qualityRows', 'activeDays', 'topicWeek', 'topicTotal', 'topicTopKeys', 'topQuestions');
+}
+
+/**
+ * Panel raporunu yazdırılabilir/e-postalanabilir HTML'e çevirir (PDF üretimi için de kullanılır).
+ */
+function panel_chat_report_html(array $d): string
+{
+    $topicRows = '';
+    foreach ($d['topicTopKeys'] as $t) {
+        $topicRows .= '<tr><td style="border:1px solid #ccc;padding:5px">' . htmlspecialchars($t) . '</td>';
+        for ($w = 1; $w <= 5; $w++) $topicRows .= '<td style="border:1px solid #ccc;padding:5px;text-align:center">' . $d['topicWeek'][$t][$w] . '</td>';
+        $topicRows .= '<td style="border:1px solid #ccc;padding:5px;text-align:center"><b>' . $d['topicTotal'][$t] . '</b></td></tr>';
+    }
+    $weekHead = '<th style="border:1px solid #ccc;padding:5px">Konu</th>';
+    for ($w = 1; $w <= 5; $w++) $weekHead .= '<th style="border:1px solid #ccc;padding:5px">Hafta ' . $w . '</th>';
+    $weekHead .= '<th style="border:1px solid #ccc;padding:5px">Toplam</th>';
+    $qRows = '';
+    foreach ($d['topQuestions'] as $i => $row) {
+        $qRows .= '<tr><td style="border:1px solid #ccc;padding:5px;text-align:center">' . ($i + 1) . '</td>'
+            . '<td style="border:1px solid #ccc;padding:5px">' . htmlspecialchars((string) $row['q']) . '</td>'
+            . '<td style="border:1px solid #ccc;padding:5px;text-align:center">' . (int) $row['c'] . '</td></tr>';
+    }
+    $sum = function (string $label, $value): string {
+        return '<tr><td style="border:1px solid #ccc;padding:5px">' . $label . '</td><td style="border:1px solid #ccc;padding:5px">' . $value . '</td></tr>';
+    };
+    return '<h1 style="font-family:Arial;color:#10211f">Panel sohbet raporu — ' . htmlspecialchars($d['monthLabel']) . '</h1>'
+        . '<p style="font-family:Arial;color:#64716d">Dönem: ' . htmlspecialchars($d['start']) . ' – ' . htmlspecialchars($d['end']) . '</p>'
+        . '<table style="border-collapse:collapse;font-family:Arial;color:#10211f">'
+        . $sum('Toplam mesaj', $d['totalRows'])
+        . $sum('Kaliteli mesaj', $d['qualityRows'])
+        . $sum('Aktif gün', $d['activeDays'])
+        . '</table>'
+        . '<h2 style="font-family:Arial;color:#10211f">Konu trendi</h2>'
+        . '<table style="border-collapse:collapse;font-family:Arial;color:#10211f"><tr>' . $weekHead . '</tr>' . $topicRows . '</table>'
+        . ($qRows !== '' ? '<h2 style="font-family:Arial;color:#10211f">En çok sorulan 5 soru</h2><table style="border-collapse:collapse;font-family:Arial;color:#10211f"><tr><th style="border:1px solid #ccc;padding:5px">#</th><th style="border:1px solid #ccc;padding:5px">Soru</th><th style="border:1px solid #ccc;padding:5px">Tekrar</th></tr>' . $qRows . '</table>' : '');
+}
+
+
+/**
  * Aylık ziyaretçi sohbet raporu verisi — admin/sohbet-raporu sayfası ve
  * cron/send-monthly-report.php aynı fonksiyonu kullanır (tek kaynak).
  */

@@ -198,6 +198,27 @@ function ai_assistant_tools(string $role, array $ctx): array
 }
 
 /**
+ * Panel sohbet kaydı (best-effort) — panel bazlı aylık raporlar ve yönetim görünürlüğü için.
+ */
+function ai_assistant_log(string $role, array $ctx, string $userMessage, string $reply): void
+{
+    try {
+        if ($role === 'supplier') {
+            db()->prepare('INSERT INTO panel_chat_messages(role,supplier_id,user_message,ai_reply) VALUES(?,?,?,?)')
+                ->execute([$role, (int) ($ctx['supplier_id'] ?? 0), mb_substr($userMessage, 0, 1000), mb_substr($reply, 0, 3000)]);
+        } elseif ($role === 'agency') {
+            db()->prepare('INSERT INTO panel_chat_messages(role,agency_id,user_message,ai_reply) VALUES(?,?,?,?)')
+                ->execute([$role, (int) ($ctx['agency_id'] ?? 0), mb_substr($userMessage, 0, 1000), mb_substr($reply, 0, 3000)]);
+        } else {
+            db()->prepare('INSERT INTO panel_chat_messages(role,user_message,ai_reply) VALUES(?,?,?)')
+                ->execute([$role, mb_substr($userMessage, 0, 1000), mb_substr($reply, 0, 3000)]);
+        }
+    } catch (Throwable $e) {
+        // Kayıt başarısızlığı sohbeti engellemesin.
+    }
+}
+
+/**
  * Sohbeti yürütür: DeepSeek + araç çağrısı döngüsü (en fazla 3 tur).
  */
 function ai_assistant_chat(string $role, array $messages, array $ctx = []): string
@@ -205,6 +226,14 @@ function ai_assistant_chat(string $role, array $messages, array $ctx = []): stri
     $settings = deepseek_settings();
     if ($settings['api_key'] === '') {
         throw new RuntimeException('AI asistanı için yönetici panelinden DeepSeek API anahtarı ekleyin.');
+    }
+
+    // Son kullanıcı mesajını yakala (kayıt için).
+    $lastUser = '';
+    foreach ($messages as $m) {
+        if ((string) ($m['role'] ?? '') === 'user' && trim((string) ($m['content'] ?? '')) !== '') {
+            $lastUser = (string) $m['content'];
+        }
     }
 
     $tools = ai_assistant_tools($role, $ctx);
@@ -261,8 +290,13 @@ function ai_assistant_chat(string $role, array $messages, array $ctx = []): stri
         }
 
         $reply = trim((string) ($message['content'] ?? ''));
-        if ($reply !== '') return $reply;
+        if ($reply !== '') {
+            ai_assistant_log($role, $ctx, $lastUser, $reply);
+            return $reply;
+        }
     }
 
-    return 'Asistan yanıt üretemedi. Lütfen sorunuzu biraz daha açık yazın.';
+    $fallback = 'Asistan yanıt üretemedi. Lütfen sorunuzu biraz daha açık yazın.';
+    ai_assistant_log($role, $ctx, $lastUser, $fallback);
+    return $fallback;
 }

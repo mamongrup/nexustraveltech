@@ -110,6 +110,13 @@ CANLIYA AÇMADAN ÖNCE
        psql -U nexus_app -d nexus_traveltech -c "UPDATE supplier_users SET password_hash='<üretilen-hash>' WHERE email='pilot@nexustraveltech.com';"
 - Eski MySQL şemaları (database/legacy/) artık kullanılmaz; yalnızca arşiv amaçlıdır.
 
+PANEL SOHBET RAPORU (TEDARİKÇİ / ACENTE)
+- Panel AI sohbetleri artık panel_chat_messages tablosuna kaydedilir (migration 038) — admin, tedarikçi
+  ve acente asistanlarının tüm konuşmaları (rol + hesap kimliğiyle).
+- tedarikci/sohbet-raporu ve acente/sohbet-raporu sayfaları: ay seçici, toplam/kaliteli mesaj ve aktif gün
+  kartları, konu bazında haftalık trend ve en çok sorulan 5 soru; CSV/PDF dışa aktarma. Veri yalnızca
+  kendi hesabına aittir (role + supplier_id/agency_id filtresi), ortak fonksiyon config/chat_report.php.
+
 KONUYA GÖRE ANINDA YANITLAR (ZİYARETÇİ ASİSTANI)
 - Admin → Kontrol merkezi'nde her konu (Tedarikçi, Acente, API, Rezervasyon, Fiyat, Kayıt/Giriş, İletişim)
   için özel karşılama metni + yönlendirme bağlantısı tanımlanabilir. Metinde {link} yazılırsa yerine mutlak
