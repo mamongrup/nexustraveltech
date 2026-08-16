@@ -278,7 +278,7 @@ function panel_chat_weekly_data(string $role, int $actorId): array
 /**
  * Panel haftalık özetini e-posta gövdesine çevirir.
  */
-function panel_chat_weekly_html(array $d, string $panelLink): string
+function panel_chat_weekly_html(array $d, string $panelLink, string $company = '', int $linkedCount = 0, string $linkedLabel = 'tesis'): string
 {
     $qRows = '';
     foreach ($d['topQuestions'] as $i => $row) {
@@ -310,8 +310,12 @@ function panel_chat_weekly_html(array $d, string $panelLink): string
     $topicsHtml = $topicCount > 0
         ? '<h3 style="margin:18px 0 4px">Konu dağılımı (haftalık karşılaştırma)</h3><table style="border-collapse:collapse;width:100%;max-width:560px"><tr><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Konu</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d;text-align:center">Bu hafta</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d;text-align:center">Geçen hafta</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d;text-align:center">Değişim</th></tr>' . $topicRows . '</table>'
         : '';
+    $context = $company !== ''
+        ? '<p style="color:#10211f;margin:0 0 4px;font-size:14px"><b>' . htmlspecialchars($company) . '</b>' . ($linkedCount > 0 ? ' · ' . (int) $linkedCount . ' bağlı ' . htmlspecialchars($linkedLabel) : '') . '</p>'
+        : '';
     return '<div style="font-family:Arial,sans-serif;color:#10211f">'
         . '<h2 style="margin:0 0 6px">Haftalık panel sohbet özeti</h2>'
+        . $context
         . '<p style="color:#64716d;margin:0 0 16px">' . $d['dateLabel'] . ' · ' . $d['total'] . ' mesaj · ' . $d['activeDays'] . ' aktif gün · geçen hafta: ' . $d['totalPrev'] . ' mesaj <b style="color:' . $d['totalDeltaColor'] . '">(' . $d['totalDeltaTxt'] . ')</b></p>'
         . ($qRows !== '' ? '<table style="border-collapse:collapse;width:100%;max-width:560px"><tr><th style="text-align:left;padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">En çok sorulanlar</th><th style="padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Sayı</th></tr>' . $qRows . '</table>' : '')
         . $topicsHtml

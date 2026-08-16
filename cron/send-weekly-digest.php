@@ -142,7 +142,28 @@ $sendPanel = function (string $role, int $actorId, string $email, string $subjec
         echo "Son 7 günde panel mesajı yok; özet gönderilmedi ({$role}#{$actorId}).\n";
         return;
     }
-    $body = panel_chat_weekly_html($d, $panelLink);
+    // Bağlam: şirket adı + bağlı tesis sayısı (tedarikçide kendi tesisleri, acentede iş yaptığı tesisler).
+    $company = '';
+    $linkedCount = 0;
+    if ($role === 'supplier') {
+        $q = db()->prepare('SELECT s.company_name, COUNT(p.id) c FROM suppliers s LEFT JOIN properties p ON p.supplier_id=s.id WHERE s.id=? GROUP BY s.company_name');
+        $q->execute([$actorId]);
+        $row = $q->fetch();
+        $company = (string) ($row['company_name'] ?? '');
+        $linkedCount = (int) ($row['c'] ?? 0);
+    } else {
+        $q = db()->prepare('SELECT company_name FROM agencies WHERE id=?');
+        $q->execute([$actorId]);
+        $company = (string) ($q->fetchColumn() ?: '');
+        $q2 = db()->prepare("SELECT COUNT(DISTINCT property_id) FROM (
+            SELECT property_id FROM agency_booking_requests WHERE agency_id=?
+            UNION
+            SELECT property_id FROM agency_discount_requests WHERE agency_id=?
+        ) t");
+        $q2->execute([$actorId, $actorId]);
+        $linkedCount = (int) $q2->fetchColumn();
+    }
+    $body = panel_chat_weekly_html($d, $panelLink, $company, $linkedCount, 'tesis');
     queue_email($email, $subjectPrefix . ' — ' . $d['dateLabel'], $body, 'chat_weekly_panel', $key);
     echo 'Panel özeti kuyruğa eklendi: ' . $email . " ({$role}#{$actorId}, {$d['total']} mesaj).\n";
 };

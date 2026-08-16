@@ -144,8 +144,9 @@ HAFTALIK SOHBET ÖZETİ (E-POSTA)
 - Panel katılımı: tedarikçi/acente Sohbet raporu sayfalarındaki "Haftalık sohbet özetimi e-postama gönder"
   onay kutusu (platform ayarı panel_weekly_digest) ile kendi hesapları için haftalık panel asistanı özeti
   alabilirler: mesaj sayısı, aktif gün, en çok sorulan 5 soru ve konu dağılımı; mesaj sayısı ve her konu
-  için geçen haftayla karşılaştırma (▲/▼ % veya 'yeni') eklenir. Alıcı, kayıt anındaki kullanıcının
-  e-postasıdır ve yalnızca kendi verisini görür. Admin → Kontrol merkezi'nde katılımcı listesi (şirket
+  için geçen haftayla karşılaştırma (▲/▼ % veya 'yeni') eklenir. Özetin başında şirket adı ve bağlı
+  tesis sayısı görünür (tedarikçide kendi tesisleri, acentede iş yaptığı tesisler). Alıcı, kayıt anındaki
+  kullanıcının e-postasıdır ve yalnızca kendi verisini görür. Admin → Kontrol merkezi'nde katılımcı listesi (şirket
   adı + e-posta) görünür ve tek tıkla çıkarılabilir (CSRF korumalı; diğer ayarlara dokunmaz).
 
 AYLIK SOHBET RAPORU (E-POSTA)
