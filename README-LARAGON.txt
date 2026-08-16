@@ -69,7 +69,8 @@ KAMUYA AÇIK (ÖNYÜZ) AI ASİSTAN
 - IP engelleme: admin → Ziyaretçi sohbet kayıtları sayfasından tek tıkla engelle/bayrakla/kaldır
   (blocked_ips tablosu, migration 036); engellenen IP'ler endpoint'ten 403 alır, bayraklananlar izlenir.
 - Suiistimal taraması: nexus-flag-abusive-ips (06 3 * * *) son 24 saatte hız sınırını aşan
-  (red >= 5) veya aşırı soru gönderen (>= 40) IP'leri otomatik bayraklar; yeni işaretleri
+  (red >= 5) veya aşırı soru gönderen (>= 40) IP'leri otomatik bayraklar; 7 gün içinde
+  tekrar kötü davranan bayraklı IP'leri tam engellemeye yükseltir. Yeni bayrak/yükseltmeleri
   admin_alert_email'e e-postalar (endpoint 429 reddini error_logs'a kaydeder).
 
 OTOMATİK TESTLER
