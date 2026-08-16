@@ -31,6 +31,10 @@ if (($_GET['export'] ?? '') === 'csv') {
     fputcsv($out, ['Reddedilen istek', $denied]);
     fputcsv($out, ['Yanıtlanamayan/Yönlendirme oranı', '%' . $unansweredRate]);
     fputcsv($out, []);
+    fputcsv($out, ['GÜN BAZINDA TRAFİK']);
+    fputcsv($out, ['Gün', 'Soru', 'Yönlendirme', 'Red']);
+    foreach ($daily as $date => $v) fputcsv($out, [substr((string) $date, 8, 2), $v['soru'], $v['yon'], $v['red']]);
+    fputcsv($out, []);
     fputcsv($out, ['KONU TRENDİ']);
     $head = ['Konu'];
     for ($w = 1; $w <= 5; $w++) $head[] = 'Hafta ' . $w;
@@ -62,6 +66,14 @@ if (($_GET['export'] ?? '') === 'pdf') {
 <p class="rate-line <?= $unansweredRate <= 30 ? 'rate-ok' : ($unansweredRate <= 60 ? 'rate-warn' : 'rate-bad') ?>">%<?= (int)$unansweredRate ?></p>
 <p class="muted">AI doğrudan yanıt yerine sayfaya yönlendirdi (<?= (int)$redirected ?>) veya istek reddedildi (<?= (int)$denied ?> — hız sınırı / yasak kelime). Düşük oran, asistanın soruları doğrudan çözdüğünü gösterir.</p>
 <div class="bar"><?php for ($i = 0; $i < 10; $i++): ?><i title="%<?= (int)$unansweredRate ?>" style="height:<?= $i < round($unansweredRate / 10) ? 100 : 12 ?>%"></i><?php endfor; ?></div>
+</section>
+<section class="panel"><h2>Gün bazında trafik</h2>
+<table><tr><th>Gün</th><th class="num">Soru</th><th class="num">Yönlendirme</th><th class="num">Red</th></tr>
+<?php foreach ($daily as $date => $v): ?>
+<tr><td><?= htmlspecialchars((string) $date) ?></td><td class="num"><?= (int) $v['soru'] ?></td><td class="num"><?= (int) $v['yon'] ?></td><td class="num"><?= (int) $v['red'] ?></td></tr>
+<?php endforeach; ?>
+</table>
+<p class="muted">Soru: kayıtlı tüm sorular · Yönlendirme: AI'nın sayfaya yönlendirdiği kaliteli yanıtlar · Red: hız sınırı + yasak kelime istekleri.</p>
 </section>
 <section class="panel"><h2>Konu bazında haftalık trend</h2>
 <table><tr><th>Konu</th><?php for ($w = 1; $w <= 5; $w++): ?><th class="num">Hafta <?= $w ?></th><?php endfor; ?><th class="num">Toplam</th></tr>

@@ -162,9 +162,58 @@ function chat_report_data(string $ay): array
     $topQ->execute([$start, $end]);
     $topQuestions = $topQ->fetchAll();
 
+    // Gün bazında trafik: soru / yönlendirme / red — tek tabloda günlük kırılım.
+    $daily = [];
+    $daysInMonth = (int) date('t', strtotime($start));
+    for ($day = 1; $day <= $daysInMonth; $day++) {
+        $daily[sprintf('%s-%02d', $ay, $day)] = ['soru' => 0, 'yon' => 0, 'red' => 0];
+    }
+    $fillDaily = function (array $rows) use (&$daily): void {
+        foreach ($rows as $r) {
+            $d = (string) $r['d'];
+            if (isset($daily[$d])) $daily[$d]['soru'] = (int) $r['c'];
+        }
+    };
+    $d1 = db()->prepare('SELECT created_at::date d, COUNT(*) c FROM public_chat_messages WHERE created_at>=? AND created_at<? GROUP BY 1');
+    $d1->execute([$start, $end]);
+    $fillDaily($d1->fetchAll());
+    $d2 = db()->prepare("SELECT created_at::date d, COUNT(*) c FROM public_chat_messages WHERE created_at>=? AND created_at<? AND $quality AND (ai_reply LIKE '%nexustraveltech%' OR ai_reply LIKE '%Bu konuda size yardımcı olamıyorum%' OR ai_reply LIKE '%biraz daha açık yazabilir misiniz%') GROUP BY 1");
+    $d2->execute([$start, $end]);
+    foreach ($d2->fetchAll() as $r) {
+        $dd = (string) $r['d'];
+        if (isset($daily[$dd])) $daily[$dd]['yon'] = (int) $r['c'];
+    }
+    $d3 = db()->prepare("SELECT created_at::date d, COUNT(*) c FROM error_logs WHERE created_at>=? AND created_at<? AND (message LIKE 'AI sohbet hız sınırı aşıldı%' OR message LIKE 'AI sohbet engellenen kelime%') GROUP BY 1");
+    $d3->execute([$start, $end]);
+    foreach ($d3->fetchAll() as $r) {
+        $dd = (string) $r['d'];
+        if (isset($daily[$dd])) $daily[$dd]['red'] = (int) $r['c'];
+    }
+
     $monthLabel = [1 => 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'][(int) substr($ay, 5, 2)] . ' ' . substr($ay, 0, 4);
 
-    return compact('ay', 'start', 'end', 'monthLabel', 'totalRows', 'qualityRows', 'ips', 'redirected', 'denied', 'redirectRate', 'unansweredRate', 'topicWeek', 'topicTotal', 'topicTopKeys', 'topQuestions');
+    return compact('ay', 'start', 'end', 'monthLabel', 'totalRows', 'qualityRows', 'ips', 'redirected', 'denied', 'redirectRate', 'unansweredRate', 'topicWeek', 'topicTotal', 'topicTopKeys', 'topQuestions', 'daily');
+}
+
+/**
+ * Gün bazında trafik tablosunu HTML satırlarına çevirir (ekran + PDF ortak).
+ */
+function chat_report_daily_html(array $d): string
+{
+    if (empty($d['daily'])) return '<p style="font-family:Arial;color:#64716d">Günlük veri yok.</p>';
+    $rows = '';
+    foreach ($d['daily'] as $date => $v) {
+        $rows .= '<tr><td style="border:1px solid #ccc;padding:5px">' . htmlspecialchars(substr((string) $date, 8, 2)) . '</td>'
+            . '<td style="border:1px solid #ccc;padding:5px;text-align:center">' . (int) $v['soru'] . '</td>'
+            . '<td style="border:1px solid #ccc;padding:5px;text-align:center">' . (int) $v['yon'] . '</td>'
+            . '<td style="border:1px solid #ccc;padding:5px;text-align:center">' . (int) $v['red'] . '</td></tr>';
+    }
+    return '<table style="border-collapse:collapse;font-family:Arial;color:#10211f"><tr>'
+        . '<th style="border:1px solid #ccc;padding:5px">Gün</th>'
+        . '<th style="border:1px solid #ccc;padding:5px">Soru</th>'
+        . '<th style="border:1px solid #ccc;padding:5px">Yönlendirme</th>'
+        . '<th style="border:1px solid #ccc;padding:5px">Red</th></tr>'
+        . $rows . '</table>';
 }
 
 /**
@@ -200,6 +249,8 @@ function chat_report_html(array $d): string
         . $sum('Reddedilen istek', $d['denied'])
         . '<tr><td style="border:1px solid #ccc;padding:5px"><b>Yanıtlanamayan/Yönlendirme oranı</b></td><td style="border:1px solid #ccc;padding:5px"><b>%' . $d['unansweredRate'] . '</b></td></tr>'
         . '</table>'
+        . '<h2 style="font-family:Arial;color:#10211f">Gün bazında trafik</h2>'
+        . chat_report_daily_html($d)
         . '<h2 style="font-family:Arial;color:#10211f">Konu trendi</h2>'
         . '<table style="border-collapse:collapse;font-family:Arial;color:#10211f"><tr>' . $weekHead . '</tr>' . $topicRows . '</table>'
         . ($qRows !== '' ? '<h2 style="font-family:Arial;color:#10211f">En çok sorulan 10 soru</h2><table style="border-collapse:collapse;font-family:Arial;color:#10211f"><tr><th style="border:1px solid #ccc;padding:5px">#</th><th style="border:1px solid #ccc;padding:5px">Soru</th><th style="border:1px solid #ccc;padding:5px">Tekrar</th></tr>' . $qRows . '</table>' : '');

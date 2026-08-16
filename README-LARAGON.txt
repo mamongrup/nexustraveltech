@@ -141,3 +141,5 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Migration 037 e-posta kuyruğuna ek (attachment_name, attachment_base64) sütunlarını ekler.
 - Veri üreten tek kaynak config/chat_report.php'tir: hem admin/sohbet-raporu sayfası hem cron bu fonksiyonu kullanır.
 - Rapor yalnızca ayda kayıt varsa gönderilir ve aynı ay için yalnızca bir kez kuyruğa eklenir (idempotent).
+- Aylık rapor sayfasında ve PDF/CSV'de "Gün bazında trafik" tablosu: her günün soru sayısı, yönlendirme
+  ve red değerleri tek tabloda (günlük toplamlar özet kartlarıyla birebir tutarlı).
