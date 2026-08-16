@@ -24,6 +24,9 @@ $chatMinLen = max(1, (int) platform_setting('chat_min_length', 5));
 $chatRequireSpace = (bool) platform_setting('chat_require_space', true);
 $chatBlocklist = array_values(array_filter(array_map('trim', (array) platform_setting('chat_blocklist', [])), fn($l) => $l !== ''));
 $topicRespCount = count(array_filter((array) platform_setting('chat_topic_responses', []), fn($c) => trim((string) ($c['text'] ?? '')) !== '' || trim((string) ($c['link'] ?? '')) !== ''));
+$panelWeekly = (array) platform_setting('panel_weekly_digest', []);
+$panelWeeklySup = count((array) ($panelWeekly['supplier'] ?? []));
+$panelWeeklyAgy = count((array) ($panelWeekly['agency'] ?? []));
 $aiKeyReady = false;
 try {
     $aiKeyReady = deepseek_settings()['api_key'] !== '';
@@ -89,6 +92,7 @@ $chatWeekMax = max(1, max($chatWeek));
       <div class="item">Tek kelime engeli<b><?= $chatRequireSpace ? 'Açık' : 'Kapalı' ?></b></div>
       <div class="item">Yasak kelime<b><?= count($chatBlocklist) ?> kayıt</b><?php if ($chatBlocklist): ?><span style="font-size:12px;color:#64716d;display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?=htmlspecialchars(implode(', ', array_slice($chatBlocklist, 0, 3)))?><?= count($chatBlocklist) > 3 ? '…' : '' ?></span><?php endif; ?></div>
       <div class="item">Konu yanıtı<b><?= (int)$topicRespCount ?>/<?= count(chat_topic_defs()) ?> tanımlı</b></div>
+      <div class="item">Haftalık panel özeti<b><?= (int)$panelWeeklySup ?> tedarikçi · <?= (int)$panelWeeklyAgy ?> acente</b></div>
       <div class="item">Bugünkü soru<b><?= (int)$chatToday ?></b></div>
       <div class="item" style="min-width:160px">Son 7 gün eğilimi<div class="week"><?php foreach ($chatWeek as $d => $c): ?><i title="<?=htmlspecialchars($d)?>: <?=$c?> soru" style="height:<?=max(2, (int) round($c / $chatWeekMax * 30))?>px"></i><?php endforeach; ?></div></div>
       <div class="item" style="flex-basis:100%">Popüler konular (son 30 gün)<?php if ($topTopicsTotal > 0): ?><?php foreach ($topTopics as $topic => $c): if ($c === 0) continue; ?><span class="tchip"><?=htmlspecialchars($topic)?> <b><?=(int)$c?></b></span><?php endforeach; ?><?php else: ?><span class="muted" style="margin-left:8px">henüz veri yok</span><?php endif; ?></div>

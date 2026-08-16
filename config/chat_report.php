@@ -196,6 +196,81 @@ function chat_report_data(string $ay): array
 }
 
 /**
+ * Panel (tedarikçi/acente) haftalık özet verisi — son 7 gün, rol + hesap kimliğine göre.
+ * Haftalık e-posta görevi (cron/send-weekly-digest.php) kullanır.
+ */
+function panel_chat_weekly_data(string $role, int $actorId): array
+{
+    $since = date('Y-m-d H:i:s', time() - 7 * 86400);
+    $nowStr = date('Y-m-d H:i:s');
+
+    $minLen = max(1, (int) platform_setting('chat_min_length', 5));
+    $requireSpace = (bool) platform_setting('chat_require_space', true);
+    $quality = 'CHAR_LENGTH(BTRIM(user_message)) >= ' . $minLen . ($requireSpace ? " AND POSITION(' ' IN BTRIM(user_message)) > 0" : '');
+
+    $scope = 'role=? AND created_at>=?';
+    $params = [$role, $since];
+    if ($role === 'supplier' && $actorId > 0) {
+        $scope = 'role=? AND supplier_id=? AND created_at>=?';
+        $params = [$role, $actorId, $since];
+    } elseif ($role === 'agency' && $actorId > 0) {
+        $scope = 'role=? AND agency_id=? AND created_at>=?';
+        $params = [$role, $actorId, $since];
+    }
+
+    $q = db()->prepare("SELECT COUNT(*) FROM panel_chat_messages WHERE $scope");
+    $q->execute($params);
+    $total = (int) $q->fetchColumn();
+
+    $q2 = db()->prepare("SELECT COUNT(*) FROM panel_chat_messages WHERE $scope AND $quality");
+    $q2->execute($params);
+    $qualityRows = (int) $q2->fetchColumn();
+
+    $q3 = db()->prepare("SELECT COUNT(DISTINCT created_at::date) FROM panel_chat_messages WHERE $scope");
+    $q3->execute($params);
+    $activeDays = (int) $q3->fetchColumn();
+
+    $topQ = db()->prepare("SELECT LOWER(TRIM(user_message)) q, COUNT(*) c FROM panel_chat_messages WHERE $scope AND $quality GROUP BY 1 ORDER BY c DESC, MAX(created_at) DESC LIMIT 5");
+    $topQ->execute($params);
+    $topQuestions = $topQ->fetchAll();
+
+    $topics = array_fill_keys(array_keys(chat_topic_defs()), 0);
+    $tq = db()->prepare("SELECT user_message FROM panel_chat_messages WHERE $scope AND $quality LIMIT 20000");
+    $tq->execute($params);
+    foreach ($tq->fetchAll() as $r) {
+        foreach (chat_classify((string) $r['user_message']) as $t) $topics[$t]++;
+    }
+    arsort($topics);
+
+    $dateLabel = date('d.m.Y', strtotime($since)) . ' – ' . date('d.m.Y');
+    return compact('since', 'nowStr', 'dateLabel', 'total', 'qualityRows', 'activeDays', 'topQuestions', 'topics');
+}
+
+/**
+ * Panel haftalık özetini e-posta gövdesine çevirir.
+ */
+function panel_chat_weekly_html(array $d, string $panelLink): string
+{
+    $qRows = '';
+    foreach ($d['topQuestions'] as $i => $row) {
+        $qRows .= '<tr><td style="padding:9px 12px;border-bottom:1px solid #e1e5de">' . htmlspecialchars(mb_substr((string) $row['q'], 0, 140)) . '</td>'
+            . '<td style="padding:9px 12px;border-bottom:1px solid #e1e5de;text-align:center"><b>' . (int) $row['c'] . '</b></td></tr>';
+    }
+    $topicChips = '';
+    foreach (array_slice($d['topics'], 0, 5, true) as $t => $c) {
+        if ($c === 0) continue;
+        $topicChips .= '<span style="display:inline-block;background:#f2f4ef;border:1px solid #e1e5de;padding:3px 10px;border-radius:13px;font-size:12px;margin:3px 6px 0 0">' . htmlspecialchars($t) . ' <b style="color:#0d7a4a">' . (int) $c . '</b></span>';
+    }
+    return '<div style="font-family:Arial,sans-serif;color:#10211f">'
+        . '<h2 style="margin:0 0 6px">Haftalık panel sohbet özeti</h2>'
+        . '<p style="color:#64716d;margin:0 0 16px">' . $d['dateLabel'] . ' · ' . $d['total'] . ' mesaj · ' . $d['activeDays'] . ' aktif gün</p>'
+        . ($qRows !== '' ? '<table style="border-collapse:collapse;width:100%;max-width:560px"><tr><th style="text-align:left;padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">En çok sorulanlar</th><th style="padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Sayı</th></tr>' . $qRows . '</table>' : '')
+        . ($topicChips !== '' ? '<h3 style="margin:18px 0 4px">Konu dağılımı</h3><div>' . $topicChips . '</div>' : '')
+        . '<p style="margin-top:18px"><a href="' . htmlspecialchars($panelLink) . '" style="color:#0d7a4a">Aylık rapor sayfası →</a></p>'
+        . '</div>';
+}
+
+/**
  * Gün bazında trafik tablosunu HTML satırlarına çevirir (ekran + PDF ortak).
  */
 function chat_report_daily_html(array $d): string

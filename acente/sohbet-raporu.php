@@ -3,7 +3,26 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/agency_auth.php';
 require_once __DIR__ . '/../config/chat_report.php';
 require_once __DIR__ . '/../config/pdf.php';
+require_once __DIR__ . '/../config/platform_settings.php';
 $u = require_agency();
+
+// Haftalık panel özeti tercihi (aç/kapat) — bu sayfadan yönetilir.
+if (empty($_SESSION['agency_csrf'])) $_SESSION['agency_csrf'] = bin2hex(random_bytes(32));
+$digestMsg = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'weekly_digest') {
+    if (hash_equals($_SESSION['agency_csrf'], (string) ($_POST['csrf'] ?? ''))) {
+        $digest = (array) platform_setting('panel_weekly_digest', []);
+        $aid = (string) $u['agency_id'];
+        if (!empty($_POST['enabled'])) {
+            $digest['agency'][$aid] = (string) $u['email'];
+        } else {
+            unset($digest['agency'][$aid]);
+        }
+        save_platform_setting('panel_weekly_digest', $digest);
+        $digestMsg = 'Haftalık özet tercihi kaydedildi.';
+    }
+}
+$weeklyEnabled = isset(((array) platform_setting('panel_weekly_digest', []))['agency'][(string) $u['agency_id']]);
 
 $ay = trim((string) ($_GET['ay'] ?? date('Y-m')));
 if (!preg_match('/^\d{4}-\d{2}$/', $ay)) $ay = date('Y-m');
@@ -45,6 +64,8 @@ if (($_GET['export'] ?? '') === 'pdf') {
 }
 ?>
 <!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sohbet raporu | NEXUS Acenta</title><style>body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(980px,calc(100% - 32px));margin:35px auto}.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid #ddd;padding:12px 14px}.top a,.top form{color:#10211f;font-size:13px;text-decoration:none;font-weight:600}.top input{border:1px solid #d8ded8;padding:8px;font:inherit}.top button{background:#10211f;color:#fff;border:0;padding:8px 12px;cursor:pointer;font:inherit;font-weight:700}.stats{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.stat{background:#fff;border:1px solid #ddd;padding:12px 16px;min-width:140px}.stat span{font-size:11px;text-transform:uppercase;color:#64716d}.stat b{display:block;font-size:22px;margin-top:4px}.panel{background:#fff;border:1px solid #ddd;padding:16px;margin:14px 0}.panel h2{margin:0 0 10px;font-size:15px}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:9px 11px;font-size:13px}th{font-size:11px;text-transform:uppercase;color:#64716d}.num{text-align:center}.muted{color:#64716d;font-size:13px}@media(max-width:640px){.stats{flex-direction:column}}</style></head><body><main class="w">
+<?php if ($digestMsg): ?><div style="background:#e6f8c7;border:1px solid #cfe8a8;padding:9px 12px;font-size:13px;margin:10px 0"><?=htmlspecialchars($digestMsg)?></div><?php endif; ?>
+<form method="post" style="background:#fff;border:1px solid #ddd;padding:10px 14px;font-size:13px;margin:10px 0"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input type="hidden" name="action" value="weekly_digest"><label style="display:flex;gap:9px;align-items:center;cursor:pointer"><input type="checkbox" name="enabled" <?= $weeklyEnabled ? 'checked' : '' ?> onchange="this.form.submit()"> Her pazartesi <b>haftalık sohbet özetimi</b> e-postama gönder (<?=htmlspecialchars($u['email'])?>)</label></form>
 <div class="top"><a href="/nexustraveltech/acente/">← Panel</a><a href="?ay=<?=htmlspecialchars($prev)?>">← Önceki ay</a><form method="get" action="/nexustraveltech/acente/sohbet-raporu" style="display:flex;gap:6px;align-items:center"><input type="month" name="ay" value="<?=htmlspecialchars($ay)?>"><button>Göster</button></form><a href="?ay=<?=htmlspecialchars($next)?>">Sonraki ay →</a><a href="?ay=<?=htmlspecialchars($ay)?>&export=csv">⬇ CSV</a><a href="?ay=<?=htmlspecialchars($ay)?>&export=pdf">⬇ PDF</a><b style="margin-left:auto"><?=htmlspecialchars($d['monthLabel'])?></b></div>
 <div class="stats"><div class="stat"><span>Toplam mesaj</span><b><?= (int)$d['totalRows'] ?></b></div><div class="stat"><span>Kaliteli mesaj</span><b><?= (int)$d['qualityRows'] ?></b></div><div class="stat"><span>Aktif gün</span><b><?= (int)$d['activeDays'] ?></b></div></div>
 <section class="panel"><h2>Konu bazında haftalık trend</h2>

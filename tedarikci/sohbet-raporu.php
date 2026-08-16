@@ -1,6 +1,25 @@
 <?php $active_module = 'chat_report'; require_once __DIR__ . '/layout.php'; $u = $supplier_user;
 require_once __DIR__ . '/../config/chat_report.php';
 require_once __DIR__ . '/../config/pdf.php';
+require_once __DIR__ . '/../config/platform_settings.php';
+
+// Haftalık panel özeti tercihi (aç/kapat) — bu sayfadan yönetilir.
+if (empty($_SESSION['supplier_csrf'])) $_SESSION['supplier_csrf'] = bin2hex(random_bytes(32));
+$digestMsg = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'weekly_digest') {
+    if (hash_equals($_SESSION['supplier_csrf'], (string) ($_POST['csrf'] ?? ''))) {
+        $digest = (array) platform_setting('panel_weekly_digest', []);
+        $sid = (string) $u['supplier_id'];
+        if (!empty($_POST['enabled'])) {
+            $digest['supplier'][$sid] = (string) $u['email'];
+        } else {
+            unset($digest['supplier'][$sid]);
+        }
+        save_platform_setting('panel_weekly_digest', $digest);
+        $digestMsg = 'Haftalık özet tercihi kaydedildi.';
+    }
+}
+$weeklyEnabled = isset(((array) platform_setting('panel_weekly_digest', []))['supplier'][(string) $u['supplier_id']]);
 
 $ay = trim((string) ($_GET['ay'] ?? date('Y-m')));
 if (!preg_match('/^\d{4}-\d{2}$/', $ay)) $ay = date('Y-m');
@@ -64,6 +83,12 @@ supply_start('Sohbet raporu', $active_module); ?>
 @media(max-width:640px){.rp-stats{flex-direction:column}}
 </style>
 <section class="rp">
+  <?php if ($digestMsg): ?><div style="background:#e6f8c7;border:1px solid #cfe8a8;padding:9px 12px;font-size:13px"><?=htmlspecialchars($digestMsg)?></div><?php endif; ?>
+  <form method="post" style="background:#fff;border:1px solid #e1e5de;padding:10px 14px;font-size:13px">
+    <input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['supplier_csrf'])?>">
+    <input type="hidden" name="action" value="weekly_digest">
+    <label style="display:flex;gap:9px;align-items:center;cursor:pointer"><input type="checkbox" name="enabled" <?= $weeklyEnabled ? 'checked' : '' ?> onchange="this.form.submit()"> Her pazartesi <b>haftalık sohbet özetimi</b> e-postama gönder (<?=htmlspecialchars($u['email'])?>)</label>
+  </form>
   <div class="rp-top">
     <a href="/nexustraveltech/tedarikci/">← Panel</a>
     <a href="?ay=<?=htmlspecialchars($prev)?>">← Önceki ay</a>
