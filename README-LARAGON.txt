@@ -109,3 +109,11 @@ CANLIYA AÇMADAN ÖNCE
     2) Çıktıyı kopyalayıp şu komutla kaydedin:
        psql -U nexus_app -d nexus_traveltech -c "UPDATE supplier_users SET password_hash='<üretilen-hash>' WHERE email='pilot@nexustraveltech.com';"
 - Eski MySQL şemaları (database/legacy/) artık kullanılmaz; yalnızca arşiv amaçlıdır.
+
+AYLIK SOHBET RAPORU (E-POSTA)
+- Zamanlayıcı görevi nexus-monthly-report (varsayılan: her ayın 1'i 07:00) bir önceki ayın raporunu
+  admin_alert_email adresine gönderir: kayıtlı/kaliteli soru, IP, yönlendirme/red, konu trendi (H1-H5),
+  en çok sorulan 10 soru. TCPDF kuruluysa PDF eki olarak; değilse HTML gövde olarak gider.
+- Migration 037 e-posta kuyruğuna ek (attachment_name, attachment_base64) sütunlarını ekler.
+- Veri üreten tek kaynak config/chat_report.php'tir: hem admin/sohbet-raporu sayfası hem cron bu fonksiyonu kullanır.
+- Rapor yalnızca ayda kayıt varsa gönderilir ve aynı ay için yalnızca bir kez kuyruğa eklenir (idempotent).

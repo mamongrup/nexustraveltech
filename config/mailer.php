@@ -8,10 +8,11 @@ require_once __DIR__ . '/platform_settings.php';
 /**
  * E-postayı kuyruğa ekler; gönderim cron/process-emails.php üzerinden yapılır.
  */
-function queue_email(string $to, string $subject, string $bodyHtml, ?string $relatedType = null, ?int $relatedId = null): void
+function queue_email(string $to, string $subject, string $bodyHtml, ?string $relatedType = null, ?int $relatedId = null, ?string $attachmentName = null, ?string $attachmentBase64 = null): void
 {
-    db()->prepare('INSERT INTO email_outbox(to_address,subject,body_html,related_type,related_id) VALUES(?,?,?,?,?)')
-        ->execute([trim($to), mb_substr(trim($subject), 0, 190), $bodyHtml, $relatedType, $relatedId]);
+    $name = $attachmentName !== null ? mb_substr(str_replace('"', '', trim($attachmentName)), 0, 190) : null;
+    db()->prepare('INSERT INTO email_outbox(to_address,subject,body_html,related_type,related_id,attachment_name,attachment_base64) VALUES(?,?,?,?,?,?,?)')
+        ->execute([trim($to), mb_substr(trim($subject), 0, 190), $bodyHtml, $relatedType, $relatedId, $name, $attachmentBase64]);
 }
 
 /**
@@ -73,12 +74,29 @@ function process_email_outbox(int $limit = 25): array
     $sent = 0;
     $failed = 0;
     foreach ($query->fetchAll() as $email) {
-        $headers = "MIME-Version: 1.0\r\n"
-            . "Content-Type: text/html; charset=UTF-8\r\n"
-            . "From: NEXUS TravelTech <no-reply@nexustraveltech.com>\r\n"
-            . "X-Mailer: NEXUS/1.0\r\n";
+        $attName = (string) ($email['attachment_name'] ?? '');
+        $attData = (string) ($email['attachment_base64'] ?? '');
+        $base = "From: NEXUS TravelTech <no-reply@nexustraveltech.com>\r\n" . "X-Mailer: NEXUS/1.0\r\n";
+        if ($attName !== '' && $attData !== '') {
+            // Ekli (multipart/mixed) e-posta.
+            $boundary = 'nexus_' . bin2hex(random_bytes(8));
+            $headers = "MIME-Version: 1.0\r\n" . "Content-Type: multipart/mixed; boundary=\"" . $boundary . "\"\r\n" . $base;
+            $body = "--" . $boundary . "\r\n"
+                . "Content-Type: text/html; charset=UTF-8\r\n"
+                . "Content-Transfer-Encoding: 8bit\r\n\r\n"
+                . (string) $email['body_html'] . "\r\n"
+                . "--" . $boundary . "\r\n"
+                . "Content-Type: application/pdf; name=\"" . $attName . "\"\r\n"
+                . "Content-Disposition: attachment; filename=\"" . $attName . "\"\r\n"
+                . "Content-Transfer-Encoding: base64\r\n\r\n"
+                . chunk_split($attData, 76, "\r\n") . "\r\n"
+                . "--" . $boundary . "--";
+        } else {
+            $headers = "MIME-Version: 1.0\r\n" . "Content-Type: text/html; charset=UTF-8\r\n" . $base;
+            $body = (string) $email['body_html'];
+        }
         $subject = '=?UTF-8?B?' . base64_encode((string) $email['subject']) . '?=';
-        $ok = @mail((string) $email['to_address'], $subject, (string) $email['body_html'], $headers);
+        $ok = @mail((string) $email['to_address'], $subject, $body, $headers);
         if ($ok) {
             db()->prepare("UPDATE email_outbox SET status='sent',sent_at=now(),error_message=NULL WHERE id=?")->execute([$email['id']]);
             $sent++;
