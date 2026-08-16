@@ -73,9 +73,9 @@ KAMUYA AÇIK (ÖNYÜZ) AI ASİSTAN
   IP'leri otomatik bayraklar; 7 gün içinde tekrar kötü davranan bayraklı IP'leri tam
   engellemeye yükseltir. Yeni bayrak/yükseltmeleri  admin_alert_email'e e-postalar
   (endpoint 429 reddini error_logs'a kaydeder).
-- Kalitesiz girdi filtresi: 5 karakterden kısa veya tek kelimelik sorular AI'ya
-  gitmez (nazikçe daha açık yazmaya yönlendirilir); admin sayfasında varsayılan
-  gizlidir ("Kalitesiz girdileri göster" ile açılır) ve günlük özete dahil edilmez.
+- Kalitesiz girdi filtresi: minimum soru uzunluğu (varsayılan 5 karakter) ve tek
+  kelime engeli (varsayılan açık) admin → Kontrol merkezi'nden ayarlanır; eşleşen
+  sorular AI'ya gitmez, admin sayfasında varsayılan gizlidir ve günlük özete dahil edilmez.
 - Yasak kelime listesi: admin → Kontrol merkezi'nde düzenlenir (her satıra bir tane,
   /regex/ biçimi de desteklenir); eşleşen sorular AI'ya gitmez ve isabetler suiistimal
   taramasına sinyal verir (24 saatte >= 3 isabet → otomatik bayrak).

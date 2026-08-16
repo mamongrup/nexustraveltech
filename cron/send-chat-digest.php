@@ -32,8 +32,10 @@ if ((int) $exists->fetchColumn() > 0) {
 
 $since = date('Y-m-d H:i:s', time() - 86400);
 
-// Kalitesiz girdiler (5 karakterden kısa veya tek kelime) özetten çıkarılır.
-$quality = "CHAR_LENGTH(BTRIM(user_message)) >= 5 AND POSITION(' ' IN BTRIM(user_message)) > 0";
+// Kalitesiz girdiler (eşikler admin → Kontrol merkezi'nde) özetten çıkarılır.
+$minLen = max(1, (int) platform_setting('chat_min_length', 5));
+$requireSpace = (bool) platform_setting('chat_require_space', true);
+$quality = 'CHAR_LENGTH(BTRIM(user_message)) >= ' . $minLen . ($requireSpace ? " AND POSITION(' ' IN BTRIM(user_message)) > 0" : '');
 
 $topQ = db()->prepare(
     "SELECT LOWER(TRIM(user_message)) q, COUNT(*) c

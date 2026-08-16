@@ -30,9 +30,11 @@ try {
         ai_public_reply_json(400, ['error' => 'Mesaj boş olamaz.']);
     }
 
-    // Kalitesiz girdi filtresi: 5 karakterden kısa veya tek kelime → AI çağrısı yapılmaz,
-    // kullanıcı nazikçe daha açık yazmaya yönlendirilir.
-    if (mb_strlen($message) < 5 || !str_contains($message, ' ')) {
+    // Kalitesiz girdi filtresi (eşikler admin → Kontrol merkezi'nden düzenlenir):
+    // minimum uzunluk + isteğe bağlı tek kelime engeli. Eşleşen girdiler AI'ya gitmez.
+    $minLen = max(1, (int) platform_setting('chat_min_length', 5));
+    $requireSpace = (bool) platform_setting('chat_require_space', true);
+    if (mb_strlen($message) < $minLen || ($requireSpace && !str_contains($message, ' '))) {
         ai_public_reply_json(200, ['reply' => 'Sorunuzu biraz daha açık yazabilir misiniz? Örn. "Tedarikçi olarak nasıl katılırım?" veya "API entegrasyonu var mı?"']);
     }
 

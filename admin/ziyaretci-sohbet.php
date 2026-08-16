@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/../config/auth.php';
 require __DIR__ . '/../config/database.php';
 require __DIR__ . '/../config/audit.php';
+require __DIR__ . '/../config/platform_settings.php';
 
 require_admin();
 if (empty($_SESSION['admin_csrf'])) $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
@@ -49,9 +50,11 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) { $where[] = 'm.created_at<=?'; $p
 if ($ip !== '') { $where[] = 'm.ip::text LIKE ?'; $params[] = '%' . $ip . '%'; }
 if ($q !== '') { $where[] = '(m.user_message ILIKE ? OR m.ai_reply ILIKE ?)'; $params[] = '%' . $q . '%'; $params[] = '%' . $q . '%'; }
 
-// Kalitesiz girdiler (5 karakterden kısa veya tek kelime) varsayılan olarak gizlenir.
-$qualitySql = "CHAR_LENGTH(BTRIM(m.user_message)) >= 5 AND POSITION(' ' IN BTRIM(m.user_message)) > 0";
-$junkSql = "(CHAR_LENGTH(BTRIM(m.user_message)) < 5 OR POSITION(' ' IN BTRIM(m.user_message)) = 0)";
+// Kalitesiz girdiler (eşikler admin → Kontrol merkezi'nde düzenlenir) varsayılan olarak gizlenir.
+$minLen = max(1, (int) platform_setting('chat_min_length', 5));
+$requireSpace = (bool) platform_setting('chat_require_space', true);
+$qualitySql = 'CHAR_LENGTH(BTRIM(m.user_message)) >= ' . $minLen . ($requireSpace ? " AND POSITION(' ' IN BTRIM(m.user_message)) > 0" : '');
+$junkSql = '(CHAR_LENGTH(BTRIM(m.user_message)) < ' . $minLen . ($requireSpace ? " OR POSITION(' ' IN BTRIM(m.user_message)) = 0" : '') . ')';
 $junkStmt = db()->prepare('SELECT COUNT(*) FROM public_chat_messages m WHERE ' . implode(' AND ', $where) . ' AND ' . $junkSql);
 $junkStmt->execute($params);
 $junkCount = (int) $junkStmt->fetchColumn();
@@ -174,7 +177,7 @@ $qs = function (array $extra) use ($from, $to, $ip, $q, $quality): string {
 <form method="post" action="/nexustraveltech/admin/ziyaretci-sohbet"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="unblock"><input type="hidden" name="ip" value="<?=htmlspecialchars((string)$r['ip'])?>"><button class="kaldir">Bayrağı kaldır</button></form>
 <?php endif; ?>
 </div></td>
-<td class="msg"><?php $junkMsg = mb_strlen(trim((string)$r['user_message'])) < 5 || !str_contains(trim((string)$r['user_message']), ' '); if ($junkMsg): ?><span class="badge bd-flag">Kalitesiz</span> <?php endif; ?><?=htmlspecialchars((string)$r['user_message'])?></td><td class="msg"><?=htmlspecialchars((string)$r['ai_reply'])?></td></tr>
+<td class="msg"><?php $junkMsg = mb_strlen(trim((string)$r['user_message'])) < $minLen || ($requireSpace && !str_contains(trim((string)$r['user_message']), ' ')); if ($junkMsg): ?><span class="badge bd-flag">Kalitesiz</span> <?php endif; ?><?=htmlspecialchars((string)$r['user_message'])?></td><td class="msg"><?=htmlspecialchars((string)$r['ai_reply'])?></td></tr>
 <?php endforeach; ?>
 </table>
 <?php if ($pages > 1): ?><div class="pages"><?php for ($i = 1; $i <= $pages; $i++): ?><a class="<?=$i===$page?'on':''?>" href="<?=htmlspecialchars($qs(['page' => $i]))?>"><?=$i?></a><?php endfor; ?></div><?php endif; ?>
