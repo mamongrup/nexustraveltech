@@ -5,8 +5,9 @@ RewriteEngine On
 # root. Redirect legacy local-prefixed links to the production root on Plesk.
 RewriteRule ^nexustraveltech/?(.*)$ /$1 [R=301,L,NE]
 
-# API and non-public application folders keep their explicit file routes.
-RewriteRule ^(?:api|config|partials|database|private|cron)/ - [F,L]
+# Non-public application folders keep their explicit file routes.
+# Note: api/ is the PUBLIC surface (lead capture, agency API v1, public chat, iCal).
+RewriteRule ^(?:config|partials|database|private|cron|scripts|tests|vendor)/ - [F,L]
 
 # Internal working areas must never be indexed.
 RewriteRule ^(?:admin|tedarikci)/ - [E=NOINDEX:1]
