@@ -24,6 +24,7 @@ function scheduler_seed_defaults(): void
         ['nexus-flag-abusive-ips', 'Suiistimal IP taraması', 'cron/flag-abusive-ips.php', '6 3 * * *'],
         ['nexus-monthly-report', 'Aylık sohbet raporu', 'cron/send-monthly-report.php', '0 7 1 * *'],
         ['nexus-job-fail-alerts', 'Görev hata uyarıları', 'cron/alert-job-failures.php', '*/15 * * * *'],
+        ['nexus-job-status-digest', 'Görev sağlık raporu', 'cron/send-job-status-digest.php', '0 9 * * *'],
     ];
     $q = db()->prepare('INSERT INTO scheduled_jobs(code,name,command,schedule) VALUES(?,?,?,?) ON CONFLICT(code) DO NOTHING');
     foreach ($defaults as $d) {
