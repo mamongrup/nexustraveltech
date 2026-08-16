@@ -38,9 +38,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $q->execute([$id]);
                 $job = $q->fetch();
                 if (!$job) throw new RuntimeException('Görev bulunamadı.');
+                $started = microtime(true);
                 $res = scheduler_run_job($job);
+                $durationMs = (int) round((microtime(true) - $started) * 1000);
                 db()->prepare('UPDATE scheduled_jobs SET last_run_at=now(),last_status=?,last_output=?,run_count=run_count+1 WHERE id=?')
                     ->execute([$res['status'], mb_substr((string) $res['output'], 0, 2000), $id]);
+                scheduler_record_run($id, $res['status'], (string) $res['output'], $durationMs, 'manual');
                 audit_log('scheduler.run', 'job', $id, ['status' => $res['status']]);
                 $msg = 'Görev çalıştırıldı: ' . $res['status'] . ($res['output'] !== '' ? ' — ' . mb_substr($res['output'], 0, 300) : '');
             }
@@ -103,6 +106,7 @@ $tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' .
 <?php endforeach; ?>
 </table>
 <p class="muted">Zamanlama biçimi: <code>dakika saat gün ay hafta</code> — ör. <code>*/5 * * * *</code> (5 dakikada bir), <code>0 8 * * *</code> (her gün 08:00), <code>30 3 * * *</code> (her gün 03:30).</p>
+<p><a href="/nexustraveltech/admin/zamanlayici-gecmisi" style="font-weight:700;color:#0d7a4a">Çalışma geçmişi →</a></p>
 </section>
 </main>
 <?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>

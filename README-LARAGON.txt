@@ -110,6 +110,11 @@ CANLIYA AÇMADAN ÖNCE
        psql -U nexus_app -d nexus_traveltech -c "UPDATE supplier_users SET password_hash='<üretilen-hash>' WHERE email='pilot@nexustraveltech.com';"
 - Eski MySQL şemaları (database/legacy/) artık kullanılmaz; yalnızca arşiv amaçlıdır.
 
+ZAMANLAYICI ÇALIŞMA GEÇMİŞİ
+- Migration 039: scheduled_job_runs tablosu — her çalıştırma (nabız / manuel / AI) ayrı satır olarak
+  kaydedilir: durum, çıktı, süre (ms), tetikleyen. 90 günden eski kayıtlar otomatik temizlenir.
+- admin/zamanlayici-gecmisi: görev ve durum filtresi, son 24s/7g hata kartları, ortalama süre, çıktı görüntüleme.
+
 PANEL SOHBET RAPORU (TEDARİKÇİ / ACENTE)
 - Panel AI sohbetleri artık panel_chat_messages tablosuna kaydedilir (migration 038) — admin, tedarikçi
   ve acente asistanlarının tüm konuşmaları (rol + hesap kimliğiyle).

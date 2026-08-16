@@ -91,9 +91,12 @@ function ai_assistant_tools(string $role, array $ctx): array
             $q->execute([$code]);
             $job = $q->fetch();
             if (!$job) return 'Görev bulunamadı. scheduler_jobs aracıyla kodu kontrol edin.';
+            $started = microtime(true);
             $res = scheduler_run_job($job);
+            $durationMs = (int) round((microtime(true) - $started) * 1000);
             db()->prepare('UPDATE scheduled_jobs SET last_run_at=now(),last_status=?,last_output=?,run_count=run_count+1 WHERE id=?')
                 ->execute([$res['status'], mb_substr((string) $res['output'], 0, 2000), $job['id']]);
+            scheduler_record_run((int) $job['id'], $res['status'], (string) $res['output'], $durationMs, 'ai');
             return json_encode(['code' => $code, 'status' => $res['status'], 'output' => mb_substr((string) $res['output'], 0, 500)], JSON_UNESCAPED_UNICODE);
         });
     }

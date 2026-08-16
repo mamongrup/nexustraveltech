@@ -130,6 +130,22 @@ function scheduler_run_job(array $job): array
 }
 
 /**
+ * Bir çalıştırmayı geçmiş tablosuna kaydeder (90 günden eski kayıtları temizler).
+ */
+function scheduler_record_run(int $jobId, string $status, string $output, int $durationMs, string $triggeredBy = 'tick'): void
+{
+    try {
+        $pdo = db();
+        $pdo->prepare('INSERT INTO scheduled_job_runs(job_id,status,output,duration_ms,triggered_by) VALUES(?,?,?,?,?)')
+            ->execute([$jobId, $status, mb_substr($output, 0, 3000), $durationMs, $triggeredBy]);
+        $pdo->prepare('DELETE FROM scheduled_job_runs WHERE job_id=? AND created_at < now() - interval \'90 days\'')
+            ->execute([$jobId]);
+    } catch (Throwable $e) {
+        // Geçmiş kaydı başarısızlığı görevin kendisini engellemesin.
+    }
+}
+
+/**
  * Nabız: vadesi gelen aktif görevleri çalıştırır.
  * PostgreSQL advisory lock ile eşzamanlı tick'ler (cron + web) serileştirilir.
  */
@@ -148,9 +164,12 @@ function scheduler_tick(): array
         $ran = [];
         foreach ($jobs as $job) {
             if (!cron_matches((string) $job['schedule'], $now)) continue;
+            $started = microtime(true);
             $res = scheduler_run_job($job);
+            $durationMs = (int) round((microtime(true) - $started) * 1000);
             $pdo->prepare('UPDATE scheduled_jobs SET last_run_at=now(),last_status=?,last_output=?,run_count=run_count+1 WHERE id=?')
                 ->execute([$res['status'], mb_substr((string) $res['output'], 0, 2000), $job['id']]);
+            scheduler_record_run((int) $job['id'], $res['status'], (string) $res['output'], $durationMs, 'tick');
             $ran[] = ['code' => $job['code'], 'status' => $res['status']];
         }
         return ['locked' => false, 'ran' => $ran];
