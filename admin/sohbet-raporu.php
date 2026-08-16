@@ -6,6 +6,7 @@ require __DIR__ . '/../config/auth.php';
 require __DIR__ . '/../config/database.php';
 require __DIR__ . '/../config/platform_settings.php';
 require __DIR__ . '/../config/chat_topics.php';
+require __DIR__ . '/../config/pdf.php';
 
 require_admin();
 
@@ -70,9 +71,74 @@ $topQuestions = $topQ->fetchAll();
 $prev = date('Y-m', strtotime($start . ' -1 day'));
 $next = date('Y-m', strtotime($start . ' +1 month'));
 $monthLabel = [1 => 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'][(int) substr($ay, 5, 2)] . ' ' . substr($ay, 0, 4);
+
+// CSV dışa aktarma: özet + konu trendi + en çok sorulan 10 soru.
+if (($_GET['export'] ?? '') === 'csv') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="sohbet-raporu-' . $ay . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['AYLIK SOHBET RAPORU', $monthLabel]);
+    fputcsv($out, ['Dönem', $start . ' – ' . $end]);
+    fputcsv($out, ['Kayıtlı soru', $totalRows]);
+    fputcsv($out, ['Kaliteli soru', $qualityRows]);
+    fputcsv($out, ['Farklı IP', $ips]);
+    fputcsv($out, ['Yönlendirildi', $redirected]);
+    fputcsv($out, ['Reddedilen istek', $denied]);
+    fputcsv($out, ['Yanıtlanamayan/Yönlendirme oranı', '%' . $unansweredRate]);
+    fputcsv($out, []);
+    fputcsv($out, ['KONU TRENDİ']);
+    $head = ['Konu'];
+    for ($w = 1; $w <= 5; $w++) $head[] = 'Hafta ' . $w;
+    $head[] = 'Toplam';
+    fputcsv($out, $head);
+    foreach ($topicTopKeys as $t) {
+        $row = [$t];
+        for ($w = 1; $w <= 5; $w++) $row[] = $topicWeek[$t][$w];
+        $row[] = $topicTotal[$t];
+        fputcsv($out, $row);
+    }
+    fputcsv($out, []);
+    fputcsv($out, ['EN ÇOK SORULAN 10 SORU']);
+    fputcsv($out, ['Soru', 'Tekrar']);
+    foreach ($topQuestions as $row) fputcsv($out, [(string) $row['q'], (int) $row['c']]);
+    fclose($out);
+    exit;
+}
+
+// PDF dışa aktarma (TCPDF yoksa yazdırılabilir HTML indirir).
+if (($_GET['export'] ?? '') === 'pdf') {
+    $topicRows = '';
+    foreach ($topicTopKeys as $t) {
+        $topicRows .= '<tr><td style="border:1px solid #ccc;padding:5px">' . htmlspecialchars($t) . '</td>';
+        for ($w = 1; $w <= 5; $w++) $topicRows .= '<td style="border:1px solid #ccc;padding:5px;text-align:center">' . $topicWeek[$t][$w] . '</td>';
+        $topicRows .= '<td style="border:1px solid #ccc;padding:5px;text-align:center"><b>' . $topicTotal[$t] . '</b></td></tr>';
+    }
+    $qRows = '';
+    foreach ($topQuestions as $i => $row) {
+        $qRows .= '<tr><td style="border:1px solid #ccc;padding:5px;text-align:center">' . ($i + 1) . '</td>'
+            . '<td style="border:1px solid #ccc;padding:5px">' . htmlspecialchars((string) $row['q']) . '</td>'
+            . '<td style="border:1px solid #ccc;padding:5px;text-align:center">' . (int) $row['c'] . '</td></tr>';
+    }
+    $weekHead = '<th style="border:1px solid #ccc;padding:5px">Konu</th>';
+    for ($w = 1; $w <= 5; $w++) $weekHead .= '<th style="border:1px solid #ccc;padding:5px">Hafta ' . $w . '</th>';
+    $weekHead .= '<th style="border:1px solid #ccc;padding:5px">Toplam</th>';
+    $html = '<h1>Sohbet raporu — ' . htmlspecialchars($monthLabel) . '</h1>'
+        . '<p>Dönem: ' . htmlspecialchars($start) . ' – ' . htmlspecialchars($end) . '</p>'
+        . '<h2>Özet</h2><table style="border-collapse:collapse">'
+        . '<tr><td style="border:1px solid #ccc;padding:5px">Kayıtlı soru</td><td style="border:1px solid #ccc;padding:5px">' . $totalRows . '</td></tr>'
+        . '<tr><td style="border:1px solid #ccc;padding:5px">Kaliteli soru</td><td style="border:1px solid #ccc;padding:5px">' . $qualityRows . '</td></tr>'
+        . '<tr><td style="border:1px solid #ccc;padding:5px">Farklı IP</td><td style="border:1px solid #ccc;padding:5px">' . $ips . '</td></tr>'
+        . '<tr><td style="border:1px solid #ccc;padding:5px">Yönlendirildi</td><td style="border:1px solid #ccc;padding:5px">' . $redirected . '</td></tr>'
+        . '<tr><td style="border:1px solid #ccc;padding:5px">Reddedilen istek</td><td style="border:1px solid #ccc;padding:5px">' . $denied . '</td></tr>'
+        . '</table>'
+        . '<h2>Yanıtlanamayan / yönlendirme oranı: %' . $unansweredRate . '</h2>'
+        . '<h2>Konu trendi</h2><table style="border-collapse:collapse"><tr>' . $weekHead . '</tr>' . $topicRows . '</table>'
+        . ($qRows !== '' ? '<h2>En çok sorulan 10 soru</h2><table style="border-collapse:collapse"><tr><th style="border:1px solid #ccc;padding:5px">#</th><th style="border:1px solid #ccc;padding:5px">Soru</th><th style="border:1px solid #ccc;padding:5px">Tekrar</th></tr>' . $qRows . '</table>' : '');
+    pdf_download($html, 'sohbet-raporu-' . $ay);
+}
 ?>
 <!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sohbet raporu | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1180px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.back{color:#10211f}.nav{display:flex;gap:10px;align-items:center;margin:16px 0;flex-wrap:wrap}.nav a,.nav form{background:#fff;border:1px solid #e1e5de;padding:8px 12px;color:#10211f;text-decoration:none;font-size:13px}.nav input{padding:8px;border:1px solid #d8ded8;font:inherit}.stats{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.stat{background:#fff;border:1px solid #e1e5de;padding:12px 16px;font-size:12px;color:#64716d;min-width:130px}.stat b{font-size:22px;display:block;color:#10211f;margin-top:3px}.stat.warn b{color:#a86026}.stat.danger b{color:#b0301a}.panel{background:#fff;border:1px solid #e1e5de;padding:16px;margin:16px 0}.panel h2{margin:0 0 10px;font-size:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:9px 11px;font-size:13px;vertical-align:top}th{font-size:11px;text-transform:uppercase;color:#64716d}td.num,th.num{text-align:center}.muted{color:#64716d}.bar{display:flex;gap:2px;align-items:flex-end;height:44px;margin-top:8px;max-width:480px}.bar i{flex:1;background:#10211f;border-radius:2px 2px 0 0}.rate-line{font-size:14px;font-weight:700}.rate-ok{color:#0d7a4a}.rate-warn{color:#a86026}.rate-bad{color:#b0301a}</style></head><body><main class="wrap"><div class="top"><div><div class="brand">N<span>∿</span>XUS Admin</div><p>Önyüz AI asistan — aylık sohbet raporu</p></div><a class="back" href="/nexustraveltech/admin/ziyaretci-sohbet">← Sohbet kayıtları</a></div>
-<div class="nav"><a href="/nexustraveltech/admin/sohbet-raporu?ay=<?=htmlspecialchars($prev)?>">← Önceki ay</a><form method="get" action="/nexustraveltech/admin/sohbet-raporu" style="display:flex;gap:6px;align-items:center;border:0;background:none;padding:0"><input type="month" name="ay" value="<?=htmlspecialchars($ay)?>"><button style="background:#10211f;color:#fff;border:0;padding:8px 12px;cursor:pointer">Göster</button></form><a href="/nexustraveltech/admin/sohbet-raporu?ay=<?=htmlspecialchars($next)?>">Sonraki ay →</a><span class="muted" style="margin-left:auto"><b style="color:#10211f"><?=htmlspecialchars($monthLabel)?></b></span></div>
+<div class="nav"><a href="/nexustraveltech/admin/sohbet-raporu?ay=<?=htmlspecialchars($prev)?>">← Önceki ay</a><form method="get" action="/nexustraveltech/admin/sohbet-raporu" style="display:flex;gap:6px;align-items:center;border:0;background:none;padding:0"><input type="month" name="ay" value="<?=htmlspecialchars($ay)?>"><button style="background:#10211f;color:#fff;border:0;padding:8px 12px;cursor:pointer">Göster</button></form><a href="/nexustraveltech/admin/sohbet-raporu?ay=<?=htmlspecialchars($next)?>">Sonraki ay →</a><span style="width:10px"></span><a href="?ay=<?=htmlspecialchars($ay)?>&export=csv">⬇ CSV</a><a href="?ay=<?=htmlspecialchars($ay)?>&export=pdf">⬇ PDF</a><span class="muted" style="margin-left:auto"><b style="color:#10211f"><?=htmlspecialchars($monthLabel)?></b></span></div>
 <div class="stats"><div class="stat"><b><?= (int)$totalRows ?></b>Kayıtlı soru</div><div class="stat"><b><?= (int)$qualityRows ?></b>Kaliteli soru</div><div class="stat"><b><?= (int)$ips ?></b>Farklı IP</div><div class="stat warn"><b><?= (int)$redirected ?></b>Yönlendirildi</div><div class="stat danger"><b><?= (int)$denied ?></b>Reddedilen istek</div></div>
 <section class="panel"><h2>Yanıtlanamayan / yönlendirme oranı</h2>
 <p class="rate-line <?= $unansweredRate <= 30 ? 'rate-ok' : ($unansweredRate <= 60 ? 'rate-warn' : 'rate-bad') ?>">%<?= (int)$unansweredRate ?></p>
