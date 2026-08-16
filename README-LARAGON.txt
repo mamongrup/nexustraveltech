@@ -110,6 +110,11 @@ CANLIYA AÇMADAN ÖNCE
        psql -U nexus_app -d nexus_traveltech -c "UPDATE supplier_users SET password_hash='<üretilen-hash>' WHERE email='pilot@nexustraveltech.com';"
 - Eski MySQL şemaları (database/legacy/) artık kullanılmaz; yalnızca arşiv amaçlıdır.
 
+HAFTALIK SOHBET ÖZETİ (E-POSTA)
+- Zamanlayıcı görevi nexus-chat-weekly (varsayılan: pazartesi 08:00) son 7 günün özetini admin_alert_email'e
+  gönderir: en çok sorulan 5 soru, konu dağılımı (bu hafta vs geçen hafta değişim), yönlendirme/red sayıları
+  ve yanıtlanamayan oranı. Haftada bir kez idempotent (ISO hafta anahtarı).
+
 AYLIK SOHBET RAPORU (E-POSTA)
 - Zamanlayıcı görevi nexus-monthly-report (varsayılan: her ayın 1'i 07:00) bir önceki ayın raporunu
   admin_alert_email adresine gönderir: kayıtlı/kaliteli soru, IP, yönlendirme/red, konu trendi (H1-H5),
