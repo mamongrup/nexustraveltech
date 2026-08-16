@@ -137,8 +137,32 @@ function reject_agency_booking_request(int $requestId, int $supplierId, int $sup
 }
 
 /**
+ * Fiyat planındaki iptal politikasından iade tutarını hesaplar.
+ * Yapılandırılmış alan yoksa null döner (politika tanımsız).
+ *
+ * @return array{refundable: float|null, free: bool, policy_text: string}|null
+ */
+function booking_cancellation_policy(array $booking, ?PDO $pdo = null): ?array
+{
+    $pdo = $pdo ?? db();
+    if (empty($booking['rate_plan_id'])) return null;
+    $q = $pdo->prepare('SELECT free_cancel_before_days,cancel_fee_percent,cancellation_policy FROM rate_plans WHERE id=?');
+    $q->execute([$booking['rate_plan_id']]);
+    $rp = $q->fetch();
+    if (!$rp || $rp['free_cancel_before_days'] === null) return null;
+
+    $daysBefore = max(0, (int) ((strtotime((string) $booking['check_in']) - time()) / 86400));
+    $free = $daysBefore >= (int) $rp['free_cancel_before_days'];
+    $feePercent = $free ? 0 : max(0, min(100, (float) $rp['cancel_fee_percent']));
+    $refundable = round((float) $booking['total_amount'] * (1 - $feePercent / 100), 2);
+    $policyText = trim((string) ($rp['cancellation_policy'] ?? ''));
+    return ['refundable' => $refundable, 'free' => $free, 'policy_text' => $policyText];
+}
+
+/**
  * Rezervasyonu iptal eder: durum güncellenir, kontenjan geri iade edilir,
- * mutabakat iade olarak işaretlenir ve acenteye booking.cancelled webhook'u gönderilir.
+ * mutabakat iade olarak işaretlenir, misafir/acenteye iade bilgisi gider ve
+ * acenteye booking.cancelled webhook'u gönderilir.
  */
 function cancel_booking(int $bookingId, int $supplierId, int $supplierUserId, string $reason): array
 {
@@ -170,6 +194,39 @@ function cancel_booking(int $bookingId, int $supplierId, int $supplierUserId, st
 
         if ($ownsTx) $pdo->commit();
 
+        $policy = booking_cancellation_policy($b, $pdo);
+        $refundMessage = '';
+        if ($policy !== null) {
+            $refundMessage = ' İade tutarı: ' . number_format((float) $policy['refundable'], 2) . ' ' . $b['currency'] . ($policy['free'] ? ' (ücretsiz iptal penceresi içinde).' : ' (iptal ücreti düşüldü).');
+        }
+
+        try {
+            $guestQ = $pdo->prepare('SELECT gp.email,gp.first_name,gp.last_name FROM booking_guests bg JOIN guest_profiles gp ON gp.id=bg.guest_id WHERE bg.booking_id=? AND bg.is_primary=true LIMIT 1');
+            $guestQ->execute([$bookingId]);
+            $guest = $guestQ->fetch();
+            if ($guest && $guest['email']) {
+                queue_email_with_template(
+                    (string) $guest['email'],
+                    'booking_cancelled',
+                    [
+                        'misafir_adi' => trim((string) $guest['first_name'] . ' ' . (string) $guest['last_name']),
+                        'referans' => (string) $b['booking_reference'],
+                        'iade' => $policy !== null ? number_format((float) $policy['refundable'], 2) . ' ' . $b['currency'] : 'tanımsız',
+                        'neden' => $reason,
+                    ],
+                    'Rezervasyonunuz iptal edildi — ' . $b['booking_reference'],
+                    '<p>Sayın ' . htmlspecialchars(trim((string) $guest['first_name'] . ' ' . (string) $guest['last_name'])) . ',</p>'
+                    . '<p>Rezervasyonunuz iptal edildi. Referans: <b>' . htmlspecialchars((string) $b['booking_reference']) . '</b></p>'
+                    . '<p>İade tutarı: <b>' . ($policy !== null ? number_format((float) $policy['refundable'], 2) . ' ' . $b['currency'] : 'İade politikası tanımsız') . '</b></p>'
+                    . '<p>İptal nedeni: ' . htmlspecialchars($reason) . '</p><p>NEXUS TravelTech</p>',
+                    'booking_cancelled',
+                    $bookingId
+                );
+            }
+        } catch (Throwable $guestEmailError) {
+            // E-posta best-effort'tur.
+        }
+
         try {
             $q = $pdo->prepare('SELECT agency_id FROM agency_booking_requests WHERE booking_id=? LIMIT 1');
             $q->execute([$bookingId]);
@@ -189,7 +246,7 @@ function cancel_booking(int $bookingId, int $supplierId, int $supplierUserId, st
         } catch (Throwable $webhookError) {
             // Webhook bildirimi best-effort'tur.
         }
-        return ['ok' => true, 'message' => 'Rezervasyon iptal edildi; kontenjan ve mutabakat iade edildi.'];
+        return ['ok' => true, 'message' => 'Rezervasyon iptal edildi; kontenjan ve mutabakat iade edildi.' . $refundMessage];
     } catch (Throwable $e) {
         if ($ownsTx && $pdo->inTransaction()) $pdo->rollBack();
         throw $e;

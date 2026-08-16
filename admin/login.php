@@ -24,6 +24,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (hash_equals($credentials['username'], $username) && hash_equals($credentials['password'], $password)) {
             throttle_reset($key);
             session_regenerate_id(true);
+            try {
+                $admin2fa = db()->query('SELECT secret,enabled FROM admin_2fa WHERE id=1')->fetch();
+            } catch (Throwable $e) {
+                $admin2fa = null;
+            }
+            if ($admin2fa && !empty($admin2fa['enabled']) && !empty($admin2fa['secret'])) {
+                $_SESSION['admin_2fa_pending'] = true;
+                $_SESSION['admin_pending_username'] = $username;
+                header('Location: /nexustraveltech/admin/2fa');
+                exit;
+            }
             $_SESSION['admin_logged_in'] = true;
             $_SESSION['admin_username'] = $username;
             audit_log('admin.login', null, null, ['username' => $username]);

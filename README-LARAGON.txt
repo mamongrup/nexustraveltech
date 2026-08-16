@@ -10,7 +10,7 @@ YEREL GELİŞTİRME
 3. config/secrets.example.php dosyasını config/secrets.php olarak kopyalayın.
    db_* değerlerini girin ve app_encryption_key için 32 karakterden uzun rastgele bir anahtar kullanın.
 4. İlk kurulumda database/postgresql-schema.sql dosyasını çalıştırın.
-5. Ardından PostgreSQL migration'larını (009 ve sonrası) sıra ile çalıştırın (025+ arası login throttling, B2B rezervasyon talepleri, misafir değerlendirme, kimlik bildirimi, e-posta kuyruğu, webhook abonelikleri, iptal akışı, hata izleme, denetim kaydı, ödeme linkleri, döviz kuru, panel bildirimleri ve acente self-servis kayıt kolonlarını içerir):
+5. Ardından PostgreSQL migration'larını (009 ve sonrası) sıra ile çalıştırın (025+ arası login throttling, B2B rezervasyon talepleri, misafir değerlendirme, kimlik bildirimi, e-posta kuyruğu, webhook abonelikleri, iptal akışı, hata izleme, denetim kaydı, ödeme linkleri, döviz kuru, panel bildirimleri, acente self-servis kayıt, iptal politikası, depozito, 2FA, kredi limiti ve e-posta şablonlarını içerir):
    Get-ChildItem database/migrations/0*-*-postgres.sql | Sort-Object Name | ForEach-Object { Get-Content $_ | psql -U nexus_app -d nexus_traveltech -v ON_ERROR_STOP=1 }
 6. Laragon'da Apache'yi başlatın. Site: http://localhost/nexustraveltech/
 
@@ -28,6 +28,9 @@ YEREL GELİŞTİRME
    * * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/process-netgsm-sms.php >/dev/null 2>&1
    */5 * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/process-emails.php >/dev/null 2>&1
    */1 * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/process-webhooks.php >/dev/null 2>&1
+   0 8 * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/send-welcome-emails.php >/dev/null 2>&1
+   15 9 * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/send-notification-digest.php >/dev/null 2>&1
+   30 3 * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/expire-group-options.php >/dev/null 2>&1
 
 OTOMATİK TESTLER
 - Test bağımlılıklarını yükleyin (yalnızca test ortamında; üretimde gerekmez):

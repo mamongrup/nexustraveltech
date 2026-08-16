@@ -34,8 +34,18 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
       db()->prepare('DELETE FROM webhook_subscriptions WHERE id=? AND agency_id=?')->execute([$id,$u['agency_id']]);
       $message='Abonelik silindi.';
     }
+    if($action==='resend'){
+      $id=(int)($_POST['id']??0);
+      db()->prepare("UPDATE webhook_deliveries d SET status='queued',attempts=0,error_message=NULL,sent_at=NULL WHERE d.id=? AND d.subscription_id IN (SELECT id FROM webhook_subscriptions WHERE agency_id=?)")->execute([$id,$u['agency_id']]);
+      $message='Teslimat yeniden kuyruğa alındı.';
+    }
   }
 }
+
+$deliveries=[];
+$q=db()->prepare('SELECT d.*,s.url FROM webhook_deliveries d JOIN webhook_subscriptions s ON s.id=d.subscription_id WHERE s.agency_id=? ORDER BY d.id DESC LIMIT 200');
+$q->execute([$u['agency_id']]);
+foreach($q->fetchAll() as $d)$deliveries[$d['subscription_id']][]=$d;
 
 $q=db()->prepare('SELECT * FROM webhook_subscriptions WHERE agency_id=? ORDER BY id DESC');
 $q->execute([$u['agency_id']]);
@@ -57,6 +67,9 @@ $subscriptions=$q->fetchAll();
 <section class="c"><b><?=htmlspecialchars($s['url'])?></b> · <?=htmlspecialchars($s['status'])?><?= $s['last_sent_at']?' · son gönderim: '.htmlspecialchars((string)$s['last_sent_at']):''?><p class="muted"><?=htmlspecialchars(implode(', ',array_map(fn($e)=>$events[$e]??$e,$subEvents)))?></p>
 <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?=$s['id']?>"><button><?=$s['status']==='active'?'Duraklat':'Etkinleştir'?></button></form>
 <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?=$s['id']?>"><button style="background:#8e2410">Sil</button></form>
+<?php $hist=$deliveries[$s['id']]??[];if($hist):?><details style="margin-top:8px"><summary style="cursor:pointer">Teslimat geçmişi (<?=count($hist)?>)</summary>
+<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px"><tr><th style="border-bottom:1px solid #ddd;text-align:left">Zaman</th><th>Olay</th><th>Durum</th><th>HTTP</th><th>Deneme</th><th></th></tr>
+<?php foreach(array_slice($hist,0,15) as $d):?><tr><td style="border-bottom:1px solid #eee"><?=htmlspecialchars((string)$d['created_at'])?></td><td><?=htmlspecialchars($d['event'])?></td><td><?=htmlspecialchars($d['status'])?><?= $d['error_message']?'<br><span style="color:#8e2410">'.htmlspecialchars((string)$d['error_message']).'</span>':''?></td><td><?=$d['http_status']!==null?(int)$d['http_status']:'—'?></td><td><?=(int)$d['attempts']?></td><td><?php if($d['status']!=='sent'):?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['agency_csrf'])?>"><input type="hidden" name="action" value="resend"><input type="hidden" name="id" value="<?=$d['id']?>"><button style="margin:0;padding:4px 8px">Yeniden gönder</button></form><?php endif;?></td></tr><?php endforeach;?></table></details><?php endif;?>
 </section>
 <?php endforeach;?>
 </main></body></html>

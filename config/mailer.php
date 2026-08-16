@@ -15,6 +15,42 @@ function queue_email(string $to, string $subject, string $bodyHtml, ?string $rel
 }
 
 /**
+ * Aktif bir e-posta şablonunu {degisken} değişkenleriyle doldurur.
+ * Şablon yoksa veya pasifse null döner.
+ *
+ * @return array{subject: string, body_html: string}|null
+ */
+function render_email_template(string $code, array $vars = []): ?array
+{
+    $q = db()->prepare("SELECT subject,body_html FROM email_templates WHERE code=? AND is_active=true LIMIT 1");
+    $q->execute([$code]);
+    $t = $q->fetch();
+    if (!$t) return null;
+    $subject = (string) $t['subject'];
+    $body = (string) $t['body_html'];
+    foreach ($vars as $key => $value) {
+        $subject = str_replace('{' . $key . '}', (string) $value, $subject);
+        $body = str_replace('{' . $key . '}', htmlspecialchars((string) $value), $body);
+    }
+    return ['subject' => $subject, 'body_html' => $body];
+}
+
+/**
+ * Şablon varsa şablonla, yoksa verilen varsayılan içerikle e-posta kuyruklar.
+ * Şablon kullanıldıysa true döner.
+ */
+function queue_email_with_template(string $to, string $code, array $vars, string $fallbackSubject, string $fallbackBody, ?string $relatedType = null, ?int $relatedId = null): bool
+{
+    $rendered = render_email_template($code, $vars);
+    if ($rendered !== null) {
+        queue_email($to, $rendered['subject'], $rendered['body_html'], $relatedType, $relatedId);
+        return true;
+    }
+    queue_email($to, $fallbackSubject, $fallbackBody, $relatedType, $relatedId);
+    return false;
+}
+
+/**
  * Yönetim panelinde tanımlı admin_alert_email adresine uyarı e-postası kuyruklar.
  */
 function queue_admin_alert_email(string $title, string $body): void

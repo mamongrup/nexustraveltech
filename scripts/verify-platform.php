@@ -2,26 +2,31 @@
 declare(strict_types=1);
 require_once __DIR__.'/../config/database.php';
 
-$requiredTables=['suppliers','supplier_users','properties','supplier_bookings','inventory_calendar','channel_connections','ical_connections','ical_events','physical_rooms','booking_folios','folio_transactions','payment_records','payment_allocations','hotel_invoices','night_audit_runs','hotel_staff','hotel_roles','loyalty_tiers','guest_loyalty_accounts','revenue_recommendations','guest_service_requests','login_throttle','guest_reviews','agency_booking_requests','email_outbox','webhook_subscriptions','webhook_deliveries','error_logs','admin_audit_logs','payment_links','fx_rates','booking_groups','notifications','agencies','agency_users'];
+$requiredTables=['suppliers','supplier_users','properties','supplier_bookings','inventory_calendar','channel_connections','ical_connections','ical_events','physical_rooms','booking_folios','folio_transactions','payment_records','payment_allocations','hotel_invoices','night_audit_runs','hotel_staff','hotel_roles','loyalty_tiers','guest_loyalty_accounts','revenue_recommendations','guest_service_requests','login_throttle','guest_reviews','agency_booking_requests','email_outbox','webhook_subscriptions','webhook_deliveries','error_logs','admin_audit_logs','payment_links','fx_rates','booking_groups','notifications','agencies','agency_users','email_templates','admin_2fa'];
 
 // Kritik kolonlar: migration eksikse burada yakalanır (tablo->kolon listesi).
 $requiredColumns=[
-    'supplier_bookings'=>['rate_plan_id'],
+    'supplier_bookings'=>['rate_plan_id','booking_status','checked_in_at','checked_out_at','early_arrival','late_departure','deposit_amount','deposit_status','no_show_at','cancelled_at','cancellation_reason'],
     'agency_booking_requests'=>['booking_id','consent_at'],
     'guest_document_records'=>['reported_at'],
-    'email_outbox'=>['subject','body_html','status','attempts','last_error','queued_at','sent_at'],
-    'webhook_subscriptions'=>['url','secret','events','is_active','created_at'],
-    'webhook_deliveries'=>['event','payload','status','attempts','last_error','next_attempt_at'],
-    'login_throttle'=>['key_hash','attempts','blocked_until','last_attempt_at'],
-    'guest_reviews'=>['token','rating','status','supplier_response'],
-    'agency_quotes'=>['guest_name','guest_phone','preferences'],
+    'rate_plans'=>['free_cancel_before_days','cancel_fee_percent'],
+    'supplier_users'=>['totp_secret'],
+    'agency_users'=>['totp_secret'],
+    'agencies'=>['verify_token','verified_at','self_registered','credit_limit','payment_score'],
+    'email_outbox'=>['to_address','subject','body_html','status','error_message','sent_at'],
+    'webhook_subscriptions'=>['url','secret','events','status','created_at'],
+    'webhook_deliveries'=>['event','payload','status','attempts','http_status','error_message','sent_at'],
+    'login_throttle'=>['bucket','attempts','window_start','locked_until'],
+    'guest_reviews'=>['token_hash','rating','status','response','submitted_at'],
+    'agency_quotes'=>['quote_number','valid_until','total_amount','status'],
     'payment_links'=>['token','status','test_mode','amount','currency'],
     'fx_rates'=>['base_currency','quote_currency','rate','rate_date'],
     'error_logs'=>['level','status','message'],
     'admin_audit_logs'=>['action','admin_username','details'],
-    'booking_groups'=>['group_code','status'],
+    'booking_groups'=>['group_code','status','option_expires_at'],
     'notifications'=>['user_type','user_id','is_read','message'],
-    'agencies'=>['verify_token','verified_at','self_registered'],
+    'email_templates'=>['code','subject','body_html','is_active'],
+    'admin_2fa'=>['secret','enabled'],
 ];
 
 try {

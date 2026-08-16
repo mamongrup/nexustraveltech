@@ -12,12 +12,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!$status['allowed']) {
     $error = 'Çok fazla hatalı deneme. ' . (int) ceil($status['retry_after'] / 60) . ' dakika sonra tekrar deneyin.';
   } elseif ($email && is_string($password)) {
-    $query = db()->prepare("SELECT u.id, u.supplier_id, u.full_name, u.email, u.password_hash, u.role, s.company_name FROM supplier_users u JOIN suppliers s ON s.id=u.supplier_id WHERE u.email=? AND s.status IN ('pilot', 'active') LIMIT 1");
+    $query = db()->prepare("SELECT u.id, u.supplier_id, u.full_name, u.email, u.password_hash, u.role, u.totp_secret, s.company_name FROM supplier_users u JOIN suppliers s ON s.id=u.supplier_id WHERE u.email=? AND s.status IN ('pilot', 'active') LIMIT 1");
     $query->execute([$email]); $account = $query->fetch();
     if ($account && password_verify($password, $account['password_hash'])) {
       throttle_reset($key);
       session_regenerate_id(true);
-      unset($account['password_hash']); $_SESSION['supplier_user'] = $account;
+      unset($account['password_hash']);
+      if (!empty($account['totp_secret'])) {
+        $_SESSION['supplier_2fa_pending'] = $account;
+        header('Location: /nexustraveltech/tedarikci/2fa'); exit;
+      }
+      $_SESSION['supplier_user'] = $account;
       db()->prepare('UPDATE supplier_users SET last_login_at=NOW() WHERE id=?')->execute([$account['id']]);
       header('Location: /nexustraveltech/tedarikci/'); exit;
     }
