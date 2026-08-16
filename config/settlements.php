@@ -48,7 +48,7 @@ function upsert_booking_settlement(int $bookingId, string $transactionType = 'bo
     }
     $rate = property_commission_rate((int) $booking['property_id'])['rate'];
     $calc = settlement_calculation((float) $booking['total_amount'], $rate);
-    db()->prepare("INSERT INTO supplier_settlements(supplier_id,booking_id,transaction_type,status,gross_amount,commission_amount,net_amount,currency) VALUES(?,?,?,'pending',?,?,?,?) ON CONFLICT (booking_id) DO NOTHING")
+    db()->prepare("INSERT INTO supplier_settlements(supplier_id,booking_id,transaction_type,status,gross_amount,commission_amount,net_amount,currency) VALUES(?,?,?,'pending',?,?,?,?) ON CONFLICT (booking_id) WHERE booking_id IS NOT NULL DO NOTHING")
         ->execute([$booking['supplier_id'], $bookingId, $transactionType, $calc['gross'], $calc['commission_amount'], $calc['net_amount'], $booking['currency']]);
     return $calc;
 }
