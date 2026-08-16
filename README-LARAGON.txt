@@ -22,17 +22,15 @@ YEREL GELİŞTİRME
    for f in database/migrations/0*-*-postgres.sql; do echo "Çalışıyor: $f"; sudo -u postgres psql -d nexus_traveltech -v ON_ERROR_STOP=1 -f "$f" || exit 1; done
 4. Şema ve uygulama bağımlılıklarını doğrulayın:
    /opt/plesk/php/8.5/bin/php scripts/verify-platform.php
-5. Plesk Scheduled Tasks'a aşağıdaki cron'ları ekleyin:
-   */15 * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/sync-ical-calendars.php >/dev/null 2>&1
-   15 2 * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/generate-revenue-recommendations.php >/dev/null 2>&1
-   * * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/process-netgsm-sms.php >/dev/null 2>&1
-   */5 * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/process-emails.php >/dev/null 2>&1
-   */1 * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/process-webhooks.php >/dev/null 2>&1
-   0 8 * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/send-welcome-emails.php >/dev/null 2>&1
-   15 9 * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/send-notification-digest.php >/dev/null 2>&1
-   30 3 * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/expire-group-options.php >/dev/null 2>&1
+5. Plesk Scheduled Tasks'a TEK nabız cron'u ekleyin (görev tanımları artık panelden yönetilir — /nexustraveltech/admin/timerlar):
+   * * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/tick.php >/dev/null 2>&1
 
-   Tek komutla (root): bash scripts/install-crons.sh — tüm görevleri idempotent kurar.
+   Alternatif (shell gerekmez): Plesk Scheduled Tasks → "Request a URL" → admin panelindeki
+   Zamanlayıcılar sayfasında gösterilen token'lı adres (https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=...).
+
+   Tek komutla (root): bash scripts/install-crons.sh — eski 8 görevi kaldırır, tek nabzı idempotent kurar.
+
+   Görev zamanlamaları admin → Zamanlayıcılar'dan düzenlenir (aç/kapat, şimdi çalıştır, son durum/çıktı).
 
 6. Doğrulama ve test:
    /opt/plesk/php/8.5/bin/php scripts/verify-platform.php
