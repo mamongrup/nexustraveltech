@@ -114,6 +114,10 @@ ZAMANLAYICI ÇALIŞMA GEÇMİŞİ
 - Migration 039: scheduled_job_runs tablosu — her çalıştırma (nabız / manuel / AI) ayrı satır olarak
   kaydedilir: durum, çıktı, süre (ms), tetikleyen. 90 günden eski kayıtlar otomatik temizlenir.
 - admin/zamanlayici-gecmisi: görev ve durum filtresi, son 24s/7g hata kartları, ortalama süre, çıktı görüntüleme.
+- Görev hata uyarıları (migration 040 + nexus-job-fail-alerts, her 15 dk): arka arkaya 3 kez hata veren
+  görevi admin_alert_email'e bildirir — aynı hata serisi için tek e-posta (scheduled_jobs.last_fail_alert_at);
+  araya giren başarı bayrağı sıfırlar, sonraki seri tekrar uyarır. E-posta: görev, komut, zamanlama,
+  son hata zamanı ve son çıktı özeti + geçmişe bağlantı.
 
 PANEL SOHBET RAPORU (TEDARİKÇİ / ACENTE)
 - Panel AI sohbetleri artık panel_chat_messages tablosuna kaydedilir (migration 038) — admin, tedarikçi

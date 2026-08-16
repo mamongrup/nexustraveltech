@@ -29,7 +29,7 @@ $requiredColumns=[
     'notifications'=>['user_type','user_id','is_read','message'],
     'email_templates'=>['code','subject','body_html','is_active'],
     'admin_2fa'=>['secret','enabled'],
-    'scheduled_jobs'=>['code','command','schedule','enabled','last_status'],
+    'scheduled_jobs'=>['code','command','schedule','enabled','last_status','last_fail_alert_at'],
 ];
 
 try {
