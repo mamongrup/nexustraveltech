@@ -55,29 +55,48 @@ $ipQ = db()->prepare("SELECT COUNT(DISTINCT ip) FROM public_chat_messages WHERE 
 $ipQ->execute([$since]);
 $ips = (int) $ipQ->fetchColumn();
 
-// Konu dağılımı: tüm kaliteli sorular ortak sınıflandırıcıyla etiketlenir.
-$topicCounts = array_fill_keys(array_keys(chat_topic_defs()), 0);
-$allQ = db()->prepare("SELECT user_message FROM public_chat_messages WHERE created_at>=? AND $quality LIMIT 5000");
-$allQ->execute([$since]);
-foreach ($allQ->fetchAll() as $ar) {
-    foreach (chat_classify((string) $ar['user_message']) as $t) {
-        $topicCounts[$t]++;
+// Konu dağılımı: son 24 saat + son 7 gün ile önceki 7 günün karşılaştırması.
+$nowStr = date('Y-m-d H:i:s');
+$prev7End = date('Y-m-d H:i:s', time() - 7 * 86400);
+$prev7Start = date('Y-m-d H:i:s', time() - 14 * 86400);
+$topicCountsFor = function (string $start, string $end) use ($quality): array {
+    $counts = array_fill_keys(array_keys(chat_topic_defs()), 0);
+    $q = db()->prepare("SELECT user_message FROM public_chat_messages WHERE created_at>=? AND created_at<? AND $quality LIMIT 20000");
+    $q->execute([$start, $end]);
+    foreach ($q->fetchAll() as $r) {
+        foreach (chat_classify((string) $r['user_message']) as $t) {
+            $counts[$t]++;
+        }
     }
-}
-arsort($topicCounts);
-$totalMatches = array_sum($topicCounts);
-$topicTop = array_slice($topicCounts, 0, 5, true);
+    return $counts;
+};
+$topic24h = $topicCountsFor($since, $nowStr);
+$topic7 = $topicCountsFor($prev7End, $nowStr);
+$topicPrev7 = $topicCountsFor($prev7Start, $prev7End);
+$topicOrder = array_keys($topic7);
+usort($topicOrder, fn($a, $b) => ($topic7[$b] <=> $topic7[$a]) ?: ($topic24h[$b] <=> $topic24h[$a]));
 $topicRows = '';
-if ($totalMatches > 0) {
-    foreach ($topicTop as $t => $c) {
-        $topicRows .= '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de">' . htmlspecialchars($t) . '</td>'
-            . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center">%' . round($c / $totalMatches * 100) . ' (' . $c . ')</td></tr>';
+foreach (array_slice($topicOrder, 0, 5) as $t) {
+    $c24 = $topic24h[$t];
+    $c7 = $topic7[$t];
+    $cP = $topicPrev7[$t];
+    if ($c7 === 0 && $c24 === 0) continue;
+    if ($cP > 0) {
+        $delta = (int) round(($c7 - $cP) / $cP * 100);
+        $deltaTxt = ($delta >= 0 ? '▲ %' : '▼ %') . abs($delta);
+        $deltaColor = $delta >= 0 ? '#0d7a4a' : '#b0301a';
+    } elseif ($c7 > 0) {
+        $deltaTxt = 'yeni';
+        $deltaColor = '#0d7a4a';
+    } else {
+        $deltaTxt = '—';
+        $deltaColor = '#64716d';
     }
-    $rest = $totalMatches - array_sum($topicTop);
-    if ($rest > 0) {
-        $topicRows .= '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de">Diğer</td>'
-            . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center">%' . round($rest / $totalMatches * 100) . ' (' . $rest . ')</td></tr>';
-    }
+    $topicRows .= '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de">' . htmlspecialchars($t) . '</td>'
+        . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center">' . $c24 . '</td>'
+        . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center">' . $c7 . '</td>'
+        . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center">' . $cP . '</td>'
+        . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de;text-align:center;color:' . $deltaColor . ';font-weight:700">' . $deltaTxt . '</td></tr>';
 }
 
 if ($total === 0) {
@@ -99,7 +118,7 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '<tr><th style="text-align:left;padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">En çok sorulanlar</th>'
     . '<th style="padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Sayı</th></tr>'        . $rows
         . '</table>'
-        . ($topicRows !== '' ? '<h3 style="margin:20px 0 6px">Konu dağılımı</h3><table style="border-collapse:collapse;width:100%;max-width:420px"><tr><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Konu</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Pay</th></tr>' . $topicRows . '</table>' : '')
+        . ($topicRows !== '' ? '<h3 style="margin:20px 0 6px">Konu dağılımı (haftalık karşılaştırma)</h3><table style="border-collapse:collapse;width:100%;max-width:640px"><tr><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Konu</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Son 24s</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Son 7 gün</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Geçen 7 gün</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Değişim</th></tr>' . $topicRows . '</table>' : '')
         . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/ziyaretci-sohbet" style="color:#0d7a4a">Tüm kayıtları görüntüle →</a></p>'
         . '</div>';
 
