@@ -120,6 +120,41 @@ for ($i = $opsDays - 1; $i >= 0; $i--) {
 
 $jobs = scheduler_jobs();
 
+// Sağlık kontrolü trendi — nexus-health-check çalıştırmalarından günlük sorun sayısı.
+// Sayı, her koşunun çıktısındaki 'SONUÇ: N sorun' satırından ayrıştırılır;
+// 'Tüm kontroller başarılı' → 0 sorun; çıktı yoksa durum bilinmiyor (-1).
+// Gün bazında o günün son koşusunun durumu esas alınır (kronolojik üzerine yazma).
+$hcDays = (int) ($_GET['hc_days'] ?? 14);
+if (!in_array($hcDays, [7, 14, 30], true)) $hcDays = 14;
+$hcJobId = null;
+foreach ($jobs as $j) if (($j['code'] ?? '') === 'nexus-health-check') { $hcJobId = (int) $j['id']; break; }
+$hcRuns = $hcJobId !== null ? $opsQuery("SELECT sr.created_at::date d, sr.status, sr.output FROM scheduled_job_runs sr WHERE sr.job_id=$hcJobId AND sr.created_at >= CURRENT_DATE - " . ($hcDays - 1) . " ORDER BY sr.created_at") : [];
+$hcByDay = [];
+$hcRunCount = 0;
+foreach ($hcRuns as $r) {
+    $hcRunCount++;
+    $d = (string) $r['d'];
+    $out = (string) ($r['output'] ?? '');
+    $probs = -1;
+    if (preg_match('/SONUÇ:\s*(\d+)\s+sorun/i', $out, $m)) $probs = (int) $m[1];
+    elseif (mb_stripos($out, 'Tüm kontroller başarılı') !== false) $probs = 0;
+    if (!isset($hcByDay[$d])) $hcByDay[$d] = ['runs' => 0, 'failed' => 0, 'probs' => -1];
+    $hcByDay[$d]['runs']++;
+    if (in_array((string) ($r['status'] ?? ''), ['error', 'failed'], true)) $hcByDay[$d]['failed']++;
+    if ($probs >= 0) $hcByDay[$d]['probs'] = $probs;
+}
+$hcRows = [];
+$hcProblemDays = 0;
+$hcMaxProbs = 1;
+for ($i = $hcDays - 1; $i >= 0; $i--) {
+    $d = date('Y-m-d', time() - $i * 86400);
+    $info = $hcByDay[$d] ?? null;
+    $probs = $info !== null ? (int) $info['probs'] : -1;
+    if ($probs > 0) $hcProblemDays++;
+    $hcMaxProbs = max($hcMaxProbs, max(0, $probs));
+    $hcRows[] = ['d' => $d, 'probs' => $probs, 'runs' => $info !== null ? (int) $info['runs'] : 0, 'failed' => $info !== null ? (int) $info['failed'] : 0];
+}
+
 // Kartlardan filtre bağlantıları üret (görev seçimi korunur).
 $filterUrl = function (string $st, int $h) use ($jobId): string {
     $q = [];
@@ -196,6 +231,19 @@ $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başar�
 <?php endforeach; ?>
 </div>
 <p class="muted" style="margin:6px 0 0">Alt çubuk: günün toplam sorun sayısı (en yüksek gün <?= (int)$opsMaxTotal ?>). <b><?= (int)$opsWarnDays ?>/<?= (int)$opsDays ?> gün en az bir eşiği aştı</b> <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#b0301a;vertical-align:middle"></span></p>
+</section>
+
+<section class="c"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">🩺 Sağlık kontrolü — günlük sorun trendi (son <?= (int)$hcDays ?> gün)</h2>
+<form method="get" action="/nexustraveltech/admin/zamanlayici-gecmisi" style="display:flex;gap:6px;align-items:center"><?php if ($jobId > 0): ?><input type="hidden" name="job" value="<?= (int)$jobId ?>"><?php endif; ?><?php if ($status !== ''): ?><input type="hidden" name="status" value="<?=htmlspecialchars($status)?>"><?php endif; ?><?php if ($hours > 0): ?><input type="hidden" name="hours" value="<?= (int)$hours ?>"><?php endif; ?><input type="hidden" name="limit" value="<?= (int)$limit ?>"><input type="hidden" name="chart_job" value="<?= (int)$chartJob ?>"><input type="hidden" name="ops_days" value="<?= (int)$opsDays ?>"><select name="hc_days" onchange="this.form.submit()"><option value="7" <?= $hcDays === 7 ? 'selected' : '' ?>>7 gün</option><option value="14" <?= $hcDays === 14 ? 'selected' : '' ?>>14 gün</option><option value="30" <?= $hcDays === 30 ? 'selected' : '' ?>>30 gün</option></select></form></div>
+<p class="muted" style="margin:6px 0 8px">Her koşunun çıktısındaki <code>SONUÇ: N sorun</code> satırından ayrıştırılan sorun sayısı — gün bazında; sorunlu günler <b style="color:#b0301a">kırmızı</b>, temiz günler <b style="color:#0d7a4a">yeşil</b>, gri nokta = o gün çalışma yok. Son koşunun durumu esas alınır. <a href="<?= $hcJobId ? '/nexustraveltech/admin/zamanlayici-gecmisi?job=' . $hcJobId . '&limit=100' : '/nexustraveltech/admin/zamanlayici-gecmisi' ?>">Kayıtları gör →</a></p>
+<div style="display:flex;gap:2px;align-items:flex-end;max-width:820px;margin-top:10px">
+<?php foreach ($hcRows as $h): ?>
+  <div title="<?= htmlspecialchars($h['d']) . ': ' . ($h['probs'] >= 0 ? $h['probs'] . ' sorun · ' . $h['runs'] . ' çalıştırma' . ($h['failed'] > 0 ? ' (' . $h['failed'] . ' hata)' : '') : 'çalışma yok') ?>" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;min-width:4px">
+    <i style="display:block;width:100%;background:<?= $h['probs'] < 0 ? '#d5dccf' : ($h['probs'] > 0 ? '#b0301a' : '#0d7a4a') ?>;border-radius:2px 2px 0 0;height:<?= $h['probs'] < 0 ? 3 : max(2, (int) round($h['probs'] / $hcMaxProbs * 46)) ?>px"></i>
+  </div>
+<?php endforeach; ?>
+</div>
+<p class="muted" style="margin:6px 0 0"><b><?= (int)$hcProblemDays ?>/<?= (int)$hcDays ?> gün sorunlu</b> · <?= (int)$hcRunCount ?> çalıştırma · en yüksek gün <?= (int)$hcMaxProbs ?> sorun <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#b0301a;vertical-align:middle"></span></p>
 </section>
 
 <section class="c">
