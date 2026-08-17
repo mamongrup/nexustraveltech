@@ -190,3 +190,5 @@ AYLIK SOHBET RAPORU (E-POSTA)
   gelecek günleri VEYA içe aktarılmış gelecek iCal bloklarını (ical_events) kabul eder; villa/yat'a özel
   "Aktif iCal bağlantısı" kalemi eklenir (opsiyonel — skor paydasına girmez). iCal bağlantısı olmadan da
   NEXUS takvimi doluysa ilan yayına alınabilir.
+- Tür bazlı zorunlu hazırlık kalemleri: villa → "Havuz bilgisi", yat → "Bağlama limanı" + "Mürettebat".
+  Bunlar çekirdek kalemlerdir (skor paydasına girer); villa 7, yat 8 çekirdek kalemle %100'e ulaşır.

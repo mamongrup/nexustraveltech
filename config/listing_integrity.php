@@ -75,6 +75,18 @@ function listing_readiness(array $property): array
         ['key' => 'location', 'label' => 'Konum (enlem/boylam)', 'ok' => $location, 'detail' => $location ? 'Mevcut' : 'Konum girilmedi'],
     ];
 
+    // Tür bazlı zorunlu kalemler (skor paydasına girer): villa → havuz, yat → liman + mürettebat.
+    if (($property['property_type'] ?? '') === 'villa') {
+        $pool = trim((string) ($details['pool'] ?? '')) !== '';
+        $items[] = ['key' => 'pool', 'label' => 'Havuz bilgisi', 'ok' => $pool, 'detail' => $pool ? 'Havuz: ' . $details['pool'] : 'Havuz tipi seçilmedi'];
+    }
+    if (($property['property_type'] ?? '') === 'yacht') {
+        $homePort = trim((string) ($details['home_port'] ?? '')) !== '';
+        $crew = trim((string) ($details['crew'] ?? '')) !== '';
+        $items[] = ['key' => 'home_port', 'label' => 'Bağlama limanı', 'ok' => $homePort, 'detail' => $homePort ? $details['home_port'] : 'Liman bilgisi yok'];
+        $items[] = ['key' => 'crew', 'label' => 'Mürettebat', 'ok' => $crew, 'detail' => $crew ? $details['crew'] : 'Mürettebat bilgisi yok'];
+    }
+
     if ($isIcalType) {
         $items[] = ['key' => 'ical', 'label' => 'Aktif iCal bağlantısı', 'ok' => $icalActive > 0, 'detail' => $icalActive > 0 ? $icalActive . ' bağlantı' : 'Bağlantı yok (opsiyonel) — iCal takvimler sayfasından ekleyin'];
     }
@@ -83,6 +95,7 @@ function listing_readiness(array $property): array
 
     // Skor yalnızca çekirdek kalemler üzerinden hesaplanır; satış kuralı ve iCal bağlantısı
     // opsiyoneldir ve paydaya girmez — böylece kuralsız/iCal'sız ama yayına hazır ilan %100 gösterebilir.
+    // Tür bazlı zorunlu kalemler (pool / home_port / crew) çekirdektedir ve paydaya girer.
     $coreItems = array_values(array_filter($items, fn($i) => $i['key'] !== 'rules' && $i['key'] !== 'ical'));
     $coreOk = count(array_filter($coreItems, fn($i) => $i['ok']));
     return [
