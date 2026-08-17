@@ -84,6 +84,22 @@ try {
     $m = $map->fetch();
     $issues = [];
 
+    // Hızlı eşleştirme kutusu: 'kaydetmeden test et' — henüz kaydedilmemiş bir eşleşme için
+    // seçili oda tipi/plan hedefi sanal confirmed eşleşme olarak test edilir (veri yazılmaz).
+    $probeRoomId = (int) ($_GET['room_type_id'] ?? 0);
+    $probePlanId = (int) ($_GET['rate_plan_id'] ?? 0);
+    $isProbe = false;
+    if (!$m && $probeRoomId > 0) {
+        $m = [
+            'room_type_id' => $probeRoomId,
+            'rate_plan_id' => $probePlanId > 0 ? $probePlanId : null,
+            'status' => 'confirmed',
+            'suggestion_score' => null,
+            'suggestion_count' => 0,
+        ];
+        $isProbe = true;
+    }
+
     if (!$m) {
         // Kod hiç eşleştirilmemiş: ayar açıksa öneri oluşur (veri yazılmaz), kapalıysa ilk aktif oda tipine yazılır.
         $autoMap = (bool) platform_setting('channel_webhook_auto_map', true);
@@ -173,13 +189,15 @@ try {
     }
 
     $ready = $issues === [];
+    $probeTxt = $isProbe ? ' <b>KAYDETMEDEN TEST</b> — bu eşleşme henüz kayıtlı değil; kaydetmek için "Eşleştirmeleri kaydet →".' : '';
     echo json_encode([
         'ok' => true,
         'mapped' => true,
         'ready' => $ready,
         'status' => 'confirmed',
+        'probe' => $isProbe,
         'message' => $ready
-            ? '✓ Eşleşme hazır: "' . $code . '" → ' . htmlspecialchars((string) ($room['name'] ?? '#')) . ' (' . ($plan ? htmlspecialchars((string) $plan['name']) . ' · ' . $planCur : 'ilk aktif plan') . '). Webhook verisi doğru oda tipine ve plana yazılır.' . ($fxNote ? ' Kur: ' . $fxNote . '.' : '')
+            ? '✓ Hedef hazır: "' . $code . '" seçili oda tipine (' . htmlspecialchars((string) ($room['name'] ?? '#')) . ' · ' . ($plan ? htmlspecialchars((string) $plan['name']) . ' · ' . $planCur : 'ilk aktif plan') . ') yazılırsa doğru plana gider.' . ($fxNote ? ' Kur: ' . $fxNote . '.' : '') . $probeTxt
             : '⚠ ' . implode(' ', $issues),
         'room' => $room ? ['id' => (int) $room['id'], 'name' => (string) $room['name']] : null,
         'plan' => $plan ? ['id' => (int) $plan['id'], 'name' => (string) $plan['name'], 'currency' => $planCur] : null,
