@@ -28,6 +28,7 @@ function scheduler_seed_defaults(): void
         ['nexus-ical-inactive-alerts', 'iCal bağlantısı pasif uyarıları', 'cron/alert-ical-inactive.php', '*/15 * * * *'],
         ['nexus-channel-inactive-alerts', 'Kanal dağıtımı pasif uyarıları', 'cron/alert-channel-inactive.php', '*/15 * * * *'],
         ['nexus-channel-sync-job-alerts', 'Kanal senkron hata uyarıları', 'cron/alert-channel-sync-jobs.php', '*/15 * * * *'],
+        ['nexus-channel-webhook-loop-alerts', 'Webhook tekrar başarısızlık uyarıları', 'cron/alert-channel-webhook-loop.php', '*/15 * * * *'],
         ['nexus-distribution-health-digest', 'Dağıtım sağlığı haftalık özeti', 'cron/send-distribution-health-digest.php', '0 8 * * 1'],
         ['nexus-job-status-digest', 'Görev sağlık raporu', 'cron/send-job-status-digest.php', '0 9 * * *'],
     ];

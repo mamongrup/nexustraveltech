@@ -288,3 +288,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
   birimi entry.currency -> yuk.currency -> ayar varsayilani sirayla belirlenir;
   fiyat plani biriminden farkliysa fx_rates uzerinden (tarih bazli, TRY capraz
   dahil) cevrilir. Kur yoksa satir yazilmaz, fx_rate_missing hatasi loga duser.
+- Webhook tekrar deneme uyarisi (nexus-channel-webhook-loop-alerts): ayni yuk
+  (request_payload md5) son 24 saatte 3+ kez basarisiz olursa tedarikci panel
+  bildirimi + admin epostasi (son hata + yuk ornegi). Esik platform ayari
+  channel_webhook_loop_threshold (varsayilan 3); ayni baglanti+yuk icin 24 saatte bir.
