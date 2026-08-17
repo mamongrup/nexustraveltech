@@ -73,6 +73,7 @@ function process_email_outbox(int $limit = 25): array
     $query->execute();
     $sent = 0;
     $failed = 0;
+    $testDelivered = [];
     foreach ($query->fetchAll() as $email) {
         $attName = (string) ($email['attachment_name'] ?? '');
         $attData = (string) ($email['attachment_base64'] ?? '');
@@ -100,10 +101,22 @@ function process_email_outbox(int $limit = 25): array
         if ($ok) {
             db()->prepare("UPDATE email_outbox SET status='sent',sent_at=now(),error_message=NULL WHERE id=?")->execute([$email['id']]);
             $sent++;
+            if (($email['related_type'] ?? '') === 'admin_alerts_test') {
+                // Test e-postası teslim edildi — rapora işaret + panel için kod kaydı.
+                $testCode = null;
+                if (preg_match('#\[([A-Z0-9\-]{4,})\]#', (string) $email['subject'], $m)) {
+                    $testCode = $m[1];
+                }
+                $testDelivered[] = ['id' => (int) $email['id'], 'code' => $testCode];
+                save_platform_setting('last_alert_test_delivered_at', date('Y-m-d H:i:s'));
+                if ($testCode !== null) {
+                    save_platform_setting('last_alert_test_delivered_code', $testCode);
+                }
+            }
         } else {
             db()->prepare("UPDATE email_outbox SET status='failed',error_message='mail() başarısız' WHERE id=?")->execute([$email['id']]);
             $failed++;
         }
     }
-    return ['sent' => $sent, 'failed' => $failed];
+    return ['sent' => $sent, 'failed' => $failed, 'test_delivered' => $testDelivered];
 }

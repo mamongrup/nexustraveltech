@@ -26,6 +26,13 @@ if ($adminEmail === '' || !filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
 }
 echo 'Hedef: ' . $adminEmail . "\n\n";
 
+// Benzersiz doğrulama kodu — alıcı, gelen e-postanın bu test koşusuna ait olduğunu
+// bu kodla doğrular; kuyruk işleyicisi (cron/process-emails.php) aynı kodu
+// "test e-postası teslim edildi" işaretiyle raporlar.
+$code = 'NEXUS-' . substr(str_shuffle('ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), 0, 6);
+save_platform_setting('last_alert_test_code', $code);
+save_platform_setting('last_alert_test_delivered_code', ''); // yeni koşu: eski teslimat işareti geçersiz
+
 $types = [
     ['channel_inactive', 'Kanal dağıtımı pasif (test)'],
     ['channel_sync_job_failed', 'Kanal senkron başarısızlığı (test)'],
@@ -60,6 +67,10 @@ save_platform_setting('last_alert_test_channels', $ok);
 save_platform_setting('last_alert_test_status', 'ok');
 save_platform_setting('last_alert_test_mode', $send ? 'send' : 'dry');
 $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
+    . '<div style="border:2px dashed #2e7d32;border-radius:8px;padding:10px 14px;margin:0 0 12px;background:#f2f8f2">'
+    . '<b>Doğrulama kodu:</b> <code style="font-size:16px;letter-spacing:2px;color:#1b5e20">' . $code . '</code>'
+    . '<div style="color:#64716d;margin-top:4px;font-size:12px">Bu kod, bu e-postanın <b>' . date('Y-m-d H:i') . '</b> koşusuna ait olduğunu doğrular. Kuyruk işleyicisi raporunda (cron/process-emails.php) aynı kod "test e-postası teslim edildi" işaretiyle görünür; Zamanlayıcılar sayfasındaki kart da teslimatı bu kodla doğrular.</div>'
+    . '</div>'
     . '<h2 style="margin:0 0 6px">🧪 Admin uyarı e-postası — toplu test özeti (' . $ok . ' kanal)</h2>'
     . '<p style="color:#64716d;margin:0 0 10px">Bu tek mesaj, <b>' . $ok . ' uyarı kanalının</b> tamamını doğrular. Aşağıdaki her satır gerçek uyarıların gönderildiği kanalı temsil eder; bu özetin gelmesi kuyruk işleyicisinin ve e-posta altyapısının sağlıklı olduğunu gösterir.</p>'
     . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px">'
@@ -68,15 +79,15 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '<th style="padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Durum</th></tr>'
     . $rows
     . '</table>'
-    . '<p style="margin-top:14px;color:#64716d">Gönderim: ' . date('Y-m-d H:i') . ' · cron/test-admin-alerts.php --send · hedef: ' . htmlspecialchars($adminEmail) . ' · tek seferlik test — tekrarlanan gerçek uyarıların aksine bu mesaj kendini çoğaltmaz; kuyruk işleyicisi (cron/process-emails.php) tarafından gönderilir.</p>'
+    . '<p style="margin-top:14px;color:#64716d">Gönderim: ' . date('Y-m-d H:i') . ' · doğrulama kodu: <b>' . $code . '</b> · cron/test-admin-alerts.php --send · hedef: ' . htmlspecialchars($adminEmail) . ' · tek seferlik test — tekrarlanan gerçek uyarıların aksine bu mesaj kendini çoğaltmaz; kuyruk işleyicisi (cron/process-emails.php) tarafından gönderilir.</p>'
     . '</div>';
 if ($send) {
-    queue_email($adminEmail, '🧪 Admin uyarı testi — ' . $ok . ' kanal özeti', $body, 'admin_alerts_test');
+    queue_email($adminEmail, '🧪 Admin uyarı testi — ' . $ok . ' kanal özeti [' . $code . ']', $body, 'admin_alerts_test');
 }
 
 echo "\n" . ($send
-    ? "Tamam: $ok kanal tek özet e-postada kuyruğa eklendi → cron/process-emails.php 5 dakika içinde gönderir."
-    : "Kuru çalışma tamam: $ok kanal özet tablosu hazır. Gerçek gönderim için --send ekleyin.")
+    ? "Tamam: $ok kanal tek özet e-postada kuyruğa eklendi · doğrulama kodu: $code → cron/process-emails.php 5 dakika içinde gönderir."
+    : "Kuru çalışma tamam: $ok kanal özet tablosu hazır · doğrulama kodu: $code. Gerçek gönderim için --send ekleyin.")
     . "\n";
 echo $send
     ? "Gelen kutunuzu kontrol edin — tek mesaj, N kanal satırlı tablo; eksik/hatalı satır varsa kuyruk durumunu cron/process-emails.php çıktısından izleyin.\n"
