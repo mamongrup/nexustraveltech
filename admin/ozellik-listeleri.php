@@ -59,6 +59,45 @@ $deleteFeature = function (int $featureId, ?string $purgeAt = null) use ($typeLa
     ]);
     return ['id' => $featureId, 'label' => $feat['label'], 'affected' => $affected];
 };
+// Geri yükleme — tekil ve toplu restore ortak kullanır (özellik + ilanlara bölüm bazlı geri ekleme).
+$restoreFeature = function (int $featureId): array {
+    $bkQ = db()->prepare('SELECT * FROM feature_delete_backups WHERE feature_id=? ORDER BY id DESC LIMIT 1');
+    $bkQ->execute([$featureId]);
+    $bk = $bkQ->fetch();
+    if (!$bk) throw new RuntimeException('Geri alınacak kayıt bulunamadı.');
+    $label = (string) $bk['label'];
+    // 1) Katalog satırını geri getir (aynı id korunur, sıralama/durum geri gelir).
+    db()->prepare('UPDATE property_feature_catalog SET deleted_at=NULL, purge_at=NULL, group_label=?, label=?, sort_order=?, is_active=? WHERE id=?')
+        ->execute([$bk['group_label'] ?? '', $label, (int) ($bk['sort_order'] ?? 100), (bool) ($bk['is_active'] ?? true), $featureId]);
+    // Özellik çöp kutusundan çıktığı için bekleyen "son şans" onay kaydını temizle.
+    db()->prepare('DELETE FROM pending_trash_purges WHERE feature_id=?')->execute([$featureId]);
+    // 2) İlanlara bölüm bazlı geri ekle (zaten varsa dokunma).
+    $props = json_decode((string) ($bk['affected_properties'] ?? '[]'), true) ?: [];
+    $restored = 0;
+    $restoreSp = db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{service_pricing}', COALESCE(product_details -> 'service_pricing', '{}'::jsonb) || jsonb_build_object(?, ?), true) WHERE id=? AND NOT jsonb_exists(COALESCE(product_details -> 'service_pricing', '{}'::jsonb), ?)");
+    $restoreSec = [
+        'amenities' => db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{amenities}', COALESCE(product_details -> 'amenities', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'amenities', '[]'::jsonb) @> ?::jsonb)"),
+        'activities' => db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{activities}', COALESCE(product_details -> 'activities', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'activities', '[]'::jsonb) @> ?::jsonb)"),
+        'events' => db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{events}', COALESCE(product_details -> 'events', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'events', '[]'::jsonb) @> ?::jsonb)"),
+    ];
+    foreach ($props as $pr) {
+        $sections = is_array($pr['sections'] ?? null) ? $pr['sections'] : [];
+        $pid = (int) ($pr['id'] ?? 0);
+        $price = (string) ($pr['price'] ?? '');
+        foreach ($sections as $sec) {
+            if ($sec === 'service_pricing') { $restoreSp->execute([$label, $price, $pid, $label]); $restored++; }
+            elseif (isset($restoreSec[$sec])) { $restoreSec[$sec]->execute([json_encode([$label]), $pid, json_encode([$label])]); $restored++; }
+        }
+    }
+    audit_log('feature.restore', 'feature_catalog', $featureId, [
+        'code' => $bk['code'] ?? '',
+        'label' => $label,
+        'affected_count' => count($props),
+        'affected_listing_ids' => array_map(fn($pr) => (int) ($pr['id'] ?? 0), $props),
+        'restored_sections' => $restored,
+    ]);
+    return ['label' => $label, 'affected_count' => count($props), 'restored_sections' => $restored];
+};
 // CSV dışa aktarma — silme onay ekranından tedarikçi bazlı etki listesi indirilir.
 // Tekil: ?export=delete_impact&feature_id=N · Toplu: ?export=bulk_impact&ids[]=N&ids[]=M
 $export = (string) ($_GET['export'] ?? '');
@@ -345,42 +384,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
       } elseif ($action === 'restore') {
         $featureId = (int) ($_POST['id'] ?? 0);
-        $bkQ = db()->prepare('SELECT * FROM feature_delete_backups WHERE feature_id=? ORDER BY id DESC LIMIT 1');
-        $bkQ->execute([$featureId]);
-        $bk = $bkQ->fetch();
-        if (!$bk) throw new RuntimeException('Geri alınacak kayıt bulunamadı.');
-        $label = (string) $bk['label'];
-        // 1) Katalog satırını geri getir (aynı id korunur, sıralama/durum geri gelir).
-        db()->prepare('UPDATE property_feature_catalog SET deleted_at=NULL, purge_at=NULL, group_label=?, label=?, sort_order=?, is_active=? WHERE id=?')
-            ->execute([$bk['group_label'] ?? '', $label, (int) ($bk['sort_order'] ?? 100), (bool) ($bk['is_active'] ?? true), $featureId]);
-        // Özellik çöp kutusundan çıktığı için bekleyen "son şans" onay kaydını temizle.
-        db()->prepare('DELETE FROM pending_trash_purges WHERE feature_id=?')->execute([$featureId]);
-        // 2) İlanlara bölüm bazlı geri ekle (zaten varsa dokunma).
-        $props = json_decode((string) ($bk['affected_properties'] ?? '[]'), true) ?: [];
-        $restored = 0;
-        $restoreSp = db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{service_pricing}', COALESCE(product_details -> 'service_pricing', '{}'::jsonb) || jsonb_build_object(?, ?), true) WHERE id=? AND NOT jsonb_exists(COALESCE(product_details -> 'service_pricing', '{}'::jsonb), ?)");
-        $restoreSec = [
-          'amenities' => db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{amenities}', COALESCE(product_details -> 'amenities', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'amenities', '[]'::jsonb) @> ?::jsonb)"),
-          'activities' => db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{activities}', COALESCE(product_details -> 'activities', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'activities', '[]'::jsonb) @> ?::jsonb)"),
-          'events' => db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{events}', COALESCE(product_details -> 'events', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'events', '[]'::jsonb) @> ?::jsonb)"),
-        ];
-        foreach ($props as $pr) {
-          $sections = is_array($pr['sections'] ?? null) ? $pr['sections'] : [];
-          $pid = (int) ($pr['id'] ?? 0);
-          $price = (string) ($pr['price'] ?? '');
-          foreach ($sections as $sec) {
-            if ($sec === 'service_pricing') { $restoreSp->execute([$label, $price, $pid, $label]); $restored++; }
-            elseif (isset($restoreSec[$sec])) { $restoreSec[$sec]->execute([json_encode([$label]), $pid, json_encode([$label])]); $restored++; }
-          }
+        $res = $restoreFeature($featureId);
+        $msg = 'Özellik geri yüklendi' . ($res['affected_count'] > 0 ? ' ve ' . $res['affected_count'] . ' ilana tekrar eklendi.' : '.');
+      } elseif ($action === 'bulk_restore') {
+        // Çöp kutusundan toplu geri yükleme — yalnızca çöp kutusundakiler işlenir, diğerleri atlanır.
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array) ($_POST['ids'] ?? [])), fn($i) => $i > 0)));
+        if (!$ids) throw new RuntimeException('Geri yüklenecek özellik seçin.');
+        $done = 0; $skipped = 0; $doneNames = []; $skippedNames = []; $errors = [];
+        $curQ = db()->prepare('SELECT label, deleted_at FROM property_feature_catalog WHERE id=?');
+        foreach ($ids as $fid) {
+          try {
+            $curQ->execute([$fid]);
+            $cur = $curQ->fetch();
+            if (!$cur || $cur['deleted_at'] === null) { $skipped++; $skippedNames[] = $cur ? (string) $cur['label'] : ('#' . $fid); continue; }
+            $res = $restoreFeature($fid);
+            $doneNames[] = (string) ($res['label'] ?? ('#' . $fid));
+            $done++;
+          } catch (Throwable $e) { $errors[] = '#' . $fid . ': ' . $e->getMessage(); }
         }
-        audit_log('feature.restore', 'feature_catalog', $featureId, [
-            'code' => $bk['code'] ?? '',
-            'label' => $label,
-            'affected_count' => count($props),
-            'affected_listing_ids' => array_map(fn($pr) => (int) ($pr['id'] ?? 0), $props),
-            'restored_sections' => $restored,
+        audit_log('feature.bulk_restore', 'feature_catalog', null, ['count' => $done, 'feature_ids' => $ids, 'skipped_unchanged' => $skipped]);
+        $msg = "$done özellik geri yüklendi" . ($skipped ? ", $skipped özellik atlandı (çöp kutusunda değil ya da kayıt yok)" : '') . '.';
+        if ($errors) $msg .= ' Hatalar: ' . implode('; ', array_slice($errors, 0, 5)) . '.';
+        setcookie('nexus_bulk_result', json_encode([
+            'msg' => $msg,
+            'sub' => 'restore',
+            'done' => $done,
+            'skipped' => $skipped,
+            'done_names' => array_slice($doneNames, 0, 12),
+            'done_more' => max(0, count($doneNames) - 12),
+            'skipped_names' => array_slice($skippedNames, 0, 12),
+            'skipped_more' => max(0, count($skippedNames) - 12),
+            'removed' => 0,
+            'trash_ttl' => 0,
+            'errors' => array_slice($errors, 0, 5),
+        ], JSON_UNESCAPED_UNICODE), [
+            'expires' => time() + 3600,
+            'path' => '/',
+            'httponly' => false,
+            'samesite' => 'Lax',
         ]);
-        $msg = 'Özellik geri yüklendi' . ($props ? ' ve ' . count($props) . ' ilana tekrar eklendi.' : '.');
       } elseif ($action === 'bulk') {
         $ids = array_values(array_unique(array_filter(array_map('intval', (array) ($_POST['ids'] ?? [])), fn($i) => $i > 0)));
         $sub = in_array($_POST['sub'] ?? '', ['deactivate', 'activate'], true) ? (string) $_POST['sub'] : 'delete';
@@ -630,7 +672,7 @@ $trash = $trashEnriched;
 <div class="c" style="padding:0"><div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;cursor:pointer" onclick="toggleCat('<?= htmlspecialchars($code) ?>')" title="Tıklayınca genişlet/daralt"><h2 style="margin:0"><?= $title ?> <small style="color:#6b7774;font-weight:normal">(<?= count($byCode[$code]) ?>)</small></h2><span id="catArrow-<?= htmlspecialchars($code) ?>" style="color:#6b7774;font-size:13px;user-select:none">▾ daralt</span></div><div id="catBody-<?= htmlspecialchars($code) ?>"><div style="padding:0 18px 14px"><label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#6b7774;margin:0 0 6px"><input type="checkbox" class="selall" data-code="<?= htmlspecialchars($code) ?>"> Bu katalogdakilerin tümünü seç</label><?php if (!$byCode[$code]): ?><p style="color:#6b7774">Liste boş — yukarıdan ekleyin.</p><?php endif; ?>
 <?php foreach ($grouped as $groupName => $groupItems): ?><?php if ($isHotelCat): ?><h3 style="font-size:13px;margin:14px 0 4px;color:#405b13"><?= htmlspecialchars($groupName) ?></h3><?php endif; ?><?php foreach ($groupItems as $item): ?><span class="chip <?= $item['is_active'] ? '' : 'off' ?>"><label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-right:2px" title="Toplu işlem için seç"><input type="checkbox" class="feat-check" data-code="<?= htmlspecialchars($code) ?>" data-state="<?= $item['is_active'] ? 'on' : 'off' ?>" data-label="<?= htmlspecialchars($item['label']) ?>" value="<?= (int) $item['id'] ?>"></label><?= htmlspecialchars($item['label']) ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="up"><button class="mini" title="Yukarı taşı">↑</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="down"><button class="mini" title="Aşağı taşı">↓</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini" title="Aktif/pasif"><?= $item['is_active'] ? 'Pasifleştir' : 'Aktifleştir' ?></button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini del" onclick="return confirm('Bu özellik silinsin mi?');">×</button></form></span><?php endforeach; ?><?php endforeach; ?></div></div></div>
 <?php endforeach; ?></div>
-<?php if ($trash): ?><h2 id="trash" style="margin:26px 0 4px;border-top:1px solid #e2e6df;padding-top:20px">🗑 Çöp kutusu — geri alınabilir silmeler<?php if ($trashUrgent > 0): ?> <span style="display:inline-block;background:#ffe2de;color:#b0301a;border:1px solid #f3c4ba;border-radius:12px;padding:2px 10px;font-size:12px;vertical-align:middle" title="Kalıcı silmeye 7 günden az kalan özellikler">🚨 <?= (int) $trashUrgent ?> acil</span><?php endif; ?><?php if ($trashPending > 0): ?> <span style="display:inline-block;background:#fff3cd;color:#8a6100;border:1px solid #e0c9a3;border-radius:12px;padding:2px 10px;font-size:12px;vertical-align:middle" title="Son şans onayı bekleyen özellikler — e-postadaki bağlantıyla onaylanır">⏳ <?= (int) $trashPending ?> onay bekliyor</span><?php endif; ?></h2><div class="c" style="border-color:#e0c9a3;background:#fdf9f2"><p style="color:#6b7774;font-size:13px;margin-top:0">Silinen özellikler burada durur ve tek tıkla geri yüklenebilir; kaldırıldığı ilanlara aynı bölüm ve fiyat durumuyla geri eklenir. Her özellik <b>silinme + <?= (int) $ttlDays ?> gün TTL</b> sonra kalıcı silinir (geri alınamaz); silme sırasında <b>özel kalıcı silme tarihi</b> verilenler o tarihte silinir.</p><?php foreach ($trash as $t): $customPurge = $t['_custom']; $purgeTs = $t['_purge_ts']; $remainDays = $t['_remain']; $urgent = $t['_urgent']; ?><span class="chip" style="opacity:1;border-color:#e0c9a3"><?= htmlspecialchars($t['label']) ?> <small style="color:#6b7774">(<?= htmlspecialchars($sectionTitles[$t['code']] ?? (string) $t['code']) ?> · <?= (int) $t['affected_count'] ?> ilan · silindi <?= htmlspecialchars(mb_substr((string) $t['deleted_at'], 0, 16)) ?> · <b style="color:<?= $urgent ? '#b0301a' : '#8a6100' ?>">kalıcı silme <?= date('Y-m-d', $purgeTs) ?> (<?= max(0, $remainDays) ?> gün)<?= $customPurge ? ' · özel tarih' : '' ?></b><?php if ($t['_pending'] !== null): ?> <span style="display:inline-block;background:#fff3cd;color:#8a6100;border:1px solid #e0c9a3;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:bold" title="Kalıcı silme onayı bekleniyor — son şans e-postasındaki bağlantıyla onaylanır">⏳ onay bekliyor · <?= htmlspecialchars($t['_pending']) ?></span><?php endif; ?>)</small><?php if ((int) $t['affected_count'] > 0): ?><button class="mini" type="button" onclick="toggleTrashPreview(<?= (int) $t['id'] ?>)" title="Kaldırıldığı ilanları göster">▸ <?= (int) $t['affected_count'] ?> ilan</button><?php endif; ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="restore"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>"><button class="mini" style="background:#e6f8c7;color:#10211f;border:1px solid #bcd98a" title="Geri yükle">↩ Geri yükle</button></form></span><?php if ((int) $t['affected_count'] > 0): ?><div id="tp-<?= (int) $t['id'] ?>" style="display:none;margin:2px 0 4px 10px;padding:8px 12px;background:#fff;border:1px solid #e0c9a3;border-radius:6px;font-size:12px;color:#10211f"></div><?php endif; ?><?php endforeach; ?></div><?php endif; ?>
+<?php if ($trash): ?><h2 id="trash" style="margin:26px 0 4px;border-top:1px solid #e2e6df;padding-top:20px">🗑 Çöp kutusu — geri alınabilir silmeler<?php if ($trashUrgent > 0): ?> <span style="display:inline-block;background:#ffe2de;color:#b0301a;border:1px solid #f3c4ba;border-radius:12px;padding:2px 10px;font-size:12px;vertical-align:middle" title="Kalıcı silmeye 7 günden az kalan özellikler">🚨 <?= (int) $trashUrgent ?> acil</span><?php endif; ?><?php if ($trashPending > 0): ?> <span style="display:inline-block;background:#fff3cd;color:#8a6100;border:1px solid #e0c9a3;border-radius:12px;padding:2px 10px;font-size:12px;vertical-align:middle" title="Son şans onayı bekleyen özellikler — e-postadaki bağlantıyla onaylanır">⏳ <?= (int) $trashPending ?> onay bekliyor</span><?php endif; ?></h2><div class="c" style="border-color:#e0c9a3;background:#fdf9f2"><p style="color:#6b7774;font-size:13px;margin-top:0">Silinen özellikler burada durur ve tek tıkla geri yüklenebilir; kaldırıldığı ilanlara aynı bölüm ve fiyat durumuyla geri eklenir. Her özellik <b>silinme + <?= (int) $ttlDays ?> gün TTL</b> sonra kalıcı silinir (geri alınamaz); silme sırasında <b>özel kalıcı silme tarihi</b> verilenler o tarihte silinir.</p><div style="display:flex;align-items:center;gap:12px;margin:4px 0 10px;flex-wrap:wrap"><label style="font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" id="trashAll" onchange="trashToggleAll(this)" style="vertical-align:-2px"> Tümünü seç</label><span id="trashSelCount" style="font-size:12px;color:#6b7774"></span><form method="post" style="display:inline" onsubmit="return trashSubmitCheck()"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="bulk_restore"><span id="trashRestoreIds"></span><button type="submit" id="trashBulkBtn" class="mini" style="background:#e6f8c7;color:#10211f;border:1px solid #bcd98a;font-weight:bold" disabled>↩ Seçilenleri geri yükle</button></form></div><?php foreach ($trash as $t): $customPurge = $t['_custom']; $purgeTs = $t['_purge_ts']; $remainDays = $t['_remain']; $urgent = $t['_urgent']; ?><span class="chip" style="opacity:1;border-color:#e0c9a3"><input type="checkbox" class="trash-check" value="<?= (int) $t['id'] ?>" data-label="<?= htmlspecialchars($t['label'], ENT_QUOTES) ?>" onchange="trashRefresh()" title="Toplu geri yükleme için seç" style="vertical-align:-2px;margin-right:6px;cursor:pointer"><?= htmlspecialchars($t['label']) ?> <small style="color:#6b7774">(<?= htmlspecialchars($sectionTitles[$t['code']] ?? (string) $t['code']) ?> · <?= (int) $t['affected_count'] ?> ilan · silindi <?= htmlspecialchars(mb_substr((string) $t['deleted_at'], 0, 16)) ?> · <b style="color:<?= $urgent ? '#b0301a' : '#8a6100' ?>">kalıcı silme <?= date('Y-m-d', $purgeTs) ?> (<?= max(0, $remainDays) ?> gün)<?= $customPurge ? ' · özel tarih' : '' ?></b><?php if ($t['_pending'] !== null): ?> <span style="display:inline-block;background:#fff3cd;color:#8a6100;border:1px solid #e0c9a3;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:bold" title="Kalıcı silme onayı bekleniyor — son şans e-postasındaki bağlantıyla onaylanır">⏳ onay bekliyor · <?= htmlspecialchars($t['_pending']) ?></span><?php endif; ?>)</small><?php if ((int) $t['affected_count'] > 0): ?><button class="mini" type="button" onclick="toggleTrashPreview(<?= (int) $t['id'] ?>)" title="Kaldırıldığı ilanları göster">▸ <?= (int) $t['affected_count'] ?> ilan</button><?php endif; ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="restore"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>"><button class="mini" style="background:#e6f8c7;color:#10211f;border:1px solid #bcd98a" title="Geri yükle">↩ Geri yükle</button></form></span><?php if ((int) $t['affected_count'] > 0): ?><div id="tp-<?= (int) $t['id'] ?>" style="display:none;margin:2px 0 4px 10px;padding:8px 12px;background:#fff;border:1px solid #e0c9a3;border-radius:6px;font-size:12px;color:#10211f"></div><?php endif; ?><?php endforeach; ?></div><?php endif; ?>
 </main><script>
 function dismissBulkNotice(){document.cookie='nexus_bulk_result=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';var n=document.getElementById('bulkNotice');if(n)n.remove()}
 function bulkRefresh(){var sel=[].filter.call(document.querySelectorAll('.feat-check'),function(x){return x.checked});var c=sel.length;document.getElementById('bulkCount').textContent=c;var bar=document.getElementById('bulkBar');bar.style.display=c?'flex':'none';var on=sel.filter(function(x){return x.dataset.state==='on'}).length,off=c-on;var onBadge=bar.querySelector('[data-b="on"]'),offBadge=bar.querySelector('[data-b="off"]');onBadge.style.display=on?'inline-block':'none';onBadge.textContent='● '+on+' Aktif';offBadge.style.display=off?'inline-block':'none';offBadge.textContent='○ '+off+' Pasif';var cats=[['villa','Villa','#405b13'],['yacht','Yat','#1a3d6d'],['amenity','Otel olanakları','#8a6100'],['activity','Otel aktiviteleri','#7a4a8a'],['event','Otel etkinlikleri','#9d3b1c']],catBox=document.getElementById('bulkCatBadges'),catHtml='';cats.forEach(function(ca){var n=sel.filter(function(x){return x.dataset.code===ca[0]}).length;if(n>0)catHtml+='<span style="display:inline-block;background:'+ca[2]+';color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold" title="'+ca[1]+' kataloğundan seçilen özellik">'+ca[1]+': '+n+'</span>'});catBox.innerHTML=catHtml;document.querySelectorAll('.feat-check').forEach(function(x){var c=x.closest('.chip');if(c)c.classList.toggle('sel',x.checked)});var names=sel.map(function(x){return x.dataset.label||('#'+x.value)}),namesBox=document.getElementById('bulkNamesBox'),namesList=document.getElementById('bulkNamesList');if(namesBox){namesBox.style.display=c?'inline-block':'none';namesList.innerHTML='';if(c){names.slice(0,25).forEach(function(nm){var d=document.createElement('div');d.style.padding='2px 0';d.textContent='• '+nm;namesList.appendChild(d)});if(names.length>25){var m=document.createElement('div');m.style.cssText='color:#64716d;font-size:11px;padding-top:4px';m.textContent='… ve '+(names.length-25)+' daha';namesList.appendChild(m)};document.getElementById('bulkNamesSum').textContent='İsimler ('+names.length+') ▾'}}document.querySelectorAll('.selall').forEach(function(sa){var code=sa.dataset.code,all=document.querySelectorAll('.feat-check[data-code="'+code+'"]'),ch=document.querySelectorAll('.feat-check[data-code="'+code+'"]:checked');sa.checked=all.length>0&&ch.length===all.length})}
@@ -649,4 +691,7 @@ function bulkGo(sub){var ids=[].map.call(document.querySelectorAll('.feat-check:
 document.querySelectorAll('.feat-check').forEach(function(c){c.addEventListener('change',bulkRefresh)});
 document.querySelectorAll('.selall').forEach(function(sa){sa.addEventListener('change',function(){var code=sa.dataset.code;document.querySelectorAll('.feat-check[data-code="'+code+'"]').forEach(function(c){c.checked=sa.checked});bulkRefresh()})});
 function toggleTrashPreview(id){var box=document.getElementById('tp-'+id);if(!box)return;if(box.style.display!=='none'){box.style.display='none';return}if(box.dataset.loaded){box.style.display='block';return}box.textContent='Yükleniyor…';box.style.display='block';fetch('/nexustraveltech/admin/ozellik-listeleri?qview=trash_listings&id='+id).then(function(r){return r.json()}).then(function(d){if(!d.ok){box.innerHTML='<b style="color:#9d3b1c">'+d.error+'</b>';return}if(!d.listings.length){box.innerHTML='<span style="color:#6b7774">Hiçbir ilandan kaldırılmamış.</span>';box.dataset.loaded='1';return}var html='<div style="font-weight:bold;margin-bottom:4px">“'+d.label+'” kaldırıldığı ilanlar ('+d.listings.length+'):</div><ul style="margin:0;padding-left:18px">';d.listings.forEach(function(p){html+='<li><b>'+p.name+'</b> <small style="color:#6b7774">(#'+p.id+')</small>'+(p.sections.length?' <small style="color:#9d3b1c">· '+p.sections.join(', ')+'</small>':'')+(p.price!==''?' <small style="color:#405b13">· fiyat: '+p.price+'</small>':'')+'</li>'});html+='</ul>';box.innerHTML=html;box.dataset.loaded='1'}).catch(function(){box.innerHTML='<b style="color:#9d3b1c">Liste alınamadı (oturum süresi dolmuş olabilir).</b>'})}
+function trashRefresh(){var s=[].filter.call(document.querySelectorAll('.trash-check'),function(x){return x.checked});var idsBox=document.getElementById('trashRestoreIds');if(idsBox)idsBox.innerHTML='';s.forEach(function(x){var i=document.createElement('input');i.type='hidden';i.name='ids[]';i.value=x.value;idsBox.appendChild(i)});var cnt=document.getElementById('trashSelCount');if(cnt)cnt.textContent=s.length?('Seçili: '+s.length):'';var all=document.getElementById('trashAll');if(all)all.checked=s.length>0&&s.length===document.querySelectorAll('.trash-check').length;var btn=document.getElementById('trashBulkBtn');if(btn)btn.disabled=!s.length}
+function trashToggleAll(ch){document.querySelectorAll('.trash-check').forEach(function(x){x.checked=ch.checked});trashRefresh()}
+function trashSubmitCheck(){var s=[].filter.call(document.querySelectorAll('.trash-check'),function(x){return x.checked});if(!s.length){alert('Geri yüklenecek özellik seçin.');return false}return confirm(s.length+' özellik çöp kutusundan geri yüklenecek. Devam edilsin mi?')}
 </script><?php require_once __DIR__ . '/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); ?></body></html>
