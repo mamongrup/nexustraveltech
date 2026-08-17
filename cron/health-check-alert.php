@@ -18,12 +18,27 @@ require_once __DIR__ . '/../config/platform_settings.php';
 $adminEmail = trim((string) platform_setting('admin_alert_email', ''));
 $result = health_check_run(false);
 
+// Son 24 saatte uygulanan migration'lar — deploy günü "o gün ne uygulandı" görünürlüğü.
+// Migration başarıyla uygulanıp başka sorun yoksa bile e-posta gider (sessiz deploy onayı).
+$migApplied = [];
+try {
+    $migQ = db()->query("SELECT file, applied_at, commit_hash FROM schema_migrations WHERE applied_at >= now() - interval '24 hours' ORDER BY applied_at DESC");
+    $migApplied = $migQ ? $migQ->fetchAll() : [];
+} catch (Throwable $e) {
+    $migApplied = [];
+}
+
 echo $result['output'];
-if ($result['ok']) {
+if ($result['ok'] && $migApplied === []) {
     exit(0);
 }
 
-echo "\n" . count($result['errors']) . ' sorun tespit edildi.';
+if ($result['errors'] !== []) {
+    echo "\n" . count($result['errors']) . ' sorun tespit edildi.';
+}
+if ($migApplied !== []) {
+    echo "\n" . count($migApplied) . ' migration son 24 saatte uygulandı.';
+}
 if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
     $rowsHtml = '';
     foreach (array_slice($result['errors'], 0, 30) as $err) {
@@ -108,18 +123,40 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
     } catch (Throwable $e) {
         $opsBlock = '<p style="margin-top:16px;color:#64716d;font-size:12px">📊 Operasyonel metrikler okunamadı (' . htmlspecialchars($e->getMessage()) . ').</p>';
     }
+    // Son 24 saatte uygulanan migration listesi (sadece varsa) — dosya, tarih, commit.
+    $migBlock = '';
+    if ($migApplied !== []) {
+        $rowsM = '';
+        foreach ($migApplied as $m) {
+            $rowsM .= '<tr><td style="padding:6px 12px;border:1px solid #e1e5de"><code>' . htmlspecialchars((string) $m['file']) . '</code></td>'
+                . '<td style="padding:6px 12px;border:1px solid #e1e5de;white-space:nowrap">' . htmlspecialchars(mb_substr((string) $m['applied_at'], 0, 19)) . '</td>'
+                . '<td style="padding:6px 12px;border:1px solid #e1e5de"><code>' . (((string) ($m['commit_hash'] ?? '')) !== '' ? substr((string) $m['commit_hash'], 0, 7) : '—') . '</code></td></tr>';
+        }
+        $migBlock = '<h3 style="margin:18px 0 4px;font-size:14px">🆕 Son 24 saatte uygulanan migration' . "'lar: " . count($migApplied) . '</h3>'
+            . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:12px">'
+            . '<tr><th style="text-align:left;padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Dosya</th><th style="text-align:left;padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Uygulanma</th><th style="text-align:left;padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Commit</th></tr>'
+            . $rowsM . '</table>';
+    }
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
-        . '<h2 style="margin:0 0 6px">⚠ Platform sağlık kontrolü: ' . count($result['errors']) . ' sorun</h2>'
-        . '<p style="color:#64716d;margin:0 0 10px">Günlük sağlık taraması sorun tespit etti. Eksik tablo/kolon, başarısız migration veya ortam eksikliği olabilir; ayrıntılar aşağıdadır.</p>'
-        . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px">'
-        . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Sorun</th></tr>'
-        . $rowsHtml . $extra
-        . '</table>'
+        . ($result['errors'] !== []
+            ? '<h2 style="margin:0 0 6px">⚠ Platform sağlık kontrolü: ' . count($result['errors']) . ' sorun</h2>'
+            : '<h2 style="margin:0 0 6px">✅ Platform sağlık kontrolü: ' . count($migApplied) . ' migration uygulandı</h2>')
+        . ($result['errors'] !== []
+            ? '<p style="color:#64716d;margin:0 0 10px">Günlük sağlık taraması sorun tespit etti. Eksik tablo/kolon, başarısız migration veya ortam eksikliği olabilir; ayrıntılar aşağıdadır.</p>'
+            : '<p style="color:#64716d;margin:0 0 10px">Günlük sağlık taraması bekleyen migration' . "'ları uyguladı; başka sorun yok. Ayrıntılar aşağıdadır.</p>")
+        . ($result['errors'] !== [] ? '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px">'
+            . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Sorun</th></tr>'
+            . $rowsHtml . $extra
+            . '</table>' : '')
+        . $migBlock
         . $runsBlock
         . $opsBlock
         . '<p style="margin-top:18px">Tam çıktı için sunucuda: <code style="background:#f2f4ef;padding:2px 5px">/opt/plesk/php/8.5/bin/php scripts/health-check.php</code></p>'
         . '</div>';
-    queue_email($adminEmail, '⚠ Sağlık kontrolü: ' . count($result['errors']) . ' sorun', $body, 'health_check_alert');
+    $subject = $result['errors'] !== []
+        ? '⚠ Sağlık kontrolü: ' . count($result['errors']) . ' sorun'
+        : '✅ Sağlık kontrolü: ' . count($migApplied) . ' migration uygulandı';
+    queue_email($adminEmail, $subject, $body, 'health_check_alert');
     echo " Admin e-postası kuyruğa eklendi.\n";
 } else {
     echo " admin_alert_email tanımsız — e-posta atlanıyor.\n";
