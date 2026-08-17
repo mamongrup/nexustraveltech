@@ -34,6 +34,7 @@ function scheduler_seed_defaults(): void
         ['nexus-feature-trash-purge', 'Çöp kutusu otomatik temizliği (30 gün)', 'cron/purge-feature-trash.php', '0 4 * * *'],
         ['nexus-fx-missing-audit', 'Eksik kur çifti denetimi', 'cron/audit-fx-missing.php', '15 6 * * *'],
         ['nexus-ical-repeat-alerts', 'iCal tekrar hata uyarıları', 'cron/alert-ical-repeat.php', '*/15 * * * *'],
+        ['nexus-channel-webhook-retry', 'Webhook yeniden deneme', 'cron/retry-channel-webhooks.php', '*/5 * * * *'],
     ];
     $q = db()->prepare('INSERT INTO scheduled_jobs(code,name,command,schedule) VALUES(?,?,?,?) ON CONFLICT(code) DO NOTHING');
     foreach ($defaults as $d) {
