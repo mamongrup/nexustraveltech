@@ -275,3 +275,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Tesisler kartindaki genisletilebilir "Tum kalemler" listesinde Doldur/Incele
   baglantilari artik tur bazli hedeflere gider (fiyat-kontenjan, satis-kurallari,
   ical-takvimler, ilan duzenleyici) — uyari/eksik listeleriyle ayni harita.
+- Eksik kalem baglantilari artik dogrudan ilgili bolume kaydirir: gor seller -> #sec-05,
+  oda/birim -> #sec-04, aciklama -> #sec-02, konum/havuz/liman/murettebat -> #sec-01
+  (tesisler karti + otel-detay/villa-detay hazirlik panelleri; sayfa acilirken ayni
+  offset ile yumusak kaydirma).
