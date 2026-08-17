@@ -89,6 +89,36 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         'pending_trash_purges'=>['feature_id','token','expires_at','approved_at'],
     ];
 
+    // Diğer yabancı şema adayları — requiredColumns'ta beklenen kolonları olan HER tablo
+    // otomatik taranır. Migration zinciri dosya içeriğinden bulunur (CREATE TABLE içeren dosya).
+    // Güvenli onarım: zincirdeki dosyaların toplam içeriği beklenen TÜM kolonları içeriyorsa
+    // yeniden uygulama şemayı tam kurar -> boşsa düşürülüp yeniden kurulur; ek kolonlar başka
+    // migration'larda ise yalnızca raporlanır, düşürülmez (veri/kısıt kaybı riski yok).
+    foreach ($requiredColumns as $tbl => $cols) {
+        if (isset($repairMap[$tbl])) continue;
+        $foundMigs = [];
+        foreach (glob(__DIR__ . '/../database/migrations/*.sql') as $f) {
+            $c = @file_get_contents($f);
+            if ($c !== false && preg_match('/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+[`"]?' . preg_quote($tbl, '/') . '[\s"(]/i', $c)) {
+                $foundMigs[] = basename($f);
+            }
+        }
+        $safe = $foundMigs !== [];
+        if ($safe) {
+            $allText = '';
+            foreach ($foundMigs as $fm) {
+                $allText .= (string) @file_get_contents(__DIR__ . '/../database/migrations/' . $fm);
+            }
+            foreach ($cols as $col) {
+                if (!preg_match('/(?:^|[\s,(])' . preg_quote($col, '/') . '[\s,)]/i', $allText)) {
+                    $safe = false;
+                    break;
+                }
+            }
+        }
+        $repairMap[$tbl] = [$cols, $safe ? $foundMigs : []];
+    }
+
     // --- 1) Tablolar ---
     $q = $pdo->prepare("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename=ANY(?::text[])");
     $q->execute(['{' . implode(',', $requiredTables) . '}']);
@@ -321,6 +351,12 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             if ($count > 0) {
                 $skippedNonEmpty[] = $table . " (" . $count . " satır — eksik kolon: " . implode(', ', $missingCols) . ")";
                 $out .= "⚠ " . $table . " yabancı şemada ama DOLU (" . $count . " satır) — DÜŞÜRÜLMEDİ, elle inceleyin (eksik: " . implode(', ', $missingCols) . ")\n";
+                continue;
+            }
+            if ($migs === []) {
+                // Zincir güvenli değil (ek kolonlar başka migration'larda veya dosya bulunamadı):
+                // düşürmek şemayı tam kuramaz — yalnızca raporlanır, elle müdahale önerilir.
+                $out .= "⚠ " . $table . " yabancı şemada ama migration zinciri güvenli değil (ek kolonlar başka migration'larda) — DÜŞÜRÜLMEDİ, elle inceleyin (eksik: " . implode(', ', $missingCols) . ")\n";
                 continue;
             }
             foreach ($migs as $mig) {
