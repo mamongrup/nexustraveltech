@@ -446,6 +446,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         // eden satırlar (room tipi/kanal/plan silinmiş veya başka ürüne ait). Üç tablo taranır:
         // oda eşleştirmeleri, fiyat planı eşleştirmeleri ve ürün eşleştirmeleri.
         $orphanCleanupNote = '';
+        $orphanCleanupCodes = [];
         $orphanSpecs = [
             'channel_room_mappings' => [
                 'label' => 'oda eşleştirmesi',
@@ -486,13 +487,16 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                     } else {
                         $del = $pdo->prepare('DELETE FROM ' . $orphanTable . ' WHERE id=?');
                         $removed = 0;
+                        $removedCodes = [];
                         foreach ($orphans as $o) {
                             $del->execute([(int) $o['id']]);
                             $removed++;
+                            $removedCodes[] = (string) $o['code'];
                             $out .= '→ yetim ' . $spec['label'] . ' #' . (int) $o['id'] . ' (' . htmlspecialchars((string) $o['code']) . ', status=' . htmlspecialchars((string) ($o['status'] ?? '')) . ') silindi' . "\n";
                         }
                         $out .= 'Özet: ' . $removed . ' yetim ' . $spec['label'] . ' temizlendi.' . "\n";
                         $orphanCleanupNote .= $orphanTable . ':' . $removed . ';';
+                        $orphanCleanupCodes[$orphanTable] = $removedCodes;
                     }
                 } else {
                     $out .= '✓ Yetim ' . $spec['label'] . ' yok.' . "\n";
@@ -504,7 +508,13 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         }
         if ($orphanCleanupNote !== '' && !$dryRun) {
             try {
-                audit_log('health.repair_orphan_cleanup', 'schema', null, ['removed' => rtrim($orphanCleanupNote, ';'), 'note' => 'silinmiş oda tipi/plan/kanala işaret eden yetim eşleştirmeler temizlendi'], 'health-check');
+                audit_log('health.repair_orphan_cleanup', 'schema', null, [
+                    'removed' => rtrim($orphanCleanupNote, ';'),
+                    'codes' => $orphanCleanupCodes ?? [],
+                    'total' => array_sum(array_map('count', $orphanCleanupCodes ?? [])),
+                    'ran_at' => gmdate('c'),
+                    'note' => 'silinmiş oda tipi/plan/kanala işaret eden yetim eşleştirmeler temizlendi',
+                ], 'health-check');
             } catch (Throwable $e) {}
         }
         $out .= $dryRun
