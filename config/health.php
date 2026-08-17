@@ -145,7 +145,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
         // eden satırlar (room tipi/kanal/plan silinmiş veya başka ürüne ait).
         if (!in_array('channel_room_mappings', $missingTables, true)) {
             try {
-                $orphanSql = "SELECT m.id, m.external_room_id, m.room_type_id, m.channel_connection_id, m.status FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id))";
+                $orphanSql = "SELECT m.id, m.external_room_id, m.room_type_id, m.channel_connection_id, m.status FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE m.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))";
                 $orphans = $pdo->query($orphanSql)->fetchAll();
                 if ($orphans) {
                     $del = $pdo->prepare('DELETE FROM channel_room_mappings WHERE id=?');
