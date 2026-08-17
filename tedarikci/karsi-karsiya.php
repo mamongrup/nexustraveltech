@@ -80,6 +80,15 @@ $kkSecTitles = [
     'channel' => 'Dağıtım merkezi',
     'rules' => 'Satış kuralları',
 ];
+$kkSectionLabels = [
+    'sec-01' => 'Kimlik & konum',
+    'sec-02' => 'Satış içeriği',
+    'sec-03' => $type === 'hotel' ? 'Olanaklar' : 'Özellikler & hizmetler',
+    'sec-04' => $type === 'hotel' ? 'Oda envanteri' : 'Birim & fiyat',
+    'sec-05' => 'Görseller',
+    'sec-06' => 'Komisyon & tahsilat',
+    'sec-07' => 'İptal & iade',
+];
 $linkTooltips = readiness_tooltips();
 
 // "İlk eksik bölüme git" — eski yönlendirme sırasıyla aynı öncelik:
@@ -100,7 +109,14 @@ if ($firstMiss === null) {
         if ($__m['key'] !== 'rules') { $firstMiss = $__m; break; }
     }
 }
-$firstLink = $firstMiss !== null ? ($kkLinks[$firstMiss['key']] ?? $editBase) : $editBase;
+// tesis-ekle'den gelen geçiş hedefi: ?first=sec-XX (ilk düzenleyici adımının bölümü) — CTA'yı ezer.
+$firstOverride = (string) ($_GET['first'] ?? '');
+if ($firstOverride !== '' && isset($kkSectionLabels[$firstOverride])) {
+    $firstMiss = ['key' => 'override', 'label' => ($kkSectionLabels[$firstOverride] ?? $firstOverride), 'ok' => false];
+    $firstLink = $editBase . '#' . $firstOverride;
+} else {
+    $firstLink = $firstMiss !== null ? ($kkLinks[$firstMiss['key']] ?? $editBase) : $editBase;
+}
 
 supply_start('Karşı karşıya — hazırlık özeti', $active_module);
 ?>
