@@ -248,3 +248,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Zamanlayici gorevi nexus-channel-sync-job-alerts (varsayilan: 15 dakikada bir): channel_sync_jobs tablosunda son 24 saatte failed olan veya 30 dakikadan uzun running takili kalan isleri tarar, tedarikciye panel bildirimi (dagitim merkezine baglantili) ve admin_alert_email'e e-posta gonderir. Ayni tedarikci icin 24 saatte bir (notifications tipi channel_job_failed_{id}).
 - Tedarikci ana sayfasinda "Dagitim saglik durumu" karti: kanal baglantilari basina durum rozeti (Aktif / Eski senkron 7-30 gun sari, 30+ gun kirmizi / Hata kirmizi / Taslak-Pasif), son senkron, basarisiz is sayisi ve son hata (iCal karti ile ayni desen)
 - Tedarikci ana sayfasi "AKTIF ODA TIPI" stati artik sabit 2 yerine tedarikcinin aktif room_types sayisini gosterir
+- iCal saglik karti basina ozet satiri: toplam ilan, toplam aktif/pasif baglanti ve sorunlu ilan sayisi (pasif/eski senkron/30+ gun)
