@@ -434,7 +434,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
           // Adım 2: uygula (her özellik için tekil akışın aynısı + toplu denetim kaydı).
           $done = 0; $removed = 0; $skipped = 0; $skippedNames = []; $errors = [];
-          $curQ = db()->prepare('SELECT is_active, label FROM property_feature_catalog WHERE id=?');
+          $curQ = db()->prepare('SELECT is_active, label, deleted_at FROM property_feature_catalog WHERE id=?');
           $updQ = db()->prepare('UPDATE property_feature_catalog SET is_active=? WHERE id=?');
           foreach ($ids as $fid) {
             try {
@@ -448,6 +448,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $updQ->execute([$newState, $fid]);
                 audit_log('feature.toggle', 'feature_catalog', $fid, ['is_active' => $newState, 'bulk' => true]);
               } else {
+                // Idempotent davranış: zaten çöp kutusunda olan özellik yeniden silinmez, atlanır.
+                $curQ->execute([$fid]);
+                $cur = $curQ->fetch();
+                if (!$cur) { $errors[] = "Özellik #$fid bulunamadı."; continue; }
+                if ($cur['deleted_at'] !== null) { $skipped++; $skippedNames[] = (string) $cur['label']; continue; }
                 $res = $deleteFeature($fid, $purgeAt);
                 $removed += count($res['affected']);
               }
@@ -461,7 +466,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               'affected_count' => $removed,
           ]);
           $msg = $sub === 'delete'
-              ? "$done özellik silindi, $removed ilandan kaldırıldı. Çöp kutusundan geri alınabilir."
+              ? "$done özellik silindi, $removed ilandan kaldırıldı" . ($skipped ? ", $skipped özellik zaten çöp kutusunda olduğu için atlandı (sayılmadı)" : '') . ". Çöp kutusundan geri alınabilir."
               : ($sub === 'activate'
                   ? "$done özellik aktifleştirildi" . ($skipped ? ", $skipped özellik zaten aktif olduğu için atlandı (sayılmadı)" : '') . '.'
                   : "$done özellik pasifleştirildi" . ($skipped ? ", $skipped özellik zaten pasif olduğu için atlandı (sayılmadı)" : '') . '.');
