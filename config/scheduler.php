@@ -31,6 +31,7 @@ function scheduler_seed_defaults(): void
         ['nexus-channel-webhook-loop-alerts', 'Webhook tekrar başarısızlık uyarıları', 'cron/alert-channel-webhook-loop.php', '*/15 * * * *'],
         ['nexus-distribution-health-digest', 'Dağıtım sağlığı haftalık özeti', 'cron/send-distribution-health-digest.php', '0 8 * * 1'],
         ['nexus-job-status-digest', 'Görev sağlık raporu', 'cron/send-job-status-digest.php', '0 9 * * *'],
+        ['nexus-feature-trash-purge', 'Çöp kutusu otomatik temizliği (30 gün)', 'cron/purge-feature-trash.php', '0 4 * * *'],
     ];
     $q = db()->prepare('INSERT INTO scheduled_jobs(code,name,command,schedule) VALUES(?,?,?,?) ON CONFLICT(code) DO NOTHING');
     foreach ($defaults as $d) {

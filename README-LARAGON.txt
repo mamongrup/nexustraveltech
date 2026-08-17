@@ -292,3 +292,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
   (request_payload md5) son 24 saatte 3+ kez basarisiz olursa tedarikci panel
   bildirimi + admin epostasi (son hata + yuk ornegi). Esik platform ayari
   channel_webhook_loop_threshold (varsayilan 3); ayni baglanti+yuk icin 24 saatte bir.
+- Cop kutusu otomatik temizligi (nexus-feature-trash-purge, her gun 04:00): geri
+  alinabilirlik suresi (feature_trash_ttl_days, varsayilan 30 gun) dolan silinmis
+  ozellikleri yedekleriyle birlikte kalici olarak siler; feature.trash_purge denetim
+  kaydina yazilir, admin_alert_email tanimliysa yoneticiye bilgi epostasi gider.
