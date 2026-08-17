@@ -1,11 +1,13 @@
 <?php
 declare(strict_types=1);
 
-// Çöp kutusu temizliği — geri alınabilirlik süresi (varsayılan 30 gün) dolan silinmiş
-// özellikler için önce yöneticiye "son şans" onay e-postası gider; yalnızca onaylananlar
-// kalıcı silinir (feature_delete_backups + property_feature_catalog). Onay bağlantısı
-// 3 gün geçerlidir; süre dolarsa bu görev yeniden ister ve e-postayı tekrar gönderir.
-// Süre platform ayarı feature_trash_ttl_days ile değiştirilebilir (en az 7 gün).
+// Çöp kutusu temizliği — geri alınabilirlik süresi dolan silinmiş özellikler için önce
+// yöneticiye "son şans" onay e-postası gider; yalnızca onaylananlar kalıcı silinir
+// (feature_delete_backups + property_feature_catalog). Onay bağlantısı 3 gün geçerlidir;
+// süre dolarsa bu görev yeniden ister ve e-postayı tekrar gönderir.
+// Vade hesabı iki yolludur:
+//   • purge_at dolu  → o tarihte kalıcı sil (özellik bazında geçersiz kılma)
+//   • purge_at NULL   → silinme + feature_trash_ttl_days gün (varsayılan, en az 7).
 // admin_alert_email tanımsızsa (e-posta gönderilemiyor) eski davranış: doğrudan temizler.
 //
 // Zamanlayıcı: nexus-feature-trash-purge (varsayılan: her gün 04:00).
@@ -21,7 +23,7 @@ $ttlDays = max(7, (int) platform_setting('feature_trash_ttl_days', 30));
 $adminEmail = trim((string) platform_setting('admin_alert_email', ''));
 $canNotify = $adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL);
 
-$stale = $pdo->query("SELECT id, code, group_label, label, deleted_at FROM property_feature_catalog WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '{$ttlDays} days' ORDER BY deleted_at")->fetchAll();
+$stale = $pdo->query("SELECT id, code, group_label, label, deleted_at, purge_at FROM property_feature_catalog WHERE deleted_at IS NOT NULL AND ((purge_at IS NOT NULL AND purge_at <= now()) OR (purge_at IS NULL AND deleted_at < now() - interval '{$ttlDays} days')) ORDER BY deleted_at")->fetchAll();
 
 if (!$stale) {
     echo "Çöp kutusu temiz: {$ttlDays} günden eski silinmiş özellik yok.\n";
@@ -82,12 +84,16 @@ if ($toRequest && $canNotify) {
         $token = bin2hex(random_bytes(32));
         $insertReq->execute([$fid, $token]);
         $link = 'https://nexustraveltech.com/admin/approve-trash-purge.php?token=' . $token;
-        $rowsHtml .= '<li><b>' . htmlspecialchars($r['label']) . '</b> <span style="color:#6b7774">(' . htmlspecialchars((string) $r['code']) . ' · silindi ' . htmlspecialchars(mb_substr((string) $r['deleted_at'], 0, 10)) . ')</span> — <a href="' . $link . '" style="color:#b0301a">Kalıcı silmeyi onayla →</a></li>';
+        $delTs = strtotime((string) $r['deleted_at']) ?: time();
+        $purgeTs = !empty($r['purge_at']) ? (strtotime((string) $r['purge_at']) ?: 0) : 0;
+        if ($purgeTs <= 0) $purgeTs = $delTs + $ttlDays * 86400;
+        $customTag = !empty($r['purge_at']) ? ' · <b style="color:#8a6100">özel tarih</b>' : '';
+        $rowsHtml .= '<li><b>' . htmlspecialchars($r['label']) . '</b> <span style="color:#6b7774">(' . htmlspecialchars((string) $r['code']) . ' · silindi ' . htmlspecialchars(mb_substr((string) $r['deleted_at'], 0, 10)) . ' · kalıcı silme ' . date('Y-m-d', $purgeTs) . $customTag . ')</span> — <a href="' . $link . '" style="color:#b0301a">Kalıcı silmeyi onayla →</a></li>';
         $emailed++;
     }
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
         . '<h2 style="margin:0 0 6px">⏳ Son şans: ' . count($toRequest) . ' özellik kalıcı silinmek üzere</h2>'
-        . '<p>' . $ttlDays . ' günlük geri alınabilirlik süresi dolan aşağıdaki özellikler onaylanırsa kalıcı silinir (geri alınamaz). Onaylamak istemiyorsanız bağlantıya tıklamayın — özellik çöp kutusunda kalır; bağlantı <b>3 gün</b> geçerlidir, süre dolunca bu e-posta yeniden istenir.</p>'
+        . '<p>Kalıcı silme vadesi dolan aşağıdaki özellikler onaylanırsa silinir (geri alınamaz). Vade: özel tarih verilenler için o tarih, diğerleri için silinme + ' . $ttlDays . ' gün. Onaylamak istemiyorsanız bağlantıya tıklamayın — özellik çöp kutusunda kalır; bağlantı <b>3 gün</b> geçerlidir, süre dolunca bu e-posta yeniden istenir.</p>'
         . '<ul>' . $rowsHtml . '</ul>'
         . '<p><a href="https://nexustraveltech.com/admin/ozellik-listeleri" style="color:#b0301a">Katalog & sınıflandırma yönetimi →</a></p>'
         . '</div>';

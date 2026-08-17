@@ -79,7 +79,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         'email_templates'=>['code','subject','body_html','is_active'],
         'admin_2fa'=>['secret','enabled'],
         'scheduled_jobs'=>['code','command','schedule','enabled','last_status','last_fail_alert_at'],
-        'property_feature_catalog'=>['deleted_at'],
+        'property_feature_catalog'=>['deleted_at','purge_at'],
         'feature_delete_backups'=>['feature_id','code','label','affected_properties'],
         'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id','rate_plan_id','status','suggested_at','suggestion_count','suggestion_score'],
         'channel_property_mappings'=>['channel_connection_id','property_id','external_property_id','status'],'channel_rate_plan_mappings'=>['channel_connection_id','property_id','external_rate_plan_id','status','rate_plan_id'],

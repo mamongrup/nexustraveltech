@@ -13,13 +13,16 @@ if (($_GET['qview'] ?? '') === 'feature') {
     $fid = (int) ($_GET['id'] ?? 0);
     header('Content-Type: application/json; charset=UTF-8');
     if ($fid <= 0) { http_response_code(400); exit(json_encode(['ok' => false, 'error' => 'Geçersiz özellik kimliği.'])); }
-    $fq = db()->prepare('SELECT id, code, group_label, label, is_active, deleted_at FROM property_feature_catalog WHERE id=?');
+    $fq = db()->prepare('SELECT id, code, group_label, label, is_active, deleted_at, purge_at FROM property_feature_catalog WHERE id=?');
     $fq->execute([$fid]);
     $f = $fq->fetch();
     if (!$f) { http_response_code(404); exit(json_encode(['ok' => false, 'error' => 'Özellik bulunamadı (kalıcı silinmiş olabilir).'])); }
     $ttl = max(7, (int) platform_setting('feature_trash_ttl_days', 30));
     $delTs = $f['deleted_at'] !== null ? (strtotime((string) $f['deleted_at']) ?: 0) : 0;
-    $remain = $delTs > 0 ? (int) ceil((($delTs + $ttl * 86400) - time()) / 86400) : 0;
+    $customPurge = !empty($f['purge_at']);
+    $purgeTs = $customPurge ? (strtotime((string) $f['purge_at']) ?: 0) : 0;
+    if ($purgeTs <= 0 && $delTs > 0) $purgeTs = $delTs + $ttl * 86400;
+    $remain = $purgeTs > 0 ? (int) ceil(($purgeTs - time()) / 86400) : 0;
     exit(json_encode([
         'ok' => true,
         'id' => (int) $f['id'],
@@ -29,6 +32,8 @@ if (($_GET['qview'] ?? '') === 'feature') {
         'is_active' => (bool) $f['is_active'],
         'in_trash' => $f['deleted_at'] !== null,
         'deleted_at' => (string) ($f['deleted_at'] ?? ''),
+        'purge_at' => (string) ($f['purge_at'] ?? ''),
+        'custom_purge' => $customPurge,
         'remain_days' => $remain,
     ], JSON_UNESCAPED_UNICODE));
 }
@@ -102,6 +107,6 @@ $actions = db()->query('SELECT action,COUNT(*) c FROM admin_audit_logs GROUP BY 
 <?php endforeach; ?>
 </table>
 </main><script>
-function fidQuickView(el){var fid=el.dataset.id,box=el.closest('div').querySelector('.fid-qv-box');if(!box)return;if(box.dataset.fid===fid&&box.style.display!=='none'){box.style.display='none';box.dataset.fid='';return}box.dataset.fid=fid;box.textContent='Yükleniyor…';box.style.display='block';fetch('/nexustraveltech/admin/denetim-kayitlari?qview=feature&id='+fid).then(function(r){return r.json()}).then(function(d){if(!d.ok){box.innerHTML='<b style="color:#8e2410">#'+fid+'</b> — '+d.error;return}var html='<b style="color:#10211f">'+d.label+'</b> <code>'+d.code+'</code>';if(d.group)html+=' <small style="color:#6b7774">· '+d.group+'</small>';if(d.in_trash){html+='<div style="margin-top:4px"><span style="display:inline-block;background:#fdf3e3;border:1px solid #e0c9a3;color:#8a6100;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold">🗑 Çöp kutusunda</span> <small style="color:#6b7774">silindi '+d.deleted_at.slice(0,16)+' · kalıcı silmeye '+d.remain_days+' gün</small></div>'}else{html+='<div style="margin-top:4px"><span style="display:inline-block;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold;background:'+(d.is_active?'#e6f8c7;color:#2e7d32':'#ffe2de;color:#b0301a')+'">'+(d.is_active?'● Aktif':'○ Pasif')+'</span></div>'}box.innerHTML=html}).catch(function(){box.innerHTML='<b style="color:#8e2410">#'+fid+'</b> — Durum okunamadı (oturum süresi dolmuş olabilir).'})}
+function fidQuickView(el){var fid=el.dataset.id,box=el.closest('div').querySelector('.fid-qv-box');if(!box)return;if(box.dataset.fid===fid&&box.style.display!=='none'){box.style.display='none';box.dataset.fid='';return}box.dataset.fid=fid;box.textContent='Yükleniyor…';box.style.display='block';fetch('/nexustraveltech/admin/denetim-kayitlari?qview=feature&id='+fid).then(function(r){return r.json()}).then(function(d){if(!d.ok){box.innerHTML='<b style="color:#8e2410">#'+fid+'</b> — '+d.error;return}var html='<b style="color:#10211f">'+d.label+'</b> <code>'+d.code+'</code>';if(d.group)html+=' <small style="color:#6b7774">· '+d.group+'</small>';if(d.in_trash){html+='<div style="margin-top:4px"><span style="display:inline-block;background:#fdf3e3;border:1px solid #e0c9a3;color:#8a6100;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold">🗑 Çöp kutusunda</span> <small style="color:#6b7774">silindi '+d.deleted_at.slice(0,16)+' · kalıcı silmeye '+d.remain_days+' gün'+(d.custom_purge?' · özel tarih':'')+'</small></div>'}else{html+='<div style="margin-top:4px"><span style="display:inline-block;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold;background:'+(d.is_active?'#e6f8c7;color:#2e7d32':'#ffe2de;color:#b0301a')+'">'+(d.is_active?'● Aktif':'○ Pasif')+'</span></div>'}box.innerHTML=html}).catch(function(){box.innerHTML='<b style="color:#8e2410">#'+fid+'</b> — Durum okunamadı (oturum süresi dolmuş olabilir).'})}
 document.querySelectorAll('.fid-qv').forEach(function(a){a.addEventListener('click',function(){fidQuickView(a)})});
 </script><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>
