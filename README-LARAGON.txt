@@ -272,3 +272,6 @@ AYLIK SOHBET RAPORU (E-POSTA)
   toplu çubuk — tek seferde pasifleştirme veya silme (silme önce etki özeti ister).
   Her özellik tekil akıştan geçer (geri alınabilir); feature.bulk_delete /
   feature.bulk_deactivate özet denetim kaydı + per-özellik kayıtları yazılır.
+- Tesisler kartindaki genisletilebilir "Tum kalemler" listesinde Doldur/Incele
+  baglantilari artik tur bazli hedeflere gider (fiyat-kontenjan, satis-kurallari,
+  ical-takvimler, ilan duzenleyici) — uyari/eksik listeleriyle ayni harita.

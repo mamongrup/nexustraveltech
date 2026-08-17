@@ -101,8 +101,8 @@ supply_start('Tesisler & ürünler', $active_module);
         <?php endif; ?>
         <button type="button" class="readiness-toggle" data-target="readiness-all-<?= (int) $item['id'] ?>">Tüm kalemler ▾</button>
         <div id="readiness-all-<?= (int) $item['id'] ?>" class="readiness-all" hidden>
-            <?php $allLinks = ['ical' => '/nexustraveltech/tedarikci/ical-takvimler']; foreach ($readiness['items'] as $ri): $riWarn = !empty($ri['warn']); $riCls = !$ri['ok'] ? 'missing' : ($riWarn ? 'warn' : 'ok'); $riIcon = !$ri['ok'] ? '✗' : ($riWarn ? '⚠' : '✓'); ?>
-            <div class="readiness-all-row <?= $riCls ?>"><span class="readiness-all-icon"><?= $riIcon ?></span><div class="readiness-all-text"><b><?= htmlspecialchars($ri['label']) ?></b><small><?= htmlspecialchars($ri['detail']) ?></small></div><?php if (!$ri['ok']): ?><a href="<?= htmlspecialchars($allLinks[$ri['key']] ?? ($item['property_type'] === 'hotel' ? '/nexustraveltech/tedarikci/otel-detay?product=' . (int) $item['id'] : '/nexustraveltech/tedarikci/villa-detay?product=' . (int) $item['id'])) ?>">Doldur →</a><?php elseif ($riWarn): ?><a href="<?= htmlspecialchars($allLinks[$ri['key']] ?? '/nexustraveltech/tedarikci/ical-takvimler') ?>">İncele →</a><?php endif; ?></div>
+            <?php foreach ($readiness['items'] as $ri): $riWarn = !empty($ri['warn']); $riCls = !$ri['ok'] ? 'missing' : ($riWarn ? 'warn' : 'ok'); $riIcon = !$ri['ok'] ? '✗' : ($riWarn ? '⚠' : '✓'); ?>
+            <div class="readiness-all-row <?= $riCls ?>"><span class="readiness-all-icon"><?= $riIcon ?></span><div class="readiness-all-text"><b><?= htmlspecialchars($ri['label']) ?><?php if ($ri['key'] === 'rules' && !$ri['ok']): ?> <em>(opsiyonel)</em><?php endif; ?></b><small><?= htmlspecialchars($ri['detail']) ?></small></div><?php if (!$ri['ok']): ?><a href="<?= htmlspecialchars($missLinks[$ri['key']] ?? $editBase) ?>">Doldur →</a><?php elseif ($riWarn): ?><a href="<?= htmlspecialchars($warnLinks[$ri['key']] ?? '/nexustraveltech/tedarikci/ical-takvimler') ?>">İncele →</a><?php endif; ?></div>
             <?php endforeach; ?>
         </div>
     </div>
