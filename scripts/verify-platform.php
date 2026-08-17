@@ -64,6 +64,21 @@ try {
         if($orphanMappings>0)$errors[]="channel_room_mappings: {$orphanMappings} yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait).";
         echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, '.$orphanMappings." uyumsuz.\n";
     }
+    // Migration durumu — schema_migrations takibi (health-check ile aynı; burada uygulanmaz, yalnızca raporlanır).
+    $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())");
+    $appliedSet=array_flip($pdo->query('SELECT file FROM schema_migrations')->fetchAll(PDO::FETCH_COLUMN));
+    $migrationFiles=glob(__DIR__.'/../database/migrations/*-postgres.sql');
+    sort($migrationFiles);
+    $legacyFiles=glob(__DIR__.'/../database/migrations/[0-9][0-9][0-9]-*.sql');
+    $legacyCount=count(array_filter($legacyFiles,fn($f)=>!str_contains($f,'-postgres')));
+    echo 'Migration durumu ('.count($migrationFiles).' postgres + '.$legacyCount." legacy atlandı):".PHP_EOL;
+    $pendingMigs=[];
+    foreach($migrationFiles as $file){
+        $base=basename($file);
+        if(isset($appliedSet[$base])){echo '  ✓ '.$base.PHP_EOL;}
+        else{$pendingMigs[]=$base;echo '  ⏳ '.$base.' (bekliyor — scripts/health-check.php uygular)'.PHP_EOL;}
+    }
+    if($pendingMigs)echo '  NOT: '.count($pendingMigs).' migration bekliyor: '.implode(', ',$pendingMigs).PHP_EOL;
     if(strlen((string)($config['app_encryption_key']??''))<32)$errors[]='app_encryption_key eksik veya 32 karakterden kısa.';
     if(!extension_loaded('curl'))$errors[]='PHP cURL etkin değil; iCal aktarımı çalışmaz.';
     if(!extension_loaded('pdo_pgsql'))$errors[]='PDO PostgreSQL etkin değil.';
