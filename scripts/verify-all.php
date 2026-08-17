@@ -145,6 +145,7 @@ try {
         'nexus-distribution-health-digest', 'nexus-job-status-digest', 'nexus-feature-trash-purge',
         'nexus-fx-missing-audit', 'nexus-ical-repeat-alerts', 'nexus-channel-webhook-retry',
         'nexus-health-check', 'nexus-admin-alert-test', 'nexus-room-mapping-audit',
+        'nexus-suggestion-cleanup',
     ];
     scheduler_seed_defaults();
     $registered = [];
