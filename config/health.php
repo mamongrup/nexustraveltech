@@ -381,7 +381,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 $pdo->exec('DROP TABLE IF EXISTS \"' . $table . '\" CASCADE');
                 $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . implode(', ', $migs) . " zinciriyle yeniden kurulacak\n";
                 $dropped++;
-                $rebuiltTables[$table] = $expectedCols; // 3b doğrulaması için kaydet
+                $rebuiltTables[$table] = ['cols' => $expectedCols, 'migs' => $migs]; // 3b doğrulaması + denetimi için kaydet
                 // Onarım denetimi: ne zaman, hangi tablo, hangi migration zinciri yeniden kurulacak.
                 audit_log('health.repair_drop', 'schema', null, ['table' => $table, 'migrations' => $migs, 'missing_columns' => $missingCols, 'note' => 'yabancı şema düşürüldü; migration zinciri tabloyu yeniden kuracak'], 'health-check');
             } catch (Throwable $e) {
@@ -515,7 +515,9 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $out .= "\n=== 3b) ONARIM SONRASI DOĞRULAMA (" . count($rebuiltTables) . " tablo) ===\n";
         $postColStmt = $pdo->prepare("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?");
         $postFail = [];
-        foreach ($rebuiltTables as $table => $cols) {
+        foreach ($rebuiltTables as $table => $info) {
+            $cols = $info['cols'] ?? [];
+            $migs = $info['migs'] ?? [];
             $postColStmt->execute([$table]);
             $existing = array_flip($postColStmt->fetchAll(PDO::FETCH_COLUMN));
             $missingAfter = array_values(array_diff($cols, array_keys($existing)));
@@ -525,6 +527,19 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 $out .= "✗ " . $table . " yeniden kurulamadı — hâlâ eksik: " . implode(', ', $missingAfter) . "\n";
                 $postFail[] = $table . ' (' . implode(', ', $missingAfter) . ')';
             }
+            // Onarım denetimi: hangi tablo, ne zaman (created_at), hangi migration zinciriyle
+            // yeniden kuruldu ve doğrulama sonucu (tamam/eksik kaldı). Başarılı ve başarısız
+            // her iki durum da kaydedilir — günlük --repair --yes görevi e-postada görür.
+            try {
+                audit_log('health.repair_verify', 'schema', null, [
+                    'table' => $table,
+                    'migrations' => $migs,
+                    'expected_columns' => $cols,
+                    'missing_after' => $missingAfter,
+                    'ok' => $missingAfter === [],
+                    'note' => $missingAfter === [] ? 'tablo beklenen kolonlarla yeniden kuruldu' : 'tablo yeniden kurulamadı — eksik kolonlar kaldı',
+                ], 'health-check');
+            } catch (Throwable $e) {}
         }
         if ($postFail) {
             $out .= "Özet: " . count($rebuiltTables) . " tablodan " . count($postFail) . " yeniden kurulamadı — " . implode('; ', $postFail) . "\n";
