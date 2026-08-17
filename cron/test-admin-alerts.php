@@ -83,6 +83,13 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '</div>';
 if ($send) {
     queue_email($adminEmail, '🧪 Admin uyarı testi — ' . $ok . ' kanal özeti [' . $code . ']', $body, 'admin_alerts_test');
+    // Teslimat tarihçesine koşu kaydı — cron/verify-alert-test-delivery.php bu kodu izler
+    // (delivered/pending/missed) ve raporu aynı tarihçeden üretir.
+    $hist = platform_setting('alert_test_history', []);
+    if (!is_array($hist)) $hist = [];
+    $hist[] = ['code' => $code, 'at' => date('Y-m-d H:i:s'), 'mode' => 'send', 'status' => 'queued', 'delivered_at' => null];
+    if (count($hist) > 20) $hist = array_slice($hist, -20);
+    save_platform_setting('alert_test_history', $hist);
 }
 
 echo "\n" . ($send

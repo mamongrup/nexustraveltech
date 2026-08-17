@@ -38,6 +38,7 @@ function scheduler_seed_defaults(): void
         ['nexus-channel-webhook-retry', 'Webhook yeniden deneme', 'cron/retry-channel-webhooks.php', '*/5 * * * *'],
         ['nexus-health-check', 'Günlük sağlık kontrolü', 'cron/health-check-alert.php', '45 6 * * *'],
         ['nexus-admin-alert-test', 'Admin uyarı e-postası hazırlık kontrolü (kuru)', 'cron/test-admin-alerts.php', '0 7 * * 1'],
+        ['nexus-alert-test-delivery', 'Test e-postası teslimat doğrulaması', 'cron/verify-alert-test-delivery.php', '*/30 * * * *'],
         ['nexus-room-mapping-audit', 'Oda eşleştirme tutarlılık denetimi', 'cron/audit-room-mappings.php', '30 5 * * *'],
         ['nexus-suggestion-cleanup', 'Onay bekleyen öneri TTL temizliği (30 gün)', 'cron/clean-expired-suggestions.php', '0 5 * * *'],
     ];
