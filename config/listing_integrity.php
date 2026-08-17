@@ -90,14 +90,17 @@ function listing_readiness(array $property): array
     if ($isIcalType) {
         // Üç aşamalı senkron durumu: <7 gün → ✓ güncel, 7–30 gün → ⚠ sarı uyarı,
         // 30+ gün veya hiç senkron yok → ✗ kırmızı eksik (skoru düşürür, yayına engel).
+        // "Hiç senkron yok" (bağlantı var ama içe aktarma hiç yapılmamış) ayrı mesajla gösterilir.
         $icalStale = false;
         $icalSyncOld30 = false;
+        $icalNeverSynced = false;
         $icalLastSync = null;
         if ($icalActive > 0) {
             $syncSt = $pdo->prepare("SELECT MAX(last_sync_at) FROM ical_connections WHERE property_id=? AND status='active'");
             $syncSt->execute([$pid]);
             $icalLastSync = $syncSt->fetchColumn();
-            $icalSyncOld30 = $icalLastSync === null || strtotime((string) $icalLastSync) < time() - 30 * 86400;
+            $icalNeverSynced = $icalLastSync === null || (string) $icalLastSync === '';
+            $icalSyncOld30 = $icalNeverSynced || strtotime((string) $icalLastSync) < time() - 30 * 86400;
             $icalStale = !$icalSyncOld30 && strtotime((string) $icalLastSync) < time() - 7 * 86400;
         }
         $icalExportUrls = [];
@@ -116,11 +119,13 @@ function listing_readiness(array $property): array
             'urls' => $icalExportUrls,
             'detail' => $icalActive === 0
                 ? 'Bağlantı yok — iCal takvimler sayfasından en az bir aktif içe/dışa aktarma ekleyin'
-                : ($icalSyncOld30
-                    ? $icalActive . ' bağlantı · son senkron 30 günden eski' . ($icalLastSync !== null ? ' (' . $icalLastSync . ')' : ' (hiç senkron yapılmadı)')
-                    : ($icalStale
-                        ? $icalActive . ' bağlantı · son senkron 7 günden eski (' . $icalLastSync . ')'
-                        : $icalActive . ' bağlantı · son senkron güncel')),
+                : ($icalNeverSynced
+                    ? $icalActive . ' bağlantı · hiç içe aktarma yapılmadı — "Şimdi içe aktar" ile ilk senkronu başlatın'
+                    : ($icalSyncOld30
+                        ? $icalActive . ' bağlantı · son senkron 30 günden eski (' . $icalLastSync . ')'
+                        : ($icalStale
+                            ? $icalActive . ' bağlantı · son senkron 7 günden eski (' . $icalLastSync . ')'
+                            : $icalActive . ' bağlantı · son senkron güncel'))),
         ];
     }
     $items[] = ['key' => 'rules', 'label' => 'Satış / kontrat kuralı', 'ok' => $rules > 0, 'detail' => $rules > 0 ? $rules . ' kural' : 'Kural yok (opsiyonel)'];
