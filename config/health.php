@@ -178,6 +178,21 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             } else {
                 $out .= "✓ Oda eşleştirme durumu: " . $mappingCount . " kayıt, 0 uyumsuz.\n";
             }
+            // Hedefi dolmuş öneriler: aynı kanal + aynı dış kod için confirmed eşleşme varken
+            // hâlâ 'suggested' kalan satırlar — gereksiz bekleme; --repair otomatik confirmed yapar.
+            try {
+                $staleSugRows = $pdo->query("SELECT s.id, s.external_room_id AS code, s.status FROM channel_room_mappings s JOIN channel_room_mappings c ON c.channel_connection_id=s.channel_connection_id AND c.external_room_id=s.external_room_id AND c.status='confirmed' WHERE s.status='suggested' ORDER BY s.id")->fetchAll();
+                $staleSug = count($staleSugRows);
+                if ($staleSug > 0) {
+                    $out .= "⚠ " . $staleSug . " hedefi dolmuş öneri (aynı dış kod için confirmed eşleşme var ama hâlâ suggested) — --repair otomatik confirmed yapar\n";
+                    if ($orphans) {
+                        $out .= "— Ayrıntı (ID · dış kod):\n";
+                        foreach ($staleSugRows as $sr) {
+                            $out .= '  #' . (int) $sr['id'] . ' · ' . htmlspecialchars((string) $sr['code']) . "\n";
+                        }
+                    }
+                }
+            } catch (Throwable $e) {}
         } catch (Throwable $e) {
             $out .= "⚠ Oda eşleştirme taraması yapılamadı: " . $e->getMessage() . "\n";
         }
@@ -515,6 +530,43 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                     'ran_at' => gmdate('c'),
                     'note' => 'silinmiş oda tipi/plan/kanala işaret eden yetim eşleştirmeler temizlendi',
                 ], 'health-check');
+            } catch (Throwable $e) {}
+        }
+        // Hedefi dolmuş önerileri otomatik confirmed yap — aynı kanal + aynı dış kod için
+        // confirmed eşleşme varken hâlâ 'suggested' kalan satırlar (oda + fiyat planı).
+        // Onay akışı gereksizdir: kod zaten o kanalda confirmed bir satıra bağlı.
+        $staleConfirmNote = '';
+        $staleSpecs = [
+            'channel_room_mappings' => ['label' => 'oda önerisi', 'code' => 'external_room_id'],
+            'channel_rate_plan_mappings' => ['label' => 'fiyat planı önerisi', 'code' => 'external_rate_plan_id'],
+        ];
+        foreach ($staleSpecs as $staleTable => $sspec) {
+            if (in_array($staleTable, $missingTables, true)) continue;
+            try {
+                $staleSql = "SELECT s.id, s.{" . $sspec['code'] . "} AS code, s.status FROM " . $staleTable . " s JOIN " . $staleTable . " c ON c.channel_connection_id=s.channel_connection_id AND c." . $sspec['code'] . "=s." . $sspec['code'] . " AND c.status='confirmed' WHERE s.status='suggested' ORDER BY s.id";
+                $staleRows = $pdo->query($staleSql)->fetchAll();
+                if ($staleRows) {
+                    if ($dryRun) {
+                        $out .= '→ [dry-run] ' . count($staleRows) . ' hedefi dolmuş ' . $sspec['label'] . ' CONFIRMED yapılacak (örnek: ' . htmlspecialchars((string) $staleRows[0]['code']) . ')' . "\n";
+                    } else {
+                        $ids = array_map(fn($r) => (int) $r['id'], $staleRows);
+                        $ph = implode(',', array_fill(0, count($ids), '?'));
+                        $upd = $pdo->prepare("UPDATE " . $staleTable . " SET status='confirmed', suggested_at=NULL WHERE id IN (" . $ph . ")");
+                        $upd->execute($ids);
+                        $out .= '→ ' . count($staleRows) . ' hedefi dolmuş ' . $sspec['label'] . ' confirmed yapıldı' . "\n";
+                        $staleConfirmNote .= $staleTable . ':' . count($staleRows) . ';';
+                    }
+                } else {
+                    $out .= '✓ Hedefi dolmuş ' . $sspec['label'] . ' yok.' . "\n";
+                }
+            } catch (Throwable $e) {
+                $out .= '✗ Hedefi dolmuş ' . $sspec['label'] . ' taraması yapılamadı: ' . $e->getMessage() . "\n";
+                $errors[] = 'hedefi dolmuş öneri düzeltmesi başarısız: ' . $e->getMessage();
+            }
+        }
+        if ($staleConfirmNote !== '' && !$dryRun) {
+            try {
+                audit_log('health.repair_stale_confirm', 'schema', null, ['confirmed' => rtrim($staleConfirmNote, ';'), 'ran_at' => gmdate('c'), 'note' => 'hedefi dolmuş onay bekleyen öneriler otomatik confirmed yapıldı'], 'health-check');
             } catch (Throwable $e) {}
         }
         $out .= $dryRun
