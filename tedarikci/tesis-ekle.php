@@ -89,6 +89,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // hangi kalemler tamam / hangileri eksik + "ilk eksik bölüme git" butonu.
     // Ekran bir kez tüketilir (session bayrağı); sonraki ziyaret tesisler listesine döner.
     $_SESSION['karsi_karsiya'] = (int) $propertyId;
+
+    // Panel bildirimi: yeni ilanın ID'si + ilk eksik bölüm bilgisi (doğrudan o bölüme giden link).
+    // Karsi-karsiya ekranındaki öncelik sırasıyla aynı: location → description → media → rooms/inventory →
+    // rates; villa/yat'ta pool/liman/mürettebat + iCal. Opsiyonel rules eksikse "çekirdek tamam" mesajı.
+    $firstLabel = '';
+    $firstLink = '/nexustraveltech/tedarikci/tesisler';
+    try {
+        $pf = $pdo->prepare('SELECT * FROM properties WHERE id=?');
+        $pf->execute([$propertyId]);
+        $newProp = $pf->fetch();
+        if ($newProp && in_array($type, ['hotel', 'villa', 'yacht'], true)) {
+            $editBase = $type === 'hotel'
+                ? '/nexustraveltech/tedarikci/otel-detay?product=' . $propertyId
+                : '/nexustraveltech/tedarikci/villa-detay?product=' . $propertyId;
+            $secOrder = [
+                'location' => ['Kimlik & konum', $editBase . '#sec-01'],
+                'description' => ['Satış içeriği', $editBase . '#sec-02'],
+                'media' => ['Görseller', $editBase . '#sec-05'],
+                'rooms' => ['Oda envanteri', $editBase . '#sec-04'],
+                'inventory' => ['Fiyat & kontenjan', '/nexustraveltech/tedarikci/fiyat-kontenjan?property=' . $propertyId],
+                'rates' => ['Fiyat planı', '/nexustraveltech/tedarikci/fiyat-kontenjan?property=' . $propertyId],
+            ];
+            if ($type !== 'hotel') {
+                $secOrder['pool'] = ['Havuz bilgisi', $editBase . '#sec-01'];
+                $secOrder['home_port'] = ['Bağlama limanı', $editBase . '#sec-01'];
+                $secOrder['crew'] = ['Mürettebat', $editBase . '#sec-01'];
+                $secOrder['ical'] = ['iCal bağlantısı', '/nexustraveltech/tedarikci/ical-takvimler?property=' . $propertyId];
+            }
+            $rd = listing_readiness($newProp);
+            foreach ($rd['items'] as $ri) {
+                if (empty($ri['ok']) && isset($secOrder[$ri['key']])) {
+                    [$firstLabel, $firstLink] = $secOrder[$ri['key']];
+                    break;
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        // Bildirim best-effort — hata yönlendirmeyi bozmaz.
+    }
+    $notifyMsg = 'Yeni ilan oluşturuldu: ' . $name . ' (ID #' . $propertyId . ').'
+        . ($firstLabel !== '' ? ' İlk eksik bölüm: ' . $firstLabel . '.' : ' Çekirdek kalemler tamam.');
+    notify_supplier_users((int) $u['supplier_id'], 'property.created', $notifyMsg, $firstLink);
     header('Location: /nexustraveltech/tedarikci/karsi-karsiya?product=' . $propertyId); exit;
   }
 }
