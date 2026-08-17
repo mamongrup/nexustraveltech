@@ -262,3 +262,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - otel-detay sayfasinda "Entegrasyon" paneli: tedarikcinin kanal webhook adresleri kisa etiket + Kopyala ile gosterilir (dagitim merkezindeki desen)
 - Token gizleme modu ortadan: kisa etiketler artik son 4 karakter yerine token'in ortasindaki 4 karakteri gosterir (api/ical?token=XXXXXXXXXX...XXXX...)
 - Kontrol merkezinde "iCal URL kutusu yalnizca yayindaki ilanlarda gosterilsin" ayari (ical_url_published_only): villa-detay paneli, tesisler karti ve ical-takvimler sayfasinda taslak ilanlarda URL kutulari gizlenir
+- Tesisler kartindaki iCal URL kutusuna "Disar aktarma kanallarina ekle — adim adim" yardim bolumu: Airbnb/Vrbo/Booking.com takvim iceri aktarma adreslerine yapistirma talimatlari (acilir/kapanir)
