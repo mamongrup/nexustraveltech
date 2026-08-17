@@ -595,12 +595,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               $done++;
             } catch (Throwable $e) { $errors[] = $e->getMessage(); }
           }
-          audit_log($sub === 'delete' ? 'feature.bulk_delete' : ($sub === 'activate' ? 'feature.bulk_activate' : 'feature.bulk_deactivate'), 'feature_catalog', null, [
+          // Silme öncesi metrikler — denetim kaydına toplam görsel/oda/plan/rezervasyon yazılır
+          // (onay ekranındaki rozetlerle aynı hesap; ilanlar tekilleştirilir).
+          $auditDetails = [
               'count' => $done,
               'feature_ids' => $ids,
               'skipped_unchanged' => $skipped,
               'affected_count' => $removed,
-          ]);
+          ];
+          if ($sub === 'delete') {
+              $auditDetails['metrics'] = ['media' => 0, 'rooms' => 0, 'plans' => 0, 'bookings' => 0];
+              foreach ($metricDetailList($ids) as $md) {
+                  $auditDetails['metrics']['media'] += (int) $md['media'];
+                  $auditDetails['metrics']['rooms'] += (int) $md['rooms'];
+                  $auditDetails['metrics']['plans'] += (int) $md['plans'];
+                  $auditDetails['metrics']['bookings'] += (int) $md['bookings'];
+              }
+          }
+          audit_log($sub === 'delete' ? 'feature.bulk_delete' : ($sub === 'activate' ? 'feature.bulk_activate' : 'feature.bulk_deactivate'), 'feature_catalog', null, $auditDetails);
           $msg = $sub === 'delete'
               ? "$done özellik silindi, $removed ilandan kaldırıldı" . ($skipped ? ", $skipped özellik zaten çöp kutusunda olduğu için atlandı (sayılmadı)" : '') . ". Çöp kutusundan geri alınabilir."
               : ($sub === 'activate'
