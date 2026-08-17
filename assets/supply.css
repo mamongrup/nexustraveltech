@@ -64,3 +64,7 @@
 .room-summary article em{font-size:12px;font-style:normal;font-weight:700;color:#4c7c0e;white-space:nowrap}
 .room-copy-button{background:var(--navy);border:0;color:#fff;border-radius:6px;padding:12px 15px;font-weight:700;cursor:pointer}
 .room-copy-button:disabled{opacity:.5;cursor:not-allowed}
+/* --- Hazırlık sarı uyarıları (örn. eski iCal senkronu) --- */
+.readiness-warn{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
+.readiness-warn li{font-size:12px;color:#8a6100;background:#fff3d6;border-radius:4px;padding:4px 8px}
+.readiness-check li.warn{color:#8a6100;background:#fff6dd}

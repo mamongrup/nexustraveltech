@@ -21,7 +21,7 @@ function record_audit_event(string $actorType, ?int $actorId, string $action, st
 /**
  * İlan hazırlık kontrolü — satışa açmadan önce eksik kalemleri ve skoru (0-100) döndürür.
  *
- * @return array{score: int, ready: bool, items: array<int, array{key: string, label: string, ok: bool, detail: string}>}
+ * @return array{score: int, ready: bool, items: array<int, array{key: string, label: string, ok: bool, detail: string, warn?: bool}>}
  */
 function listing_readiness(array $property): array
 {
@@ -88,7 +88,26 @@ function listing_readiness(array $property): array
     }
 
     if ($isIcalType) {
-        $items[] = ['key' => 'ical', 'label' => 'Aktif iCal bağlantısı (içe/dışa aktarma)', 'ok' => $icalActive > 0, 'detail' => $icalActive > 0 ? $icalActive . ' bağlantı' : 'Bağlantı yok — iCal takvimler sayfasından en az bir aktif içe/dışa aktarma ekleyin'];
+        // Aktif bağlantı var ama son senkron 7 günden eskiyse sarı uyarı (skoru düşürmez).
+        $icalStale = false;
+        $icalLastSync = null;
+        if ($icalActive > 0) {
+            $syncSt = $pdo->prepare("SELECT MAX(last_sync_at) FROM ical_connections WHERE property_id=? AND status='active'");
+            $syncSt->execute([$pid]);
+            $icalLastSync = $syncSt->fetchColumn();
+            $icalStale = $icalLastSync === null || strtotime((string) $icalLastSync) < time() - 7 * 86400;
+        }
+        $items[] = [
+            'key' => 'ical',
+            'label' => 'Aktif iCal bağlantısı (içe/dışa aktarma)',
+            'ok' => $icalActive > 0,
+            'warn' => $icalActive > 0 && $icalStale,
+            'detail' => $icalActive > 0
+                ? ($icalStale
+                    ? $icalActive . ' bağlantı · son senkron 7 günden eski' . ($icalLastSync !== null ? ' (' . $icalLastSync . ')' : ' (henüz senkron yok)')
+                    : $icalActive . ' bağlantı · son senkron güncel')
+                : 'Bağlantı yok — iCal takvimler sayfasından en az bir aktif içe/dışa aktarma ekleyin',
+        ];
     }
     $items[] = ['key' => 'rules', 'label' => 'Satış / kontrat kuralı', 'ok' => $rules > 0, 'detail' => $rules > 0 ? $rules . ' kural' : 'Kural yok (opsiyonel)'];
 

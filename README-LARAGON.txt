@@ -202,3 +202,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
   (ical-takvimler sayfasına bağlantılı) ve admin_alert_email'e e-posta (ilan, tedarikçi, son senkron,
   son hatalar) gönderir. Aynı ilan için 24 saatte bir kez kuyruklanır (notifications tipi
   ical_inactive_{ilanId}).
+- Hazırlık kontrolü sarı uyarı durumunu destekler: aktif iCal bağlantısı var ama son senkron 7 günden
+  eskiyse (veya hiç senkron yoksa) kalem ✓ yerine ⚠ sarı gösterilir — skoru düşürmez, yayına engel
+  değildir. Villa/yat detay sayfasında "İncele →" iCal takvimler sayfasına gider; tesisler kartında
+  ayrı sarı rozet listesi görünür.

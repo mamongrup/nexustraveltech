@@ -84,11 +84,16 @@ supply_start('Tesisler & ürünler', $active_module);
     <div class="readiness-block">
         <div class="readiness-head"><span>YAYIN HAZIRLIĞI</span><b><?= $readiness['score'] ?>/100</b></div>
         <div class="readiness-bar"><i style="width:<?= (int) $readiness['score'] ?>%"></i></div>
-        <?php $missing = array_filter($readiness['items'], fn($i) => !$i['ok']); ?>
+        <?php $missing = array_filter($readiness['items'], fn($i) => !$i['ok']); $warnings = array_filter($readiness['items'], fn($i) => !empty($i['warn'])); ?>
+        <?php if ($warnings): ?>
+        <ul class="readiness-warn"><?php foreach ($warnings as $w): ?><li>⚠ <?= htmlspecialchars($w['label']) ?> — <?= htmlspecialchars($w['detail']) ?></li><?php endforeach; ?></ul>
+        <?php endif; ?>
         <?php if ($missing): ?>
         <ul class="readiness-missing"><?php foreach ($missing as $m): ?><li>✗ <?= htmlspecialchars($m['label']) ?><?php if ($m['key'] === 'rules'): ?> <em>(opsiyonel)</em><?php endif; ?></li><?php endforeach; ?></ul>
-        <?php else: ?>
+        <?php elseif (!$warnings): ?>
         <p class="readiness-ok">✓ Tüm kalemler tamam — yayına hazır.</p>
+        <?php else: ?>
+        <p class="readiness-ok">✓ Çekirdek kalemler tamam — sarı uyarıya bakın.</p>
         <?php endif; ?>
     </div>
     <div class="property-actions">
