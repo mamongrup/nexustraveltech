@@ -57,7 +57,7 @@ $channelRows = $pdo->query("
 
 // --- 3) Onay bekleyen eşleştirme önerileri (oda + fiyat planı) — tedarikçi bazında ---
 $pendingRows = $pdo->query("
-    SELECT s.company_name,
+    SELECT s.id, s.company_name,
       (SELECT COUNT(*) FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id=s.id AND m.status='suggested') room_sug,
       (SELECT COUNT(*) FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id WHERE c2.supplier_id=s.id AND p.status='suggested') plan_sug
     FROM suppliers s
@@ -197,7 +197,8 @@ if ($pendingTotal > 0) {
         . '<h3 style="margin:0 0 4px;font-size:13px;color:#8a6100">⏳ Onay bekleyen eşleştirme önerileri: <b>' . $pendingTotal . '</b> (' . $pendingRoom . ' oda + ' . $pendingPlan . ' fiyat planı)</h3>';
     foreach ($pendingRows as $pr) {
         $prt = (int) $pr['room_sug'] + (int) $pr['plan_sug'];
-        $pendingHtml .= '<p style="margin:3px 0;font-size:12px;color:#64716d">' . htmlspecialchars((string) $pr['company_name']) . ' — <b>' . $prt . '</b> öneri (' . (int) $pr['room_sug'] . ' oda + ' . (int) $pr['plan_sug'] . ' plan)</p>';
+        $supplierLink = 'https://nexustraveltech.com/admin/tedarikci-ilanlari?supplier_id=' . (int) $pr['id'];
+        $pendingHtml .= '<p style="margin:3px 0;font-size:12px;color:#64716d"><a href="' . $supplierLink . '" style="color:#0d7a4a;font-weight:700;text-decoration:none;border-bottom:1px dotted #9cc2ae" title="Tedarikçinin ilanlarını yönetim panelinde görüntüle">' . htmlspecialchars((string) $pr['company_name']) . ' →</a> — <b>' . $prt . '</b> öneri (' . (int) $pr['room_sug'] . ' oda + ' . (int) $pr['plan_sug'] . ' plan)</p>';
     }
     $pendingHtml .= '<p style="margin:6px 0 0;font-size:11px;color:#8a6100">Öneriler tedarikçi panellerinde Dağıtım & kanal merkezi → bölüm 3\'te onaylanır; onaylanana kadar webhook verisi yazılmaz.</p></div>';
 }
