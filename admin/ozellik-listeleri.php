@@ -223,12 +223,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $pendingBulk = ['ids' => $ids, 'items' => $items, 'total_affected' => $totalAffected, 'by_type' => $byType];
         } else {
           // Adım 2: uygula (her özellik için tekil akışın aynısı + toplu denetim kaydı).
-          $done = 0; $removed = 0; $errors = [];
+          $done = 0; $removed = 0; $skipped = 0; $errors = [];
+          $curQ = db()->prepare('SELECT is_active FROM property_feature_catalog WHERE id=?');
+          $updQ = db()->prepare('UPDATE property_feature_catalog SET is_active=? WHERE id=?');
           foreach ($ids as $fid) {
             try {
               if ($sub === 'deactivate' || $sub === 'activate') {
                 $newState = $sub === 'activate';
-                db()->prepare('UPDATE property_feature_catalog SET is_active=? WHERE id=?')->execute([$newState, $fid]);
+                $curQ->execute([$fid]);
+                $cur = $curQ->fetchColumn();
+                // Idempotent davranış: zaten hedef durumda olan özellik işlenmez, sayılmaz.
+                if ($cur === null) { $errors[] = "Özellik #$fid bulunamadı."; continue; }
+                if ((bool) $cur === $newState) { $skipped++; continue; }
+                $updQ->execute([$newState, $fid]);
                 audit_log('feature.toggle', 'feature_catalog', $fid, ['is_active' => $newState, 'bulk' => true]);
               } else {
                 $res = $deleteFeature($fid);
@@ -240,11 +247,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           audit_log($sub === 'delete' ? 'feature.bulk_delete' : ($sub === 'activate' ? 'feature.bulk_activate' : 'feature.bulk_deactivate'), 'feature_catalog', null, [
               'count' => $done,
               'feature_ids' => $ids,
+              'skipped_unchanged' => $skipped,
               'affected_count' => $removed,
           ]);
           $msg = $sub === 'delete'
               ? "$done özellik silindi, $removed ilandan kaldırıldı. Çöp kutusundan geri alınabilir."
-              : ($sub === 'activate' ? "$done özellik aktifleştirildi." : "$done özellik pasifleştirildi.");
+              : ($sub === 'activate'
+                  ? "$done özellik aktifleştirildi" . ($skipped ? ", $skipped özellik zaten aktif olduğu için atlandı (sayılmadı)" : '') . '.'
+                  : "$done özellik pasifleştirildi" . ($skipped ? ", $skipped özellik zaten pasif olduğu için atlandı (sayılmadı)" : '') . '.');
           if ($errors) $msg .= ' Hatalar: ' . implode('; ', $errors) . '.';
         }
       } elseif ($action === 'taxonomy_add') {
