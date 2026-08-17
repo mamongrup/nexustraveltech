@@ -118,3 +118,5 @@
 .room-map-row label{min-width:220px;margin:0;font-weight:bold}
 .room-map-row label small{color:#6b7774;font-weight:normal}
 .room-map-row input{flex:1}
+.readiness-all-view{color:var(--muted);font-size:11px;white-space:nowrap;text-decoration:none;border:1px solid #d5dccf;border-radius:4px;padding:2px 7px;flex:none}
+.readiness-all-view:hover{color:#10211f;border-color:#9fb08d}
