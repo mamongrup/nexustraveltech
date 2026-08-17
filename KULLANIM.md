@@ -243,7 +243,100 @@ sudo -u postgres psql -d nexus_traveltech -x -c "SELECT id, channel_connection_i
 
 ---
 
-## 8) Sık kullanılan psql kontrolleri
+## 8) Sorun giderme — derinlemesine
+
+### 8.1 `must be owner of table ...` (migration sahiplik hatası)
+
+**Belirti:** Migration veya `--repair` çalışırken `SQLSTATE[42501]: ERROR: must be owner of table <tablo>`; health-check çıktısında `Migration başarısız: 0xx-...` satırları.
+
+**Neden:** Tablolar `postgres` (superuser) sahibinde; migration'lar ve sağlık onarımları `nexus_app` ile koşuyor. Sahibi olmayan kullanıcı `ALTER`/`DROP`/`CREATE` yapamaz.
+
+**Tanı:**
+```bash
+sudo -u postgres psql -d nexus_traveltech -c "SELECT tableowner, count(*) FROM pg_tables WHERE schemaname='public' GROUP BY tableowner ORDER BY 2 DESC;"
+```
+`postgres` satırı varsa sorun doğrulanır.
+
+**Çözüm (sıralı):**
+```bash
+cd /var/www/vhosts/nexustraveltech.com/httpdocs
+bash scripts/apply-migrations-postgres.sh
+```
+Betik migration'ları postgres olarak uygular, tüm public şema sahipliğini `nexus_app`'e devreder ve `schema_migrations`'a kaydeder.
+
+**Doğrulama:** Betik sonunda sahiplik satırında `nexus_app` en üstte; `verify-platform.php` temiz. Kalan `✗` varsa tam hata ile tekrar deneyin.
+
+---
+
+### 8.2 `{"locked":true,"ran":[]}` (zamanlayıcı kilidi takılı)
+
+**Belirti:** `cron/tick.php` çıktısı `{"locked":true,"ran":[]}`; hiçbir görev çalışmıyor.
+
+**Neden:** Zamanlayıcı, PostgreSQL advisory kilidi (anahtar `424242`) ile eşzamanlı tick'leri seriler. Kilit tutan bağlantı canlı ama asılı kaldıysa (uzun süren iş, kopan oturum) sonraki tick'ler reddedilir.
+
+**Tanı (kilidi tutan bağlantı):**
+```bash
+sudo -u postgres psql -d nexus_traveltech -c "SELECT pid, state, application_name, left(query,80) AS q FROM pg_stat_activity WHERE pid IN (SELECT pid FROM pg_locks WHERE locktype='advisory' AND objid=424242);"
+```
+
+**Çözüm (sıralı):**
+```bash
+# 1) Kilidi tutan bağlantıyı sonlandır
+sudo -u postgres psql -d nexus_traveltech -c "SELECT pg_terminate_backend(pid) FROM pg_locks WHERE locktype='advisory' AND objid=424242 AND pid <> pg_backend_pid();"
+
+# 2) Kilit bırakıldı mı kontrol et
+/opt/plesk/php/8.5/bin/php cron/tick.php    # → {"locked":false,"ran":[...]} beklenir
+
+# 3) Sonlandırma işe yaramazsa (kilit sistem tarafında):
+#    sudo systemctl restart postgresql
+```
+
+**Önleme:** Tick'i iki yere aynı anda koymayın (cron + web tetik). Uzun süren bir görev kilidi uzun tutuyorsa o görevi inceleyin; kilit oturum ölünce otomatik bırakılır.
+
+---
+
+### 8.3 Kuyruk birikmesi (webhook `queued` yığılması)
+
+**Belirti:** `channel_sync_logs` içinde saatlerdir `queued` kalan satırlar; dağıtım merkezi işlem günlüğünde işlenmemiş yükler; e-postalar gitmiyor.
+
+**Tanı:**
+```bash
+sudo -u postgres psql -d nexus_traveltech -c "SELECT status, count(*) FROM channel_sync_logs WHERE created_at > now() - interval '24 hours' GROUP BY status;"
+sudo -u postgres psql -d nexus_traveltech -c "SELECT count(*) AS eski_queued FROM channel_sync_logs WHERE status='queued' AND created_at < now() - interval '15 minutes';"
+sudo -u postgres psql -d nexus_traveltech -c "SELECT status, count(*) FROM email_outbox WHERE created_at > now() - interval '24 hours' GROUP BY status;"
+```
+
+**Neden zinciri (en sık → seyrek):**
+1. `nexus-channel-webhook-process` (1 dk) hiç çalışmıyor — cron/tick kapalı, PHP yolu yanlış veya kilit takılı (bkz. 8.2)
+2. `nexus-channel-webhook-retry` tükenmiş — `attempt_count >= 3` satırlar kalıcı `failed`
+3. Payload kalıcı hatalı (eşleşme yok, kur eksik, tarih bozuk) — her denemede aynı hatayla döner
+4. `cron/process-emails.php` (5 dk) çalışmıyor → `email_outbox` birikir
+
+**Çözüm (sıralı):**
+```bash
+# 1) Zamanlayıcı sağlığı: kilit + son çalıştırma
+/opt/plesk/php/8.5/bin/php cron/tick.php
+sudo -u postgres psql -d nexus_traveltech -c "SELECT code, last_run_at, last_status FROM scheduled_jobs WHERE code IN ('nexus-channel-webhook-process','nexus-channel-webhook-retry','nexus-process-emails') ORDER BY code;"
+
+# 2) Kilit takılıysa bırak (bkz. 8.2); yoksa işleyiciyi elle koşup hatayı gör
+/opt/plesk/php/8.5/bin/php cron/process-channel-webhooks.php 2>&1 | tail -20
+
+# 3) Hata kalıcıysa (ör. eşleşme/kur/tarih) kök nedeni düzelt — tabloya bak:
+sudo -u postgres psql -d nexus_traveltech -x -c "SELECT id, scope, attempt_count, error_message FROM channel_sync_logs WHERE status='failed' ORDER BY id DESC LIMIT 5;"
+#    · 'eşleşme yok' → bölüm 3'ten öneriyi onayla
+#    · 'fx_rate_missing' → Kur yönetiminden TCMB çek
+#    · 'invalid_date' → kanalın tarih formatı
+
+# 4) Retry tükenen (attempt_count>=3) yükler kök neden düzeldikten sonra otomatik yeniden denenir.
+#    Bekleyen yığını manuel temizlemek gerekirse (kök neden çözülmüşse):
+#    UPDATE channel_sync_logs SET attempt_count=0, status='queued', error_message=NULL WHERE status='failed' AND attempt_count>=3 AND created_at > now() - interval '7 days';
+```
+
+**Doğrulama:** 15 dakika sonra aynı tanı sorgusu — `queued`/`failed` sayısı düşmeli, `success` artmalı; işlem günlüğünde yeni satırlar `success` olmalı.
+
+---
+
+## 9) Sık kullanılan psql kontrolleri
 
 ```bash
 # Tüm tablolar + sahip
