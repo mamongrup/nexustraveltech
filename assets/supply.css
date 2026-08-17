@@ -239,3 +239,6 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .room-sample-copy:hover{background:#e6f0e9}
 .room-sample-pre{margin:0;padding:10px 12px;font-family:Consolas,Menlo,monospace,monospace;font-size:12px;line-height:1.5;color:#23332b;white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto}
 .room-verify-result .room-test-msg{white-space:pre-wrap}
+
+/* ── Öneri satırı: test sonrası onay vurgusu ── */
+.room-approve-ready{border-color:#2e7d4f!important;background:#e8f5ec!important;color:#1e5a37!important;box-shadow:0 0 0 2px rgba(46,125,79,.15)}
