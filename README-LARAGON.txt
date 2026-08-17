@@ -264,3 +264,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Kontrol merkezinde "iCal URL kutusu yalnizca yayindaki ilanlarda gosterilsin" ayari (ical_url_published_only): villa-detay paneli, tesisler karti ve ical-takvimler sayfasinda taslak ilanlarda URL kutulari gizlenir
 - Tesisler kartindaki iCal URL kutusuna "Disar aktarma kanallarina ekle — adim adim" yardim bolumu: Airbnb/Vrbo/Booking.com takvim iceri aktarma adreslerine yapistirma talimatlari (acilir/kapanir)
 - Kanal webhook iki asamali senkronizasyon: api/channel-webhook yuku kuyruga alir (migration 045: channel_room_mappings + source/external_ref kolonlari), cron/process-channel-webhooks.php 1 dakikada bir isler; scope=rates/availability -> inventory_calendar fiyat/kontenjan, restrictions -> stop_sale/min/max kalis, reservations -> sold artirimi. Sonuc channel_sync_logs'a yazilir, baglanti last_sync_at tazelenir. Zamanlayici: nexus-channel-webhook-process.
+- Özellik silme geri alınabilir (migration 046): silinen özellik soft-delete ile çöp kutusuna
+  taşınır, ilan/bölüm anlık görüntüsü feature_delete_backups'a yazılır; "Geri yükle" ile özellik
+  ve kaldırıldığı ilanlar (service_pricing değeri dahil) tek tıkla geri eklenir. feature.restore
+  denetim kaydına yazılır. verify-platform artık 45 tablo sayar.

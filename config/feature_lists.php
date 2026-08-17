@@ -57,7 +57,7 @@ function property_feature_groups(string $category): array
 {
     try {
         $pdo = db();
-        $stmt = $pdo->prepare('SELECT group_label, label FROM property_feature_catalog WHERE code=? AND is_active ORDER BY group_label, sort_order, id');
+        $stmt = $pdo->prepare('SELECT group_label, label FROM property_feature_catalog WHERE code=? AND is_active AND deleted_at IS NULL ORDER BY group_label, sort_order, id');
         $stmt->execute([$category]);
         $rows = $stmt->fetchAll();
         if ($rows) {
@@ -85,12 +85,12 @@ function property_feature_lists(?string $code = null): array
     try {
         $pdo = db();
         if ($code !== null) {
-            $stmt = $pdo->prepare("SELECT label FROM property_feature_catalog WHERE code=? AND is_active ORDER BY sort_order, id");
+            $stmt = $pdo->prepare("SELECT label FROM property_feature_catalog WHERE code=? AND is_active AND deleted_at IS NULL ORDER BY sort_order, id");
             $stmt->execute([$code]);
             $rows = $stmt->fetchAll(PDO::FETCH_COLUMN);
             return $rows ?: property_feature_defaults($code);
         }
-        $rows = $pdo->query("SELECT code, label FROM property_feature_catalog WHERE is_active ORDER BY code, sort_order, id")->fetchAll();
+        $rows = $pdo->query("SELECT code, label FROM property_feature_catalog WHERE is_active AND deleted_at IS NULL ORDER BY code, sort_order, id")->fetchAll();
         if ($rows) {
             $out = ['villa' => [], 'yacht' => []];
             foreach ($rows as $row) {
