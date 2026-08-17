@@ -57,8 +57,13 @@ if ($propertyExt !== '') {
         $propertyId = (int)$map['property_id'];
     }
 }
-// Bildirimi kuyruğa işleme kaydı olarak ekle — pull yönlü, gerçek veri
-// aktarımı (örn. fiyat/kontenjan uygulaması) kanal işleyicisinde yapılır.
+// Bildirimi kuyruğa işleme kaydı olarak ekle — pull yönlü, gerçek veri aktarımı
+// (fiyat/kontenjan uygulaması) cron/process-channel-webhooks.php işleyicisinde yapılır.
+// Örnek yük (scope=rates/availability/restrictions/reservations):
+// {"scope":"rates","external_property_id":"OTA-123","entries":[{"external_room_id":"OTA-DELUXE","date":"2026-09-01","price":185.50}]}
+// Oda eşleştirmesi channel_room_mappings (migration 045) üzerinden yapılır; eşleşme yoksa
+// ilanın ilk aktif oda tipine yazılır. Bildirim iki aşamalıdır: burada kuyruğa eklenir,
+// işleyici 1 dakika içinde uygular ve channel_sync_logs'a sonucu yazar.
 $pdo->prepare("INSERT INTO channel_sync_logs(channel_connection_id, property_id, direction, scope, status, request_payload, response_payload) VALUES(?,?, 'pull', ?, 'queued', ?::jsonb, ?::jsonb)")
     ->execute([$conn['id'], $propertyId, $scope, json_encode($data), json_encode(['received_at' => gmdate('c')])]);
 

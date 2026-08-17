@@ -16,6 +16,7 @@ function scheduler_seed_defaults(): void
         ['nexus-netgsm-sms', 'Netgsm SMS işleme', 'cron/process-netgsm-sms.php', '* * * * *'],
         ['nexus-process-emails', 'E-posta kuyruğu', 'cron/process-emails.php', '*/5 * * * *'],
         ['nexus-process-webhooks', 'Webhook teslimatı', 'cron/process-webhooks.php', '*/1 * * * *'],
+        ['nexus-channel-webhook-process', 'Kanal webhook işleyici', 'cron/process-channel-webhooks.php', '*/1 * * * *'],
         ['nexus-welcome-emails', 'Hoş geldiniz e-postaları', 'cron/send-welcome-emails.php', '0 8 * * *'],
         ['nexus-notification-digest', 'Bildirim özeti', 'cron/send-notification-digest.php', '15 9 * * *'],
         ['nexus-expire-group-options', 'Grup opsiyon süresi', 'cron/expire-group-options.php', '30 3 * * *'],
