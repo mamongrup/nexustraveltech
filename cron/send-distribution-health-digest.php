@@ -91,6 +91,33 @@ $planMissingRows = $pdo->query("
     ORDER BY c.display_name, m.external_room_id
 ")->fetchAll();
 
+// --- 5) Yetim eşleştirmeler metrik: health-check ile aynı koşullar (3 tablo).
+// Geçen haftayla karşılaştırma için tarihçe platform ayarında tutulur (trend).
+$orphanRoom = 0; $orphanPlan = 0; $orphanProp = 0;
+try {
+    if ((bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='channel_room_mappings'")->fetchColumn()) {
+        $orphanRoom = (int) $pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE m.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))")->fetchColumn();
+    }
+    if ((bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='channel_rate_plan_mappings'")->fetchColumn()) {
+        $orphanPlan = (int) $pdo->query("SELECT COUNT(*) FROM channel_rate_plan_mappings m LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL")->fetchColumn();
+    }
+    if ((bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='channel_property_mappings'")->fetchColumn()) {
+        $orphanProp = (int) $pdo->query("SELECT COUNT(*) FROM channel_property_mappings m LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE p.id IS NULL OR c.id IS NULL")->fetchColumn();
+    }
+} catch (Throwable $e) {
+    $orphanRoom = 0; $orphanPlan = 0; $orphanProp = 0;
+}
+$orphanTotal = $orphanRoom + $orphanPlan + $orphanProp;
+
+// Tarihçe: hafta → toplam yetim. Geçen haftayla delta e-postada trend olarak gösterilir.
+$orphanHistory = platform_setting('distribution_health_orphan_history', []);
+if (!is_array($orphanHistory)) $orphanHistory = [];
+$prevWeek = date('o-W', time() - 7 * 86400);
+$orphanPrev = array_key_exists($prevWeek, $orphanHistory) ? (int) $orphanHistory[$prevWeek] : null;
+$orphanHistory[$week] = $orphanTotal;
+if (count($orphanHistory) > 26) $orphanHistory = array_slice($orphanHistory, -26, null, true);
+save_platform_setting('distribution_health_orphan_history', $orphanHistory);
+
 $problems = [];
 
 // iCal satırları: yalnızca sorunlu olanları topla.
@@ -134,7 +161,7 @@ foreach ($channelRows as $r) {
     }
 }
 
-if ($problems === [] && $pendingTotal === 0 && $planMissingRows === []) {
+if ($problems === [] && $pendingTotal === 0 && $planMissingRows === [] && $orphanTotal === 0) {
     save_platform_setting('distribution_health_week', $week);
     echo "Sorunlu dağıtım kaydı yok — özet gönderilmedi. (" . count($icalRows) . " villa/yat, " . count($channelRows) . " otel sahibi tedarikçi)\n";
     exit(0);
@@ -173,6 +200,23 @@ if ($pendingTotal > 0) {
         $pendingHtml .= '<p style="margin:3px 0;font-size:12px;color:#64716d">' . htmlspecialchars((string) $pr['company_name']) . ' — <b>' . $prt . '</b> öneri (' . (int) $pr['room_sug'] . ' oda + ' . (int) $pr['plan_sug'] . ' plan)</p>';
     }
     $pendingHtml .= '<p style="margin:6px 0 0;font-size:11px;color:#8a6100">Öneriler tedarikçi panellerinde Dağıtım & kanal merkezi → bölüm 3\'te onaylanır; onaylanana kadar webhook verisi yazılmaz.</p></div>';
+}
+
+// Yetim eşleştirmeler metrik bölümü — trend karşılaştırmalı.
+$orphanHtml = '';
+if ($orphanTotal > 0) {
+    $trendTxt = '';
+    if ($orphanPrev !== null) {
+        $diff = $orphanTotal - $orphanPrev;
+        if ($diff > 0) $trendTxt = ' · <span style="color:#b0301a">▲ +' . $diff . ' vs geçen hafta (' . $orphanPrev . ')</span>';
+        elseif ($diff < 0) $trendTxt = ' · <span style="color:#0d7a4a">▼ ' . $diff . ' vs geçen hafta (' . $orphanPrev . ')</span>';
+        else $trendTxt = ' · geçen haftayla aynı (' . $orphanPrev . ')';
+    } else {
+        $trendTxt = ' · ilk kayıt (trend 2. haftadan itibaren)';
+    }
+    $orphanHtml = '<div style="margin-top:14px;padding:10px 14px;background:#fdecea;border:1px solid #f0c4bc;border-radius:8px">'
+        . '<h3 style="margin:0 0 4px;font-size:13px;color:#b0301a">🧹 Yetim eşleştirmeler: <b>' . $orphanTotal . '</b> (' . $orphanRoom . ' oda + ' . $orphanPlan . ' plan + ' . $orphanProp . ' ürün)' . $trendTxt . '</h3>'
+        . '<p style="margin:3px 0;font-size:12px;color:#64716d">Silinmiş oda tipi / fiyat planı / kanal / ürüne işaret eden eşleştirmeler — webhook yazımı bu kodlarda başarısız olabilir. Temizlik: sunucuda <code>scripts/health-check.php --repair --yes</code> veya günlük sağlık e-postasındaki tek tıklık onay bağlantısı.</p></div>';
 }
 
 // Planı eksik eşleştirmeler bölümü — e-posta gövdesine eklenir.
@@ -222,6 +266,7 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . $locHtml
     . $pendingHtml
     . $planHtml
+    . $orphanHtml
     . '<p style="margin:14px 0 0;font-size:12px;color:#64716d">Gerçek zamanlı uyarılar (15 dk) tedarikçi panellerine ayrıca gider. Kırmızı durumlar için ilgili tedarikçiyle iletişime geçin veya iCal takvimler / Dağıtım & kanal merkezi sayfalarını denetleyin.</p>'
     . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/tedarikci-onaylari" style="color:#0d7a4a">Tedarikçi yönetimi →</a></p>'
     . '</div>';
@@ -239,7 +284,7 @@ if ($locGroups) {
     }
 }
 $pdf = pdf_build('<h2>Dağıtım sağlığı haftalık özeti — ' . date('d.m.Y') . '</h2>'
-    . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . ($pendingTotal > 0 ? '. Onay bekleyen öneri: ' . $pendingTotal . ' (' . $pendingRoom . ' oda + ' . $pendingPlan . ' plan)' : '') . ($planMissingRows ? '. Planı eksik eşleştirme: ' . count($planMissingRows) : '') . '</p>'
+    . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . ($pendingTotal > 0 ? '. Onay bekleyen öneri: ' . $pendingTotal . ' (' . $pendingRoom . ' oda + ' . $pendingPlan . ' plan)' : '') . ($planMissingRows ? '. Planı eksik eşleştirme: ' . count($planMissingRows) : '') . ($orphanTotal > 0 ? '. Yetim eşleştirme: ' . $orphanTotal . ($orphanPrev !== null ? ' (geçen hafta ' . $orphanPrev . ')' : '') : '') . '</p>'
     . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:10px">'
     . '<tr style="background:#f2f4ef"><th align="left">İlan / Tedarikçi</th><th align="left">Tip</th><th align="left">Durum</th><th align="left">Son senkron</th></tr>'
     . $pdfRows
@@ -250,7 +295,7 @@ if ($pdf !== null) {
     $attBase64 = base64_encode($pdf);
 }
 
-$subject = 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')' . ($pendingTotal > 0 ? ' · ⏳ ' . $pendingTotal . ' öneri' : '') . ($planMissingRows ? ' · ⚠ ' . count($planMissingRows) . ' planı eksik' : '');
+$subject = 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')' . ($pendingTotal > 0 ? ' · ⏳ ' . $pendingTotal . ' öneri' : '') . ($planMissingRows ? ' · ⚠ ' . count($planMissingRows) . ' planı eksik' : '') . ($orphanTotal > 0 ? ' · 🧹 ' . $orphanTotal . ' yetim' : '');
 queue_email($to, $subject, $body, 'distribution_health_digest', (int) str_replace('-', '', $week), $attName, $attBase64);
 save_platform_setting('distribution_health_week', $week);
-echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($pendingTotal > 0 ? ", ⏳ {$pendingTotal} onay bekleyen öneri" : '') . ($planMissingRows ? ', ⚠ ' . count($planMissingRows) . ' planı eksik eşleştirme' : '') . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
+echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($pendingTotal > 0 ? ", ⏳ {$pendingTotal} onay bekleyen öneri" : '') . ($planMissingRows ? ', ⚠ ' . count($planMissingRows) . ' planı eksik eşleştirme' : '') . ($orphanTotal > 0 ? ', 🧹 ' . $orphanTotal . ' yetim eşleştirme' : '') . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
