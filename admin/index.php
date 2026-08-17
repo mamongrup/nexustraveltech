@@ -7,6 +7,7 @@ require __DIR__ . '/../config/database.php';
 require __DIR__ . '/../config/platform_settings.php';
 require __DIR__ . '/../config/ai_settings.php';
 require __DIR__ . '/../config/chat_topics.php';
+require __DIR__ . '/../config/scheduler.php';
 
 require_admin();
 
@@ -56,6 +57,24 @@ foreach (db()->query('SELECT created_at::date d, COUNT(*) c FROM public_chat_mes
     if (isset($chatWeek[$d])) $chatWeek[$d] = (int) $r['c'];
 }
 $chatWeekMax = max(1, max($chatWeek));
+
+// Zamanlayıcı süre özeti kartı: son 30 günün günlük ortalama süresi (görev seçiciyle).
+$timerChartJob = (int) ($_GET['timer_chart_job'] ?? 0);
+$schedulerJobs = scheduler_jobs();
+$durWhere = $timerChartJob > 0 ? 'WHERE job_id=? AND created_at >= CURRENT_DATE - 29' : 'WHERE created_at >= CURRENT_DATE - 29';
+$durParams = $timerChartJob > 0 ? [$timerChartJob] : [];
+$durQ = db()->prepare("SELECT created_at::date d, COALESCE(AVG(duration_ms),0)::int avg_ms, COUNT(*) FILTER (WHERE status='error') err FROM scheduled_job_runs $durWhere GROUP BY 1");
+$durQ->execute($durParams);
+$durMap = [];
+foreach ($durQ->fetchAll() as $r) $durMap[(string) $r['d']] = ['avg_ms' => (int) $r['avg_ms'], 'err' => (int) $r['err']];
+$durChart = [];
+for ($i = 29; $i >= 0; $i--) {
+    $d = date('Y-m-d', time() - $i * 86400);
+    $durChart[$d] = $durMap[$d] ?? ['avg_ms' => 0, 'err' => 0];
+}
+$durMax = max(1, max(array_column($durChart, 'avg_ms')));
+$durErrDays = count(array_filter($durChart, fn($v) => $v['err'] > 0));
+$timerAvg7 = (int) db()->query("SELECT COALESCE(AVG(duration_ms),0) FROM scheduled_job_runs WHERE created_at >= now() - interval '7 days'")->fetchColumn();
 ?>
 <!doctype html>
 <html lang="tr">
@@ -98,6 +117,28 @@ $chatWeekMax = max(1, max($chatWeek));
       <div class="item" style="flex-basis:100%">Popüler konular (son 30 gün)<?php if ($topTopicsTotal > 0): ?><?php foreach ($topTopics as $topic => $c): if ($c === 0) continue; ?><span class="tchip"><?=htmlspecialchars($topic)?> <b><?=(int)$c?></b></span><?php endforeach; ?><?php else: ?><span class="muted" style="margin-left:8px">henüz veri yok</span><?php endif; ?></div>
       <div class="item">DeepSeek anahtarı<b class="<?= $aiKeyReady ? 'ok' : 'warn' ?>"><?= $aiKeyReady ? '✅ Ayarlı' : '⚠ Eksik' ?></b></div>
       <a class="edit" href="/nexustraveltech/admin/kontrol-merkezi">Düzenle →</a>
+    </div>
+
+    <div class="chat-card">
+      <h3>⏱ Zamanlayıcı süreleri (son 30 gün)</h3>
+      <form method="get" action="/nexustraveltech/admin/" style="flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <select name="timer_chart_job" onchange="this.form.submit()" style="padding:7px;border:1px solid #d8ded8;font:inherit">
+          <option value="0">Tüm görevler</option>
+          <?php foreach ($schedulerJobs as $sj): ?>
+            <option value="<?= (int) $sj['id'] ?>" <?= $timerChartJob === (int) $sj['id'] ? 'selected' : '' ?>><?= htmlspecialchars($sj['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <span class="item" style="font-size:12px;color:#64716d">7 gün ort. <b style="color:#10211f"><?= number_format($timerAvg7) ?> ms</b> · <b style="color:#b0301a"><?= (int)$durErrDays ?> gün hatalı</b></span>
+        <a class="edit" href="/nexustraveltech/admin/zamanlayici-gecmisi">Geçmiş →</a>
+      </form>
+      <div style="flex-basis:100%;display:flex;gap:2px;align-items:flex-end;height:58px;margin-top:6px">
+        <?php foreach ($durChart as $d => $v): ?>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;min-width:4px" title="<?=htmlspecialchars($d)?>: <?= (int)$v['avg_ms'] ?> ms<?= (int)$v['err'] > 0 ? ', ' . (int)$v['err'] . ' hata' : '' ?>">
+            <i style="display:block;width:100%;background:<?= (int)$v['avg_ms'] > 0 ? '#10211f' : '#e1e5de' ?>;border-radius:2px 2px 0 0;height:<?= max(2, (int) round((int)$v['avg_ms'] / $durMax * 50)) ?>px"></i>
+            <?php if ((int) $v['err'] > 0): ?><span style="width:5px;height:5px;border-radius:50%;background:#b0301a"></span><?php endif; ?>
+          </div>
+        <?php endforeach; ?>
+      </div>
     </div>
 
     <p><a class="logout" href="/nexustraveltech/admin/kontrol-merkezi">Platform kontrol merkezi →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/uyari-merkezi">Operasyon uyarıları →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/acenteler">Acente yönetimi →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/otel-siniflandirma">Otel tipleri, yıldızlar ve temaları yönet →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/otel-cevirileri">6 dilde çevirileri yönet →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/tedarikci-onaylari">Tedarikçi kimlik ve yetki onayları →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/ai-ayarlari">DeepSeek metin AI →</a> &nbsp; | &nbsp; <a class="logout" href="/nexustraveltech/admin/gemini-ayarlari">Gemini görsel AI →</a></p>
