@@ -192,3 +192,15 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .conn-token-reset-btn{margin:2px 0 0;padding:5px 10px;background:#fff;border:1px solid #d8a08f;color:#b0301a;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
 .conn-token-reset-btn:hover{background:#ffe2de}
 .token-reset-box{margin:14px 0;padding:14px;background:#fff8e6;border:1px solid #ead9a8;border-radius:8px;font-size:13px}
+
+/* ── Lightbox — satır içi görsel önizleme büyütme ── */
+.readiness-media-preview img{cursor:zoom-in;transition:transform .12s ease,box-shadow .12s ease}
+.readiness-media-preview img:hover{transform:scale(1.08);box-shadow:0 2px 8px rgba(16,33,31,.25)}
+.readiness-lightbox{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
+.readiness-lightbox.open{display:flex}
+.readiness-lightbox-backdrop{position:absolute;inset:0;background:rgba(8,14,12,.82);cursor:zoom-out}
+.readiness-lightbox-fig{position:relative;max-width:94vw;max-height:90vh;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.readiness-lightbox-fig img{max-width:94vw;max-height:84vh;width:auto;height:auto;object-fit:contain;border-radius:10px;box-shadow:0 18px 60px rgba(0,0,0,.55);background:#fff;display:block}
+.readiness-lightbox-fig figcaption{color:#e8efe9;font-size:13px;padding:12px 2px 0;text-align:center;max-width:94vw}
+.readiness-lightbox-close{position:absolute;top:-14px;right:-14px;width:30px;height:30px;border-radius:50%;border:none;background:#fff;color:#10211f;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);line-height:1;display:flex;align-items:center;justify-content:center;z-index:2}
+.readiness-lightbox-close:hover{background:#ffe0d6}
