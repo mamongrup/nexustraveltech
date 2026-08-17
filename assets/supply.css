@@ -189,3 +189,6 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .wt-box{margin-top:14px;padding:12px 14px;border-radius:8px;font-size:13px}
 .wt-ok{background:#eef8ec;border:1px solid #bfe0b4}
 .wt-err{background:#fff1f0;border:1px solid #f0c4bb}
+.conn-token-reset-btn{margin:2px 0 0;padding:5px 10px;background:#fff;border:1px solid #d8a08f;color:#b0301a;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
+.conn-token-reset-btn:hover{background:#ffe2de}
+.token-reset-box{margin:14px 0;padding:14px;background:#fff8e6;border:1px solid #ead9a8;border-radius:8px;font-size:13px}
