@@ -62,14 +62,13 @@ function listing_readiness(array $property): array
         ['key' => 'rules', 'label' => 'Satış / kontrat kuralı', 'ok' => $rules > 0, 'detail' => $rules > 0 ? $rules . ' kural' : 'Kural yok (opsiyonel)'],
     ];
 
-    $coreOk = 0;
-    foreach ($items as $i) {
-        if ($i['key'] !== 'rules' && $i['ok']) $coreOk++;
-    }
-    $okCount = count(array_filter($items, fn($i) => $i['ok']));
+    // Skor yalnızca 6 çekirdek kalem üzerinden hesaplanır; satış kuralı opsiyoneldir
+    // ve paydaya girmez — böylece kuralsız ama yayına hazır ilan %100 gösterebilir.
+    $coreItems = array_values(array_filter($items, fn($i) => $i['key'] !== 'rules'));
+    $coreOk = count(array_filter($coreItems, fn($i) => $i['ok']));
     return [
-        'score' => (int) round($okCount / count($items) * 100),
-        'ready' => $coreOk === 6,
+        'score' => (int) round($coreOk / count($coreItems) * 100),
+        'ready' => $coreOk === count($coreItems),
         'items' => $items,
     ];
 }

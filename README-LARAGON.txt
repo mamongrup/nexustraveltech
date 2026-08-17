@@ -164,7 +164,8 @@ AYLIK SOHBET RAPORU (E-POSTA)
 İLAN YAYINLAMA (TEDARİKÇİ)
 - config/listing_integrity.php → listing_readiness(): ilanı yayına açmadan önce 7 kalemlik hazırlık
   kontrolü (aktif oda tipi, aktif fiyat planı, gelecek tarihli fiyatlı takvim, en az 1 görsel,
-  satış açıklaması, konum, opsiyonel satış kuralı) ve 0-100 skor üretir; 6 çekirdek kalem tamamsa ready=true.
+  satış açıklaması, konum, opsiyonel satış kuralı) ve 0-100 skor üretir. Skor yalnızca 6 çekirdek
+  kalem üzerinden hesaplanır (kural paydaya girmez); 6'sı tamamsa ready=true ve skor %100 olur.
 - tedarikci/tesisler.php: her ilanda skor çubuğu + eksik kalem listesi; hazır olan ilanlar "Yayına al"
   (draft/paused → active), yayındakiler "Duraklat" (active → paused) yapılabilir. CSRF korumalı,
   sahiplik doğrulamalı ve audit_logs'a kaydedilir. Acente müsaitlik sorguları yalnızca status='active'
