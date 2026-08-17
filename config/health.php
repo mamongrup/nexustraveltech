@@ -141,6 +141,29 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
                 $errors[] = $table . ' onarılamadı: ' . $e->getMessage();
             }
         }
+        // Yetim eşleştirmeleri temizle — yalnızca gerçekten başka ürüne/var olmayan kayda işaret
+        // eden satırlar (room tipi/kanal/plan silinmiş veya başka ürüne ait).
+        if (!in_array('channel_room_mappings', $missingTables, true)) {
+            try {
+                $orphanSql = "SELECT m.id, m.external_room_id, m.room_type_id, m.channel_connection_id, m.status FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id))";
+                $orphans = $pdo->query($orphanSql)->fetchAll();
+                if ($orphans) {
+                    $del = $pdo->prepare('DELETE FROM channel_room_mappings WHERE id=?');
+                    $removed = 0;
+                    foreach ($orphans as $o) {
+                        $del->execute([(int) $o['id']]);
+                        $removed++;
+                        $out .= '→ yetim eşleştirme #' . (int) $o['id'] . ' (' . htmlspecialchars((string) $o['external_room_id']) . ', room_type=' . (int) $o['room_type_id'] . ') silindi' . "\n";
+                    }
+                    $out .= "Özet: " . $removed . " yetim eşleştirme temizlendi.\n";
+                } else {
+                    $out .= "✓ Yetim/uyumsuz eşleştirme yok.\n";
+                }
+            } catch (Throwable $e) {
+                $out .= "✗ Yetim taraması yapılamadı: " . $e->getMessage() . "\n";
+                $errors[] = 'yetim eşleştirme temizliği başarısız: ' . $e->getMessage();
+            }
+        }
         $out .= $dropped === 0 && $skippedNonEmpty === []
             ? "✓ Onarım gerektiren boş tablo yok.\n"
             : "Özet: " . $dropped . " tablo düşürüldü" . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . "\n";
