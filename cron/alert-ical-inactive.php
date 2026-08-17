@@ -34,15 +34,11 @@ $recentCheck = $pdo->prepare("SELECT id FROM notifications WHERE user_type='supp
 
 $notified = 0;
 $emailed = 0;
+$tierCount = ['green' => 0, 'yellow' => 0, 'red' => 0];
 
 foreach ($properties as $prop) {
     $propId = (int) $prop['id'];
     $supplierId = (int) $prop['supplier_id'];
-    $typeKey = 'ical_inactive_' . $propId; // notifications.type 40 karakterle sınırlıdır.
-    $recentCheck->execute([$supplierId, $typeKey]);
-    if ($recentCheck->fetch()) {
-        continue; // Son 24 saatte bu ilan için bildirim gitti — gürültü yapma.
-    }
 
     $total = (int) $prop['total_con'];
     $active = (int) $prop['active_con'];
@@ -50,20 +46,40 @@ foreach ($properties as $prop) {
     $lastErrors = trim((string) ($prop['last_errors'] ?? ''));
     $typeLabel = $prop['property_type'] === 'yacht' ? 'Yat' : 'Villa';
     $lastTs = $lastSync !== '' ? strtotime($lastSync) : 0;
+    $ageDays = $lastTs > 0 ? (int) floor((time() - $lastTs) / 86400) : null;
     $old30 = $lastTs > 0 && $lastTs < time() - 30 * 86400;
+    $stale7 = !$old30 && $lastTs > 0 && $lastTs < time() - 7 * 86400;
     $neverSynced = $lastTs === 0;
 
+    // Kademe: kırmızı (pasif / 30+ gün / hiç senkron), sarı (7-30 gün), yeşil (güncel).
     if ($active === 0) {
-        // Dal 1: bağlantı tanımlı ama hiçbiri aktif değil (pasif).
+        $tier = 'red';
+        $tierLabel = 'kırmızı (pasif bağlantı)';
+    } elseif ($old30 || $neverSynced) {
+        $tier = 'red';
+        $tierLabel = 'kırmızı (30+ gün senkron)';
+    } elseif ($stale7) {
+        $tier = 'yellow';
+        $tierLabel = 'sarı (7-30 gün senkron)';
+    } else {
+        $tier = 'green';
+        $tierLabel = 'güncel';
+    }
+    $tierCount[$tier]++;
+
+    $ageTxt = $ageDays !== null ? $ageDays . ' gün önce' : ($neverSynced ? 'hiç senkron yok' : '—');
+    echo '[durum] ' . $prop['name'] . ' (' . $typeLabel . ' · tedarikçi #' . $supplierId . ') → ' . $tierLabel . ' · senkron yaşı: ' . $ageTxt . "\n";
+
+    if ($tier === 'green' || $tier === 'yellow') {
+        continue; // Yalnızca kırmızı durumlar bildirim üretir.
+    }
+
+    if ($active === 0) {
         $stale = false;
         $title = 'iCal bağlantısı pasif';
         $msg = 'iCal uyarısı: "' . $prop['name'] . '" ilanının ' . $total . ' bağlantısından hiçbiri aktif değil.'
             . ($lastErrors !== '' ? ' Son hata: ' . $lastErrors : '');
     } else {
-        // Dal 2: aktif bağlantı var ama 30+ gün eski senkron (veya hiç senkron yok).
-        if (!$old30 && !$neverSynced) {
-            continue; // 30 gün eşiğinin altında — uyarı yok (7 günlük sarı durum bildirim üretmez).
-        }
         $stale = true;
         $title = 'iCal senkronu 30 günden eski';
         $msg = 'iCal uyarısı: "' . $prop['name'] . '" ilanının son senkronu 30 günden eski'
@@ -75,6 +91,7 @@ foreach ($properties as $prop) {
     $typeKey = ($stale ? 'ical_stale_' : 'ical_inactive_') . $propId; // notifications.type 40 karakterle sınırlıdır.
     $recentCheck->execute([$supplierId, $typeKey]);
     if ($recentCheck->fetch()) {
+        echo '[atlandı] ' . $prop['name'] . ' — son 24 saatte aynı türde bildirim gitti.\n';
         continue; // Son 24 saatte bu ilan için aynı türde bildirim gitti — gürültü yapma.
     }
 
@@ -104,8 +121,9 @@ foreach ($properties as $prop) {
     echo ($stale ? 'Eski senkron uyarısı' : 'Pasif iCal uyarısı') . ' eklendi: ' . $prop['name'] . ' (tedarikçi #' . $supplierId . ")\n";
 }
 
+echo "--- Tarama özeti: " . count($properties) . " yayınlanmış villa/yat → " . $tierCount['green'] . " güncel · " . $tierCount['yellow'] . " sarı · " . $tierCount['red'] . " kırmızı ---\n";
 if ($notified === 0) {
-    echo "30+ gün eski senkron veya pasif iCal bağlantısı olan yayınlanmış villa/yat yok.\n";
+    echo "Yeni bildirim gerekmedi (kırmızı durum yok veya hepsi son 24 saatte bildirildi).\n";
 } else {
     echo "Özet: {$notified} ilan bildirildi, {$emailed} admin e-postası kuyruğa eklendi.\n";
 }

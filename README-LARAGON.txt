@@ -250,3 +250,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Tedarikci ana sayfasi "AKTIF ODA TIPI" stati artik sabit 2 yerine tedarikcinin aktif room_types sayisini gosterir
 - iCal saglik karti basina ozet satiri: toplam ilan, toplam aktif/pasif baglanti ve sorunlu ilan sayisi (pasif/eski senkron/30+ gun)
 - nexus-ical-inactive-alerts artik iki dal calistirir: (1) pasif iCal baglantisi (ical_inactive_{id}), (2) aktif baglanti var ama son senkron 30+ gun eski veya hic yok (ical_stale_{id}) — 30 gun esigi hazirlik kontrolundeki kirmizi kalemle ayni; 7 gunluk sari durum bildirim uretmez
+- alert-ical-inactive ciktisi ilan bazli kademe ve senkron yasini gosterir: her ilan icin [durum] satiri (guncul / sari 7-30 gun / kirmizi pasif veya 30+ gun + yas), sonunda tarama ozeti (guncul/sari/kirmizi sayilari)
