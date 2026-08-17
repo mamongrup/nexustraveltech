@@ -50,18 +50,19 @@ $stats['totalRuns'] = (int) $pdo->query('SELECT COUNT(*) FROM scheduled_job_runs
 // Son 30 günün günlük ortalama süresi (seçili görev veya tüm görevler).
 $durWhere = $jobId > 0 ? 'WHERE job_id=? AND created_at >= CURRENT_DATE - 29' : 'WHERE created_at >= CURRENT_DATE - 29';
 $durParams = $jobId > 0 ? [$jobId] : [];
-$durQ = $pdo->prepare("SELECT created_at::date d, COALESCE(AVG(duration_ms),0)::int avg_ms, COUNT(*) c FROM scheduled_job_runs $durWhere GROUP BY 1");
+$durQ = $pdo->prepare("SELECT created_at::date d, COALESCE(AVG(duration_ms),0)::int avg_ms, COUNT(*) c, COUNT(*) FILTER (WHERE status='error') err FROM scheduled_job_runs $durWhere GROUP BY 1");
 $durQ->execute($durParams);
 $durMap = [];
 foreach ($durQ->fetchAll() as $r) {
-    $durMap[(string) $r['d']] = ['avg_ms' => (int) $r['avg_ms'], 'c' => (int) $r['c']];
+    $durMap[(string) $r['d']] = ['avg_ms' => (int) $r['avg_ms'], 'c' => (int) $r['c'], 'err' => (int) $r['err']];
 }
 $durChart = [];
 for ($i = 29; $i >= 0; $i--) {
     $d = date('Y-m-d', time() - $i * 86400);
-    $durChart[$d] = $durMap[$d] ?? ['avg_ms' => 0, 'c' => 0];
+    $durChart[$d] = $durMap[$d] ?? ['avg_ms' => 0, 'c' => 0, 'err' => 0];
 }
 $durMax = max(1, max(array_column($durChart, 'avg_ms')));
+$durErrDays = count(array_filter($durChart, fn($v) => $v['err'] > 0));
 
 $jobs = scheduler_jobs();
 
@@ -104,12 +105,15 @@ $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başar�
 
 <section class="c"><h2>Çalışma süresi — son 30 gün <?= $jobId > 0 ? '(görev bazında)' : '(tüm görevler)' ?></h2>
 <p class="muted" style="margin:0 0 8px">Günlük <b>ortalama</b> süre (ms). Üzerine gelince gün, süre ve çalışma sayısı görünür. <?= $jobId === 0 ? 'Tek görev görmek için yukarıdan bir görev seçin.' : '' ?></p>
-<div style="display:flex;gap:2px;align-items:flex-end;height:96px;max-width:820px;margin-top:8px">
+<div style="display:flex;gap:2px;align-items:flex-end;max-width:820px;margin-top:8px">
 <?php foreach ($durChart as $d => $v): ?>
-  <i title="<?=htmlspecialchars($d)?>: <?= (int)$v['avg_ms'] ?> ms (<?= (int)$v['c'] ?> çalışma)" style="flex:1;background:<?= (int)$v['avg_ms'] > 0 ? '#10211f' : '#e1e5de' ?>;border-radius:2px 2px 0 0;height:<?= max(2, (int) round((int)$v['avg_ms'] / $durMax * 90)) ?>px;min-width:4px"></i>
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;min-width:4px">
+    <i title="<?=htmlspecialchars($d)?>: <?= (int)$v['avg_ms'] ?> ms (<?= (int)$v['c'] ?> çalışma<?= (int)$v['err'] > 0 ? ', ' . (int)$v['err'] . ' hata' : '' ?>)" style="display:block;width:100%;background:<?= (int)$v['avg_ms'] > 0 ? '#10211f' : '#e1e5de' ?>;border-radius:2px 2px 0 0;height:<?= max(2, (int) round((int)$v['avg_ms'] / $durMax * 82)) ?>px"></i>
+    <?php if ((int) $v['err'] > 0): ?><span title="<?=htmlspecialchars($d)?>: <?= (int)$v['err'] ?> hata" style="width:6px;height:6px;border-radius:50%;background:#b0301a"></span><?php endif; ?>
+  </div>
 <?php endforeach; ?>
 </div>
-<p class="muted" style="margin:6px 0 0">En yüksek gün: <?= number_format($durMax) ?> ms · <?= count(array_filter($durChart, fn($v) => $v['avg_ms'] > 0)) ?>/30 gün verili</p>
+<p class="muted" style="margin:6px 0 0">En yüksek gün: <?= number_format($durMax) ?> ms · <?= count(array_filter($durChart, fn($v) => $v['avg_ms'] > 0)) ?>/30 gün verili · <b style="color:#b0301a"><?= (int)$durErrDays ?> gün hatalı</b> <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#b0301a;vertical-align:middle"></span></p>
 </section>
 
 <section class="c">
