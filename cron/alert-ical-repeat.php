@@ -14,10 +14,13 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/mailer.php';
 require_once __DIR__ . '/../config/platform_settings.php';
 require_once __DIR__ . '/../config/notifications.php';
+require_once __DIR__ . '/../config/audit.php';
 
 $pdo = db();
 $adminEmail = trim((string) platform_setting('admin_alert_email', ''));
 $threshold = max(3, (int) platform_setting('ical_repeat_threshold', 3));
+// Kanat taşması koruması: açıkken eşiği aşan bağlantı otomatik duraklatılır (kontrol merkezi).
+$autoPause = (bool) platform_setting('ical_auto_pause_repeat', false);
 
 // Aynı hata (error_hash) son 24 saatte kaç kez tekrarlandı.
 $groups = $pdo->query(
@@ -46,18 +49,41 @@ $dedup = $pdo->prepare("SELECT id FROM notifications WHERE user_type='supplier' 
 
 $notified = 0;
 $emailed = 0;
+$paused = 0;
 
 foreach ($groups as $g) {
     $sid = (int) $g['supplier_id'];
     $hash = substr((string) $g['error_hash'], 0, 8);
     $typeKey = 'ical_loop_' . (int) $g['ical_connection_id'] . '_' . $hash;
+    $count = (int) $g['attempt_count'];
+    $err = trim((string) ($g['last_error'] ?? ''));
+    $connId = (int) $g['ical_connection_id'];
+    $pausedHere = false;
+
+    // Otomatik duraklatma — eşik aşıldı, ayar açık: aktif/error bağlantıyı duraklat.
+    // (Dedup'tan önce çalışır: tedarikçi yeniden etkinleştirip hata sürerse tekrar duraklatılır.)
+    if ($autoPause) {
+        $pauseReason = 'Otomatik duraklatıldı: aynı iCal hatası son 24 saatte ' . $count
+            . ' kez tekrarlandı (eşik ' . $threshold . '). Yeniden etkinleştirmek için iCal takvimler sayfasını kullanın.';
+        $pause = $pdo->prepare("UPDATE ical_connections SET status='paused', last_error=? WHERE id=? AND status IN ('active','error')");
+        $pause->execute([$pauseReason, $connId]);
+        if ($pause->rowCount() > 0) {
+            $paused++;
+            $pausedHere = true;
+            audit_log('ical.auto_pause', 'ical_connections', $connId, [
+                'count' => $count,
+                'threshold' => $threshold,
+                'label' => (string) $g['label'],
+                'supplier_id' => $sid,
+            ], 'scheduled_task');
+        }
+    }
+
     $dedup->execute([$sid, $typeKey]);
     if ($dedup->fetch()) {
         continue; // Son 24 saatte bu bağlantı + hata için bildirim gitti.
     }
 
-    $count = (int) $g['attempt_count'];
-    $err = trim((string) ($g['last_error'] ?? ''));
     $propertyLabel = $g['property_name'] !== null ? ' · ' . $g['property_name'] : '';
     $link = '/nexustraveltech/tedarikci/ical-takvimler';
 
@@ -65,6 +91,7 @@ foreach ($groups as $g) {
     $msg = 'iCal tekrar uyarısı: ' . $g['label'] . ' bağlantısı son 24 saatte '
         . $count . ' kez aynı hata ile senkronize edilemedi' . $propertyLabel
         . ($err !== '' ? '. Son hata: ' . mb_substr($err, 0, 160) : '')
+        . ($pausedHere ? ' Bağlantı kanal taşması korumasıyla OTOMATİK DURAKLATILDI.' : '')
         . '. iCal takvimler sayfasından bağlantıyı kontrol edin.';
     notify_supplier_users($sid, $typeKey, mb_substr($msg, 0, 500), $link);
     $notified++;
@@ -75,7 +102,7 @@ foreach ($groups as $g) {
             . '<h2 style="margin:0 0 6px">⚠ Tekrarlayan iCal senkron hatası: ' . htmlspecialchars($g['label']) . '</h2>'
             . '<p style="color:#64716d;margin:0 0 10px">' . htmlspecialchars($g['company_name'])
             . ' bağlantısında <b style="color:#b0301a">aynı hata</b> son 24 saatte <b style="color:#b0301a">' . $count . '</b> kez tekrarlandı'
-            . htmlspecialchars($propertyLabel) . '.</p>'
+            . htmlspecialchars($propertyLabel) . ($pausedHere ? '. <b style="color:#b0301a">Bağlantı OTOMATİK DURAKLATILDI</b> (kanal taşması koruması).' : '') . '</p>'
             . '<table style="border-collapse:collapse;width:100%;max-width:620px;font-size:13px">'
             . '<tr><td style="padding:7px 12px;border:1px solid #e1e5de"><b>Bağlantı</b></td><td style="padding:7px 12px;border:1px solid #e1e5de">' . htmlspecialchars($g['label']) . '</td></tr>'
             . '<tr><td style="padding:7px 12px;border:1px solid #e1e5de"><b>Kaynak URL</b></td><td style="padding:7px 12px;border:1px solid #e1e5de"><code style="font-size:11px;word-break:break-all">' . htmlspecialchars((string) $g['source_url']) . '</code></td></tr>'
@@ -93,7 +120,7 @@ foreach ($groups as $g) {
 }
 
 if ($notified === 0) {
-    echo "Son 24 saatte tekrar eden iCal senkron hatası yok (eşik: {$threshold}).\\n";
+    echo "Son 24 saatte tekrar eden iCal senkron hatası yok (eşik: {$threshold}" . ($autoPause ? ', otomatik duraklatma AÇIK' : '') . ").\\n";
 } else {
-    echo "Özet: {$notified} tedarikçi bildirildi, {$emailed} admin e-postası kuyruğa eklendi.\\n";
+    echo "Özet: {$notified} tedarikçi bildirildi, {$emailed} admin e-postası kuyruğa eklendi, {$paused} bağlantı otomatik duraklatıldı.\\n";
 }
