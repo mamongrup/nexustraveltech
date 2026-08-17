@@ -167,6 +167,11 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .room-test-btn:hover{background:#173d56}
 .room-test-btn:disabled{opacity:.55;cursor:wait}
 .room-test-currency{margin-left:6px;padding:8px;border:1px solid #d8ded8;border-radius:6px;font:inherit;font-size:12px;background:#fff;color:#3d4a46}
+.conn-retry-form{display:inline-block;margin-left:8px}
+.conn-retry-btn{margin-left:8px;padding:6px 12px;background:#b0301a;color:#fff;border:none;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
+.conn-retry-btn:hover{background:#8e2410}
+.conn-retry-flash{outline:3px solid #f0a020;outline-offset:2px;animation:connRetryPulse 1.2s ease-in-out 2}
+@keyframes connRetryPulse{0%,100%{box-shadow:0 0 0 0 rgba(240,160,32,.55)}50%{box-shadow:0 0 0 6px rgba(240,160,32,0)}}
 
 /* --- oda + plan cifti eslestirme --- */
 .room-map-plan{min-width:160px;padding:8px;border:1px solid #d8ded8;font:inherit;background:#fff}
