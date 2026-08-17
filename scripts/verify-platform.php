@@ -32,7 +32,7 @@ $requiredColumns=[
     'scheduled_jobs'=>['code','command','schedule','enabled','last_status','last_fail_alert_at'],
     'property_feature_catalog'=>['deleted_at'],
     'feature_delete_backups'=>['feature_id','code','label','affected_properties'],
-    'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id','status','suggested_at','suggestion_count'],
+    'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id','rate_plan_id','status','suggested_at','suggestion_count'],
     'channel_sync_logs'=>['channel_connection_id','property_id','direction','scope','status','request_payload','response_payload','error_message','fx_audit'],
 ];
 
@@ -59,7 +59,7 @@ try {
     // Oda eşleştirme durumu — channel_room_mappings tablosu varsa tutarlılık denetimi.
     if(!in_array('channel_room_mappings',$missing,true)){
         $mappingCount=(int)$pdo->query('SELECT COUNT(*) FROM channel_room_mappings')->fetchColumn();
-        $orphanMappings=(int)$pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id")->fetchColumn();
+        $orphanMappings=(int)$pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id))")->fetchColumn();
         if($orphanMappings>0)$errors[]="channel_room_mappings: {$orphanMappings} yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait).";
         echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, '.$orphanMappings." uyumsuz.\n";
     }

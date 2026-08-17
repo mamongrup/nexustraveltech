@@ -65,38 +65,45 @@ function channel_webhook_apply(array $log, array $payload): array
     if (!$roomList) {
         return ['ok' => false, 'message' => 'İlanda aktif oda/birim tipi yok — senkronize edilecek hedef yok.', 'applied' => 0, 'errors' => ['no_rooms']];
     }
-    $plans = $pdo->prepare("SELECT id, name, currency FROM rate_plans WHERE property_id=? AND status='active' ORDER BY id LIMIT 1");
+    $plans = $pdo->prepare("SELECT id, name, currency FROM rate_plans WHERE property_id=? AND status='active' ORDER BY id");
     $plans->execute([$propertyId]);
-    $plan = $plans->fetch();
-    if (!$plan) {
+    $planRows = $plans->fetchAll();
+    if (!$planRows) {
         return ['ok' => false, 'message' => 'İlanda aktif fiyat planı yok — fiyat/kontenjan yazılamaz.', 'applied' => 0, 'errors' => ['no_rate_plan']];
     }
-    $targetCurrency = strtoupper((string) ($plan['currency'] ?? 'EUR'));
-    if (!preg_match('/^[A-Z]{3}$/', $targetCurrency)) $targetCurrency = 'EUR';
+    // Eşleştirmede plan belirtilmezse ilk aktif plan kullanılır (geriye dönük uyumlu).
+    $fallbackPlan = $planRows[0];
+    $plansById = [];
+    foreach ($planRows as $pr) {
+        $plansById[(int) $pr['id']] = $pr;
+    }
 
-    // Oda eşleştirmeleri (kanal dış kodu -> NEXUS room_type).
-    $mapSt = $pdo->prepare('SELECT room_type_id, external_room_id FROM channel_room_mappings WHERE channel_connection_id=? AND property_id=?');
+    // Oda eşleştirmeleri (kanal dış kodu -> NEXUS room_type + rate_plan çifti).
+    $mapSt = $pdo->prepare('SELECT room_type_id, rate_plan_id, external_room_id FROM channel_room_mappings WHERE channel_connection_id=? AND property_id=?');
     $mapSt->execute([$connId, $propertyId]);
     $roomMap = [];
     foreach ($mapSt->fetchAll() as $m) {
-        $roomMap[(string) $m['external_room_id']] = (int) $m['room_type_id'];
+        $roomMap[(string) $m['external_room_id']] = [
+            'room' => (int) $m['room_type_id'],
+            'plan' => $m['rate_plan_id'] !== null ? (int) $m['rate_plan_id'] : null,
+        ];
     }
     $fallbackRoom = (int) $roomList[0]['id'];
     $suggestedCount = 0;
-    // 0 dönerse satır yazılmaz: öneri oluşturuldu, onay bekliyor.
-    $roomIdFor = function (string $ext) use ($roomMap, $fallbackRoom, $suggestSt, $connId, $propertyId, $autoMap, &$suggestedCount): int {
+    // room <= 0 dönerse satır yazılmaz: öneri oluşturuldu, onay bekliyor.
+    $roomResolve = function (string $ext) use ($roomMap, $fallbackRoom, $suggestSt, $connId, $propertyId, $autoMap, &$suggestedCount): array {
         if (isset($roomMap[$ext])) {
             return $roomMap[$ext];
         }
         // Tanınmayan kod: ilk aktif oda tipine yazmak yerine onay bekleyen öneri oluştur.
         if ($autoMap && $ext !== '') {
             $suggestSt->execute([$connId, $propertyId, $fallbackRoom, $ext]);
-            $roomMap[$ext] = 0; // bu yükte bir daha deneme
+            $roomMap[$ext] = ['room' => 0, 'plan' => null]; // bu yükte bir daha deneme
             $suggestedCount++;
-            return 0;
+            return $roomMap[$ext];
         }
         // Ayar kapalı: eski davranış — ilk aktif oda tipine yaz (kalıcı eşleştirme oluşturulmaz).
-        return $fallbackRoom;
+        return ['room' => $fallbackRoom, 'plan' => null];
     };
 
     $entries = $payload['entries'] ?? null;
@@ -139,14 +146,18 @@ function channel_webhook_apply(array $log, array $payload): array
             continue;
         }
 
-        $roomId = $roomIdFor((string) ($entry['external_room_id'] ?? ''));
+        $roomRes = $roomResolve((string) ($entry['external_room_id'] ?? ''));
+        $roomId = $roomRes['room'];
         if ($roomId <= 0) {
             continue; // onay bekleyen öneri — veri yazılmadı
         }
+        // Eşleştirmede belirtilen fiyat planı kullanılır; yoksa ilk aktif plan.
+        $entryPlan = $roomRes['plan'] !== null && isset($plansById[$roomRes['plan']]) ? $plansById[$roomRes['plan']] : $fallbackPlan;
+        $entryPlanId = (int) $entryPlan['id'];
 
         if ($scope === 'reservations') {
             $qty = max(1, (int) ($entry['qty'] ?? 1));
-            $sellSt->execute([$qty, $roomId, (int) $plan['id'], $date]);
+            $sellSt->execute([$qty, $roomId, $entryPlanId, $date]);
             $applied++;
             continue;
         }
@@ -160,7 +171,7 @@ function channel_webhook_apply(array $log, array $payload): array
         ];
         // Kısmi güncellemeyi koru: mevcut satırı oku, gönderilmeyen alanları koru.
         $cur = $pdo->prepare('SELECT allotment, base_price, min_stay, max_stay, stop_sale FROM inventory_calendar WHERE room_type_id=? AND rate_plan_id=? AND stay_date=?');
-        $cur->execute([$roomId, (int) $plan['id'], $date]);
+        $cur->execute([$roomId, $entryPlanId, $date]);
         $existing = $cur->fetch();
         if ($existing) {
             $base['allotment'] = (int) $existing['allotment'];
@@ -175,6 +186,9 @@ function channel_webhook_apply(array $log, array $payload): array
                 $base['allotment'] = max(0, (int) $entry['allotment']);
             }
             if ($scope === 'rates' && array_key_exists('price', $entry)) {
+                // Hedef birim: bu giriş için seçilen fiyat planının birimi.
+                $targetCurrency = strtoupper((string) ($entryPlan['currency'] ?? 'EUR'));
+                if (!preg_match('/^[A-Z]{3}$/', $targetCurrency)) $targetCurrency = 'EUR';
                 $rawPrice = max(0, (float) str_replace(',', '.', (string) $entry['price']));
                 // Fiyatın geldiği birim: entry -> yük -> ayar varsayılanı.
                 $inCur = strtoupper((string) ($entry['currency'] ?? ($payloadCurrency !== '' ? $payloadCurrency : $defaultCurrency)));
@@ -215,7 +229,7 @@ function channel_webhook_apply(array $log, array $payload): array
             }
         }
 
-        $upsert->execute([$roomId, (int) $plan['id'], $date, $base['allotment'], 0, $base['base_price'], $base['min_stay'], $base['max_stay'], $base['stop_sale']]);
+        $upsert->execute([$roomId, $entryPlanId, $date, $base['allotment'], 0, $base['base_price'], $base['min_stay'], $base['max_stay'], $base['stop_sale']]);
         $applied++;
     }
 
