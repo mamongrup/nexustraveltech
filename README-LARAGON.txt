@@ -197,3 +197,8 @@ AYLIK SOHBET RAPORU (E-POSTA)
   silme, aktif/pasifleştirme. config/feature_lists.php → property_feature_lists() katalogdan okur,
   tablo yoksa/boşsa varsayılan listelere döner. Migration 042 (property_feature_catalog) mevcut
   listeleri doldurur; villa-detay sayfası artık bu katalogu kullanır.
+- Zamanlayıcı görevi nexus-ical-inactive-alerts (varsayılan: 15 dakikada bir): yayındaki villa/yat
+  ilanlarında en az bir iCal bağlantısı tanımlı ama hiçbiri aktif değilse tedarikçiye panel bildirimi
+  (ical-takvimler sayfasına bağlantılı) ve admin_alert_email'e e-posta (ilan, tedarikçi, son senkron,
+  son hatalar) gönderir. Aynı ilan için 24 saatte bir kez kuyruklanır (notifications tipi
+  ical_inactive_{ilanId}).
