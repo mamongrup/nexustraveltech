@@ -253,3 +253,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - alert-ical-inactive ciktisi ilan bazli kademe ve senkron yasini gosterir: her ilan icin [durum] satiri (guncul / sari 7-30 gun / kirmizi pasif veya 30+ gun + yas), sonunda tarama ozeti (guncul/sari/kirmizi sayilari)
 - Hazirlik skorundaki iCal kaleminde "hic senkron yok" ayri mesajla gosterilir: "N baglanti · hic ice aktarma yapilmadi — 'Simdi ice aktar' ile ilk senkronu baslatin" (30+ gun eski senkron ile karistirilmaz)
 - Dagitim sagligi ozeti e-postasina PDF eki: TCPDF kuruluysa sorun tablosunun yazdirilabilir hali (dagitim-sagligi-YYYY-MM-DD.pdf) ek olarak gonderilir; TCPDF yoksa HTML govde ile devam eder
+- admin/dagitim-sagligi sayfasi: iCal + kanal sorun tablosu canli goruntulenir, PDF (TCPDF) ve CSV olarak indirilebilir; haftalik e-posta ile ayni veri
