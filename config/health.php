@@ -129,8 +129,29 @@ function health_check_run(bool $dryRun = false): array
         $out .= "Başarısız migration'lar: " . implode(', ', $failedMigs) . "\n";
     }
 
-    // --- 4) Ortam ---
-    $out .= "\n=== 4) ORTAM ===\n";
+    // --- 4) Operasyonel uyarılar (son 24 saat) ---
+    $out .= "\n=== 4) OPERASYONEL UYARILAR (son 24 saat) ===\n";
+    $warnCount = 0;
+    try {
+        $errCount = (int) $pdo->query("SELECT COUNT(*) FROM error_logs WHERE level IN ('error','critical') AND status='new' AND created_at >= now() - interval '24 hours'")->fetchColumn();
+        $out .= ($errCount > 20 ? '⚠ ' : '✓ ') . "Hata logu (son 24 saat, error/critical, yeni): " . $errCount . ($errCount > 20 ? ' — yüksek, inceleyin (admin/hata-izleme)' : '') . "\n";
+        if ($errCount > 20) $warnCount++;
+    } catch (Throwable $e) {
+        $out .= "⚠ error_logs okunamadı: " . $e->getMessage() . "\n";
+        $warnCount++;
+    }
+    try {
+        $emailQ = (int) $pdo->query("SELECT COUNT(*) FROM email_outbox WHERE status='queued' AND created_at >= now() - interval '24 hours'")->fetchColumn();
+        $out .= ($emailQ > 50 ? '⚠ ' : '✓ ') . "Bekleyen e-posta (son 24 saat, kuyrukta): " . $emailQ . ($emailQ > 50 ? ' — kuyruk birikiyor (cron/process-emails.php)' : '') . "\n";
+        if ($emailQ > 50) $warnCount++;
+    } catch (Throwable $e) {
+        $out .= "⚠ email_outbox okunamadı: " . $e->getMessage() . "\n";
+        $warnCount++;
+    }
+    $out .= $warnCount === 0 ? "✓ Operasyonel uyarı yok.\n" : "⚠ " . $warnCount . " operasyonel uyarı (kritik değil — sağlık durumunu bozmaz).\n";
+
+    // --- 5) Ortam ---
+    $out .= "\n=== 5) ORTAM ===\n";
     $config = db_config();
     if (strlen((string) ($config['app_encryption_key'] ?? '')) < 32) {
         $out .= "✗ app_encryption_key eksik veya 32 karakterden kısa\n";
