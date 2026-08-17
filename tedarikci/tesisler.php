@@ -71,6 +71,9 @@ supply_start('Tesisler & ürünler', $active_module);
     $status = $item['status'];
     $statusLabel = ['draft' => 'Taslak', 'active' => 'Yayında', 'paused' => 'Duraklatıldı'][$status] ?? $status;
     $statusClass = $status === 'active' ? 'active-status' : ($status === 'paused' ? 'paused-status' : 'draft-status');
+    $icalItem = null;
+    foreach ($readiness['items'] as $ri) { if ($ri['key'] === 'ical') { $icalItem = $ri; break; } }
+    $icalUrls = $icalItem && !empty($icalItem['urls']) ? $icalItem['urls'] : [];
 ?>
 <article class="property-card">
     <div class="property-code"><?= strtoupper(htmlspecialchars($item['property_type'])) ?></div>
@@ -105,9 +108,17 @@ supply_start('Tesisler & ürünler', $active_module);
         <?php else: ?>
         <span class="ghost-button disabled" title="Eksik kalemler tamamlanmadan yayına alınamaz.">Yayına al</span>
         <?php endif; ?>
+        <?php if ($icalUrls): ?><button type="button" class="ghost-button ical-card-toggle" data-target="ical-card-<?= (int) $item['id'] ?>">iCal URL göster</button><?php endif; ?>
     </div>
+    <?php if ($icalUrls): ?>
+    <div id="ical-card-<?= (int) $item['id'] ?>" class="ical-card-box" hidden>
+        <?php foreach ($icalUrls as $icalUrl): $icalQ = (string) parse_url($icalUrl, PHP_URL_QUERY); $icalShort = 'api/ical?' . mb_substr($icalQ, 0, 10) . '…' . mb_substr($icalQ, -4); ?>
+        <span class="ical-copy-row"><code title="<?= htmlspecialchars($icalUrl) ?>"><?= htmlspecialchars($icalShort) ?></code><button type="button" class="ical-copy-btn" data-copy="<?= htmlspecialchars($icalUrl) ?>">Kopyala</button></span>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
 </article>
 <?php endforeach; ?>
 </section>
 <section class="next-module"><span>SONRAKİ MODÜL</span><h2>Fiyat, kontenjan ve satış kuralları</h2><p>Takvim bazlı fiyat, kapasite, stop-sale, minimum konaklama ve kanal dağıtımı bu yapının üzerine eklenecek.</p></section>
-<?php supply_end(); ?>
+<script>document.querySelectorAll('.ical-card-toggle').forEach(function(b){b.addEventListener('click',function(){var box=document.getElementById(this.getAttribute('data-target'));if(box){box.hidden=!box.hidden;this.textContent=box.hidden?'iCal URL göster':'iCal URL gizle'}})});function icalFallbackCopy(text){var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta)}document.querySelectorAll('.ical-copy-btn').forEach(function(b){b.addEventListener('click',function(){var url=this.getAttribute('data-copy'),btn=this;function done(){btn.textContent='Kopyalandı ✓';btn.classList.add('copied');setTimeout(function(){btn.textContent='Kopyala';btn.classList.remove('copied')},1600)}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(done).catch(function(){icalFallbackCopy(url);done()})}else{icalFallbackCopy(url);done()}})});</script><?php supply_end(); ?>

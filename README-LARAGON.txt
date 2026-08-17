@@ -237,3 +237,5 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Tesisler kartındaki sarı uyarı rozetleri tıklanabilir: iCal uyarısına tıklayınca iCal takvimler sayfası açılır.
 - iCal URL kopyalama satırlarında görünen etiket kısaltılır (api/ical?token=XXXX…xxxx); tam URL hover
   ipucunda, kopyalama verisi değişmez.
+- Tesisler listesi kartında "iCal URL göster" açılır kutusu: aktif dışa aktarma URL'leri kısa etiketle
+  listelenir, "Kopyala" butonu tam URL'i panoya yazar (kart başına bağımsız aç/kapa).
