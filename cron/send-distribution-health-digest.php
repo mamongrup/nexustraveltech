@@ -200,6 +200,38 @@ if ($pendingTotal > 0) {
         $supplierLink = 'https://nexustraveltech.com/admin/tedarikci-ilanlari?supplier_id=' . (int) $pr['id'];
         $pendingHtml .= '<p style="margin:3px 0;font-size:12px;color:#64716d"><a href="' . $supplierLink . '" style="color:#0d7a4a;font-weight:700;text-decoration:none;border-bottom:1px dotted #9cc2ae" title="Tedarikçinin ilanlarını yönetim panelinde görüntüle">' . htmlspecialchars((string) $pr['company_name']) . ' →</a> — <b>' . $prt . '</b> öneri (' . (int) $pr['room_sug'] . ' oda + ' . (int) $pr['plan_sug'] . ' plan)</p>';
     }
+    // En çok tekrarlanan eşlenmemiş kodlar — tüm tedarikçilerde, sayaç DESC (üst 8).
+    $topCodeRows = [];
+    try {
+        $topCodeRows = $pdo->query("
+            SELECT 'oda' AS kind, m.external_room_id AS code, m.suggestion_count AS cnt, m.suggested_at AS seen, s.company_name
+            FROM channel_room_mappings m
+            JOIN channel_connections c ON c.id=m.channel_connection_id
+            JOIN suppliers s ON s.id=c.supplier_id
+            WHERE m.status='suggested' AND m.suggestion_count > 0
+            UNION ALL
+            SELECT 'plan', p.external_rate_plan_id, p.suggestion_count, p.suggested_at, s2.company_name
+            FROM channel_rate_plan_mappings p
+            JOIN channel_connections c3 ON c3.id=p.channel_connection_id
+            JOIN suppliers s2 ON s2.id=c3.supplier_id
+            WHERE p.status='suggested' AND p.suggestion_count > 0
+            ORDER BY cnt DESC LIMIT 8
+        ")->fetchAll();
+    } catch (Throwable $e) {
+        $topCodeRows = [];
+    }
+    if ($topCodeRows) {
+        $pendingHtml .= '<div style="margin-top:12px"><b style="font-size:12px;color:#8a6100">🔁 En çok tekrarlanan eşlenmemiş kodlar:</b><table style="border-collapse:collapse;width:100%;max-width:560px;margin-top:6px">'
+            . '<tr><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Kod</th><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Tür</th><th style="text-align:center;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Tekrar</th><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Son görülme</th><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Tedarikçi</th></tr>';
+        foreach ($topCodeRows as $tc) {
+            $pendingHtml .= '<tr><td style="padding:5px 8px;border-bottom:1px solid #ead9a8;font-size:12px"><code>' . htmlspecialchars((string) $tc['code']) . '</code></td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #ead9a8;font-size:12px">' . htmlspecialchars((string) $tc['kind']) . '</td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #ead9a8;text-align:center;font-size:12px"><b>' . (int) $tc['cnt'] . '</b></td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #ead9a8;font-size:12px">' . ($tc['seen'] ? htmlspecialchars(date('d.m H:i', strtotime((string) $tc['seen']))) : '—') . '</td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #ead9a8;font-size:12px">' . htmlspecialchars((string) $tc['company_name']) . '</td></tr>';
+        }
+        $pendingHtml .= '</table></div>';
+    }
     $pendingHtml .= '<p style="margin:6px 0 0;font-size:11px;color:#8a6100">Öneriler tedarikçi panellerinde Dağıtım & kanal merkezi → bölüm 3\'te onaylanır; onaylanana kadar webhook verisi yazılmaz.</p></div>';
 }
 

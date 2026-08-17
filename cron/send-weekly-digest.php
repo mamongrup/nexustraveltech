@@ -215,6 +215,31 @@ $sendPanel = function (string $role, int $actorId, string $email, string $subjec
         $wRoomRej = (int) ($wr['room_rej'] ?? 0);
         $wPlanAppr = (int) ($wr['plan_appr'] ?? 0);
         $wPlanRej = (int) ($wr['plan_rej'] ?? 0);
+        // En çok tekrarlanan eşlenmemiş kodlar — aynı kapsam, sayaç DESC (üst 5).
+        $topCodes = [];
+        if ($role === 'supplier') {
+            $tq = db()->prepare("SELECT 'oda' AS kind, m.external_room_id AS code, m.suggestion_count AS cnt, m.suggested_at AS seen
+                FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id
+                WHERE c.supplier_id=? AND m.status='suggested' AND m.suggestion_count > 0
+                UNION ALL
+                SELECT 'plan', p.external_rate_plan_id, p.suggestion_count, p.suggested_at
+                FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id
+                WHERE c2.supplier_id=? AND p.status='suggested' AND p.suggestion_count > 0
+                ORDER BY cnt DESC LIMIT 5");
+            $tq->execute([$actorId, $actorId]);
+            $topCodes = $tq->fetchAll();
+        } else {
+            $tq = db()->prepare("SELECT 'oda' AS kind, m.external_room_id AS code, m.suggestion_count AS cnt, m.suggested_at AS seen
+                FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id
+                WHERE c.supplier_id IN ($supIn) AND m.status='suggested' AND m.suggestion_count > 0
+                UNION ALL
+                SELECT 'plan', p.external_rate_plan_id, p.suggestion_count, p.suggested_at
+                FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id
+                WHERE c2.supplier_id IN ($supIn) AND p.status='suggested' AND p.suggestion_count > 0
+                ORDER BY cnt DESC LIMIT 5");
+            $tq->execute([$actorId, $actorId]);
+            $topCodes = $tq->fetchAll();
+        }
     } catch (Throwable $e) {
         $pendingRoom = 0;
         $pendingPlan = 0;
@@ -222,8 +247,9 @@ $sendPanel = function (string $role, int $actorId, string $email, string $subjec
         $wRoomRej = 0;
         $wPlanAppr = 0;
         $wPlanRej = 0;
+        $topCodes = [];
     }
-    $body = panel_chat_weekly_html($d, $panelLink, $company, $linkedCount, 'tesis', $pendingRoom, $pendingPlan, $wRoomAppr, $wRoomRej, $wPlanAppr, $wPlanRej);
+    $body = panel_chat_weekly_html($d, $panelLink, $company, $linkedCount, 'tesis', $pendingRoom, $pendingPlan, $wRoomAppr, $wRoomRej, $wPlanAppr, $wPlanRej, $topCodes);
     queue_email($email, $subjectPrefix . ' — ' . $d['dateLabel'], $body, 'chat_weekly_panel', $key);
     echo 'Panel özeti kuyruğa eklendi: ' . $email . " ({$role}#{$actorId}, {$d['total']} mesaj).\n";
 };

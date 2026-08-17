@@ -278,8 +278,22 @@ function panel_chat_weekly_data(string $role, int $actorId): array
 /**
  * Panel haftalık özetini e-posta gövdesine çevirir.
  */
-function panel_chat_weekly_html(array $d, string $panelLink, string $company = '', int $linkedCount = 0, string $linkedLabel = 'tesis', int $pendingRoom = 0, int $pendingPlan = 0, int $weekRoomAppr = 0, int $weekRoomRej = 0, int $weekPlanAppr = 0, int $weekPlanRej = 0): string
+function panel_chat_weekly_html(array $d, string $panelLink, string $company = '', int $linkedCount = 0, string $linkedLabel = 'tesis', int $pendingRoom = 0, int $pendingPlan = 0, int $weekRoomAppr = 0, int $weekRoomRej = 0, int $weekPlanAppr = 0, int $weekPlanRej = 0, array $topCodes = []): string
 {
+    // En çok tekrarlanan eşlenmemiş kodlar — sayaç DESC (zaten sorguda sıralı).
+    $topCodeHtml = '';
+    if ($topCodes) {
+        $rows = '';
+        foreach ($topCodes as $tc) {
+            $rows .= '<tr><td style="padding:5px 8px;border-bottom:1px solid #ead9a8;font-size:12px"><code>' . htmlspecialchars((string) $tc['code']) . '</code></td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #ead9a8;font-size:12px">' . htmlspecialchars((string) ($tc['kind'] ?? 'oda')) . '</td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #ead9a8;text-align:center;font-size:12px"><b>' . (int) ($tc['cnt'] ?? 0) . '</b></td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #ead9a8;font-size:12px">' . (!empty($tc['seen']) ? htmlspecialchars(date('d.m H:i', strtotime((string) $tc['seen']))) : '—') . '</td></tr>';
+        }
+        $topCodeHtml = '<div style="margin:10px 0 4px;padding:9px 14px;background:#fdf6ea;border:1px solid #ead9a8;border-radius:8px">'
+            . '<b style="font-size:12px;color:#8a6100">🔁 En çok tekrarlanan eşlenmemiş kodlar</b>'
+            . '<table style="border-collapse:collapse;width:100%;max-width:560px;margin-top:6px"><tr><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Kod</th><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Tür</th><th style="text-align:center;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Tekrar</th><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Son görülme</th></tr>' . $rows . '</table></div>';
+    }
     $pendingTotal = $pendingRoom + $pendingPlan;
     $pendingHtml = '';
     if ($pendingTotal > 0) {
@@ -339,6 +353,7 @@ function panel_chat_weekly_html(array $d, string $panelLink, string $company = '
         . ($qRows !== '' ? '<table style="border-collapse:collapse;width:100%;max-width:560px"><tr><th style="text-align:left;padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">En çok sorulanlar</th><th style="padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Sayı</th></tr>' . $qRows . '</table>' : '')
         . $topicsHtml
         . $pendingHtml
+        . $topCodeHtml
         . $weekHtml
         . '<p style="margin-top:18px"><a href="' . htmlspecialchars($panelLink) . '" style="color:#0d7a4a">Aylık rapor sayfası →</a></p>'
         . '</div>';
