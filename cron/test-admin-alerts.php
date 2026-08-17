@@ -53,6 +53,12 @@ foreach ($types as [$related, $subject]) {
         . '</tr>';
     echo ($send ? '✓ özete eklendi: ' : '· sıralanır: ') . str_pad($related, 26) . $subject . "\n";
 }
+// Son test sonucunu kalıcı kaydet — admin paneli (Zamanlayıcılar) ne zaman test
+// edildiğini, kaç kanalın hazır olduğunu ve modu (kuru/gerçek) gösterebilsin.
+save_platform_setting('last_alert_test_at', date('Y-m-d H:i:s'));
+save_platform_setting('last_alert_test_channels', $ok);
+save_platform_setting('last_alert_test_status', 'ok');
+save_platform_setting('last_alert_test_mode', $send ? 'send' : 'dry');
 $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '<h2 style="margin:0 0 6px">🧪 Admin uyarı e-postası — toplu test özeti (' . $ok . ' kanal)</h2>'
     . '<p style="color:#64716d;margin:0 0 10px">Bu tek mesaj, <b>' . $ok . ' uyarı kanalının</b> tamamını doğrular. Aşağıdaki her satır gerçek uyarıların gönderildiği kanalı temsil eder; bu özetin gelmesi kuyruk işleyicisinin ve e-posta altyapısının sağlıklı olduğunu gösterir.</p>'
