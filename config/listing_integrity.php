@@ -88,14 +88,17 @@ function listing_readiness(array $property): array
     }
 
     if ($isIcalType) {
-        // Aktif bağlantı var ama son senkron 7 günden eskiyse sarı uyarı (skoru düşürmez).
+        // Üç aşamalı senkron durumu: <7 gün → ✓ güncel, 7–30 gün → ⚠ sarı uyarı,
+        // 30+ gün veya hiç senkron yok → ✗ kırmızı eksik (skoru düşürür, yayına engel).
         $icalStale = false;
+        $icalSyncOld30 = false;
         $icalLastSync = null;
         if ($icalActive > 0) {
             $syncSt = $pdo->prepare("SELECT MAX(last_sync_at) FROM ical_connections WHERE property_id=? AND status='active'");
             $syncSt->execute([$pid]);
             $icalLastSync = $syncSt->fetchColumn();
-            $icalStale = $icalLastSync === null || strtotime((string) $icalLastSync) < time() - 7 * 86400;
+            $icalSyncOld30 = $icalLastSync === null || strtotime((string) $icalLastSync) < time() - 30 * 86400;
+            $icalStale = !$icalSyncOld30 && strtotime((string) $icalLastSync) < time() - 7 * 86400;
         }
         $icalExportUrls = [];
         if ($isIcalType) {
@@ -108,14 +111,16 @@ function listing_readiness(array $property): array
         $items[] = [
             'key' => 'ical',
             'label' => 'Aktif iCal bağlantısı (içe/dışa aktarma)',
-            'ok' => $icalActive > 0,
-            'warn' => $icalActive > 0 && $icalStale,
+            'ok' => $icalActive > 0 && !$icalSyncOld30,
+            'warn' => $icalActive > 0 && !$icalSyncOld30 && $icalStale,
             'urls' => $icalExportUrls,
-            'detail' => $icalActive > 0
-                ? ($icalStale
-                    ? $icalActive . ' bağlantı · son senkron 7 günden eski' . ($icalLastSync !== null ? ' (' . $icalLastSync . ')' : ' (henüz senkron yok)')
-                    : $icalActive . ' bağlantı · son senkron güncel')
-                : 'Bağlantı yok — iCal takvimler sayfasından en az bir aktif içe/dışa aktarma ekleyin',
+            'detail' => $icalActive === 0
+                ? 'Bağlantı yok — iCal takvimler sayfasından en az bir aktif içe/dışa aktarma ekleyin'
+                : ($icalSyncOld30
+                    ? $icalActive . ' bağlantı · son senkron 30 günden eski' . ($icalLastSync !== null ? ' (' . $icalLastSync . ')' : ' (hiç senkron yapılmadı)')
+                    : ($icalStale
+                        ? $icalActive . ' bağlantı · son senkron 7 günden eski (' . $icalLastSync . ')'
+                        : $icalActive . ' bağlantı · son senkron güncel')),
         ];
     }
     $items[] = ['key' => 'rules', 'label' => 'Satış / kontrat kuralı', 'ok' => $rules > 0, 'detail' => $rules > 0 ? $rules . ' kural' : 'Kural yok (opsiyonel)'];

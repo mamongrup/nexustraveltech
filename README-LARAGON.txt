@@ -227,3 +227,6 @@ AYLIK SOHBET RAPORU (E-POSTA)
   hatalar) gönderir. Aynı tedarikçi için 24 saatte bir kez (notifications tipi channel_inactive_{id}).
 - Tedarikçi ana sayfasında "iCal sağlık durumu" kartı: villa/yat ilanı başına aktif/pasif bağlantı sayısı,
   iCal blok sayısı, son senkron zamanı ve son hata; durum rozeti (Aktif / ⚠ Eski senkron / Pasif).
+- iCal senkron aşamalı uyarı şiddeti: 7–30 gün → sarı ⚠ (skoru düşürmez), 30+ gün veya hiç senkron yok →
+  kırmızı ✗ eksik kalem (çekirdek, skoru düşürür ve yayına engel olur). Tedarikçi ana sayfasındaki
+  iCal sağlık kartı da aynı üç durumu gösterir.
