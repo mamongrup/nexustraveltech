@@ -10,8 +10,48 @@ $msg = '';
 $err = '';
 $pendingDelete = null;
 $deletedAudit = null;
+$pendingBulk = null;
 $typeLabel = fn($t) => ['hotel' => 'Otel', 'villa' => 'Villa', 'yacht' => 'Yat'][$t] ?? $t;
 $taxonomies = ['property_type' => 'Tesis tipleri', 'star_rating' => 'Yıldız seviyeleri', 'theme' => 'Otel temaları'];
+// Tekil silme işlemcisi — geri alınabilir silme: yedek + soft-delete + ilanlardan kaldırma + denetim.
+// Hem tekil silme hem toplu silme aynı yolu kullanır.
+$deleteFeature = function (int $featureId) use ($typeLabel): array {
+    $pdo = db();
+    $featQ = $pdo->prepare('SELECT id, code, group_label, label, sort_order, is_active FROM property_feature_catalog WHERE id=?');
+    $featQ->execute([$featureId]);
+    $feat = $featQ->fetch();
+    if (!$feat) throw new RuntimeException('Özellik bulunamadı.');
+    $impactSql = "SELECT p.id, p.name, p.property_type, s.company_name, p.product_details FROM properties p JOIN suppliers s ON s.id=p.supplier_id WHERE p.property_type IN ('hotel','villa','yacht') AND (jsonb_exists(p.product_details -> 'service_pricing', ?) OR (p.product_details -> 'amenities') @> CAST(? AS jsonb) OR (p.product_details -> 'activities') @> CAST(? AS jsonb) OR (p.product_details -> 'events') @> CAST(? AS jsonb))";
+    $impact = $pdo->prepare($impactSql);
+    $impact->execute([$feat['label'], json_encode([$feat['label']]), json_encode([$feat['label']]), json_encode([$feat['label']])]);
+    $affected = $impact->fetchAll();
+    $backupProps = [];
+    foreach ($affected as $a) {
+        $pd = json_decode((string) ($a['product_details'] ?? '{}'), true) ?: [];
+        $sections = [];
+        $price = null;
+        $sp = $pd['service_pricing'] ?? [];
+        if (is_array($sp) && array_key_exists($feat['label'], $sp)) { $sections[] = 'service_pricing'; $price = (string) $sp[$feat['label']]; }
+        foreach (['amenities', 'activities', 'events'] as $sec) {
+            if (is_array($pd[$sec] ?? null) && in_array($feat['label'], $pd[$sec], true)) $sections[] = $sec;
+        }
+        $backupProps[] = ['id' => (int) $a['id'], 'name' => $a['name'], 'sections' => $sections, 'price' => $price];
+    }
+    $pdo->prepare('INSERT INTO feature_delete_backups(feature_id, code, group_label, label, sort_order, is_active, deleted_by, affected_properties) VALUES(?,?,?,?,?,?,?,?::jsonb)')
+        ->execute([$featureId, $feat['code'], $feat['group_label'] ?? '', $feat['label'], (int) ($feat['sort_order'] ?? 100), (bool) ($feat['is_active'] ?? true), (string) ($_SESSION['admin_username'] ?? 'admin'), json_encode($backupProps)]);
+    $pdo->prepare('UPDATE property_feature_catalog SET deleted_at=now() WHERE id=?')->execute([$featureId]);
+    $stripSql = "UPDATE properties SET product_details = jsonb_set(jsonb_set(jsonb_set(jsonb_set(product_details, '{service_pricing}', COALESCE(product_details -> 'service_pricing', '{}'::jsonb) - ?, true), '{amenities}', COALESCE(product_details -> 'amenities', '[]'::jsonb) - ?, true), '{activities}', COALESCE(product_details -> 'activities', '[]'::jsonb) - ?, true), '{events}', COALESCE(product_details -> 'events', '[]'::jsonb) - ?, true) WHERE id = ?";
+    $strip = $pdo->prepare($stripSql);
+    foreach ($affected as $a) $strip->execute([$feat['label'], $feat['label'], $feat['label'], $feat['label'], (int) $a['id']]);
+    audit_log('feature.delete', 'feature_catalog', $featureId, [
+        'code' => $feat['code'],
+        'label' => $feat['label'],
+        'affected_count' => count($affected),
+        'affected_listing_ids' => array_map(fn($a) => (int) $a['id'], $affected),
+        'affected_listings' => array_map(fn($a) => $a['name'] . ' (' . $typeLabel($a['property_type']) . ')', $affected),
+    ]);
+    return ['id' => $featureId, 'label' => $feat['label'], 'affected' => $affected];
+};
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!hash_equals($_SESSION['admin_csrf'], (string) ($_POST['csrf'] ?? ''))) {
     $err = 'Güvenlik doğrulaması geçersiz.';
@@ -48,34 +88,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           // İlk adım: etki listesini göster, onay iste.
           $pendingDelete = ['id' => $featureId, 'label' => $feat['label'], 'affected' => $affected];
         } else {
-          // Geri alınabilir silme: 1) yedek kaydı (özellik + ilan/bölüm anlık görüntüsü), 2) soft-delete, 3) ilanlardan kaldır.
-          $backupProps = [];
-          foreach ($affected as $a) {
-            $pd = json_decode((string) ($a['product_details'] ?? '{}'), true) ?: [];
-            $sections = [];
-            $price = null;
-            $sp = $pd['service_pricing'] ?? [];
-            if (is_array($sp) && array_key_exists($feat['label'], $sp)) { $sections[] = 'service_pricing'; $price = (string) $sp[$feat['label']]; }
-            foreach (['amenities', 'activities', 'events'] as $sec) {
-              if (is_array($pd[$sec] ?? null) && in_array($feat['label'], $pd[$sec], true)) $sections[] = $sec;
-            }
-            $backupProps[] = ['id' => (int) $a['id'], 'name' => $a['name'], 'sections' => $sections, 'price' => $price];
-          }
-          db()->prepare('INSERT INTO feature_delete_backups(feature_id, code, group_label, label, sort_order, is_active, deleted_by, affected_properties) VALUES(?,?,?,?,?,?,?,?::jsonb)')
-              ->execute([$featureId, $feat['code'], $feat['group_label'] ?? '', $feat['label'], (int) ($feat['sort_order'] ?? 100), (bool) ($feat['is_active'] ?? true), (string) ($_SESSION['admin_username'] ?? 'admin'), json_encode($backupProps)]);
-          db()->prepare('UPDATE property_feature_catalog SET deleted_at=now() WHERE id=?')->execute([$featureId]);
-          $stripSql = "UPDATE properties SET product_details = jsonb_set(jsonb_set(jsonb_set(jsonb_set(product_details, '{service_pricing}', COALESCE(product_details -> 'service_pricing', '{}'::jsonb) - ?, true), '{amenities}', COALESCE(product_details -> 'amenities', '[]'::jsonb) - ?, true), '{activities}', COALESCE(product_details -> 'activities', '[]'::jsonb) - ?, true), '{events}', COALESCE(product_details -> 'events', '[]'::jsonb) - ?, true) WHERE id = ?";
-          $strip = db()->prepare($stripSql);
-          foreach ($affected as $a) $strip->execute([$feat['label'], $feat['label'], $feat['label'], $feat['label'], (int) $a['id']]);
-          audit_log('feature.delete', 'feature_catalog', $featureId, [
-              'code' => $feat['code'],
-              'label' => $feat['label'],
-              'affected_count' => count($affected),
-              'affected_listing_ids' => array_map(fn($a) => (int) $a['id'], $affected),
-              'affected_listings' => array_map(fn($a) => $a['name'] . ' (' . $typeLabel($a['property_type']) . ')', $affected),
-          ]);
-          $msg = 'Özellik silindi' . ($affected ? ' ve ' . count($affected) . ' ilandan kaldırıldı: ' . implode(', ', array_map(fn($a) => $a['name'], $affected)) . '. ' : '. ') . 'Çöp kutusundan geri alınabilir.';
-          $deletedAudit = ['id' => $featureId, 'label' => $feat['label'], 'affected' => $affected];
+          $res = $deleteFeature($featureId);
+          $msg = 'Özellik silindi' . ($res['affected'] ? ' ve ' . count($res['affected']) . ' ilandan kaldırıldı: ' . implode(', ', array_map(fn($a) => $a['name'], $res['affected'])) . '. ' : '. ') . 'Çöp kutusundan geri alınabilir.';
+          $deletedAudit = ['id' => $featureId, 'label' => $res['label'], 'affected' => $res['affected']];
         }
       } elseif ($action === 'restore') {
         $featureId = (int) ($_POST['id'] ?? 0);
@@ -113,6 +128,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'restored_sections' => $restored,
         ]);
         $msg = 'Özellik geri yüklendi' . ($props ? ' ve ' . count($props) . ' ilana tekrar eklendi.' : '.');
+      } elseif ($action === 'bulk') {
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array) ($_POST['ids'] ?? [])), fn($i) => $i > 0)));
+        $sub = ($_POST['sub'] ?? '') === 'deactivate' ? 'deactivate' : 'delete';
+        if (!$ids) throw new RuntimeException('En az bir özellik seçin.');
+        if ($sub === 'delete' && empty($_POST['confirm'])) {
+          // Adım 1: etki özeti (önce onay, sonra uygula).
+          $fq = db()->prepare('SELECT id, label FROM property_feature_catalog WHERE id=?');
+          $iq = db()->prepare("SELECT p.id, p.name FROM properties p WHERE p.property_type IN ('hotel','villa','yacht') AND (jsonb_exists(p.product_details -> 'service_pricing', ?) OR (p.product_details -> 'amenities') @> CAST(? AS jsonb) OR (p.product_details -> 'activities') @> CAST(? AS jsonb) OR (p.product_details -> 'events') @> CAST(? AS jsonb))");
+          $items = [];
+          $totalAffected = 0;
+          foreach ($ids as $fid) {
+            $fq->execute([$fid]);
+            $f = $fq->fetch();
+            if (!$f) continue;
+            $iq->execute([$f['label'], json_encode([$f['label']]), json_encode([$f['label']]), json_encode([$f['label']])]);
+            $aff = $iq->fetchAll();
+            $items[] = ['label' => $f['label'], 'affected_count' => count($aff), 'affected_names' => array_map(fn($a) => $a['name'], array_slice($aff, 0, 5))];
+            $totalAffected += count($aff);
+          }
+          $pendingBulk = ['ids' => $ids, 'items' => $items, 'total_affected' => $totalAffected];
+        } else {
+          // Adım 2: uygula (her özellik için tekil akışın aynısı + toplu denetim kaydı).
+          $done = 0; $removed = 0; $errors = [];
+          foreach ($ids as $fid) {
+            try {
+              if ($sub === 'deactivate') {
+                db()->prepare('UPDATE property_feature_catalog SET is_active=false WHERE id=?')->execute([$fid]);
+                audit_log('feature.toggle', 'feature_catalog', $fid, ['is_active' => false, 'bulk' => true]);
+              } else {
+                $res = $deleteFeature($fid);
+                $removed += count($res['affected']);
+              }
+              $done++;
+            } catch (Throwable $e) { $errors[] = $e->getMessage(); }
+          }
+          audit_log($sub === 'delete' ? 'feature.bulk_delete' : 'feature.bulk_deactivate', 'feature_catalog', null, [
+              'count' => $done,
+              'feature_ids' => $ids,
+              'affected_count' => $removed,
+          ]);
+          $msg = $sub === 'delete'
+              ? "$done özellik silindi, $removed ilandan kaldırıldı. Çöp kutusundan geri alınabilir."
+              : "$done özellik pasifleştirildi.";
+          if ($errors) $msg .= ' Hatalar: ' . implode('; ', $errors) . '.';
+        }
       } elseif ($action === 'taxonomy_add') {
         $tx = $_POST['taxonomy_type'] ?? '';
         $name = trim((string) ($_POST['name'] ?? ''));
@@ -194,6 +254,9 @@ $trash = db()->query("SELECT f.id, f.code, f.group_label, f.label, f.deleted_at,
 <?php if (!empty($pendingDelete)): ?>
 <div class="c" style="border-color:#f3c4ba;background:#fff7f5"><h2>⚠ Silinecek: "<?= htmlspecialchars($pendingDelete['label']) ?>"</h2><?php if ($pendingDelete['affected']): ?><p>Bu özellik <b><?= count($pendingDelete['affected']) ?></b> kayıtlı ilanda kullanılıyor. Silerseniz bu ilanlardan da kaldırılır:</p><ul><?php foreach ($pendingDelete['affected'] as $a): ?><li><b><?= htmlspecialchars($a['name']) ?></b> <small style="color:#6b7774">(<?= $typeLabel($a['property_type']) ?> · <?= htmlspecialchars($a['company_name']) ?>)</small></li><?php endforeach; ?></ul><p style="color:#9d3b1c">İlanı etkilenen tedarikçilerin panellerinde bu özellik artık görünmeyecek.</p><p style="color:#6b7774;font-size:13px">Silme geri alınabilir: özellik çöp kutusuna taşınır, ilanlara tek tıkla geri yüklenebilir.</p><?php else: ?><p>Bu özellik şu an hiçbir ilanda kullanılmıyor — güvenle silinebilir.</p><?php endif; ?><form method="post" style="display:flex;gap:9px;margin-top:12px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $pendingDelete['id'] ?>"><input type="hidden" name="confirmed" value="1"><button style="background:#9d3b1c">Evet, sil ve ilanlardan kaldır</button></form><a href="/nexustraveltech/admin/ozellik-listeleri" style="display:inline-block;margin-top:10px;color:#6b7774;font-size:13px">Vazgeç</a></div>
 <?php endif; ?>
+<?php if (!empty($pendingBulk)): ?>
+<div class="c" style="border-color:#f3c4ba;background:#fff7f5"><h2>⚠ <?= count($pendingBulk['items']) ?> özellik silinecek — toplam <?= (int) $pendingBulk['total_affected'] ?> ilan etkilenecek</h2><ul><?php foreach ($pendingBulk['items'] as $bi): ?><li><b><?= htmlspecialchars($bi['label']) ?></b> — <?= (int) $bi['affected_count'] ?> ilan<?php if ($bi['affected_names']): ?> (<?= htmlspecialchars(implode(', ', $bi['affected_names'])) ?><?= $bi['affected_count'] > 5 ? ', …' : '' ?>)<?php endif; ?></li><?php endforeach; ?></ul><p style="color:#9d3b1c">Silinen özellikler çöp kutusuna taşınır ve tek tıkla geri yüklenebilir.</p><form method="post" style="margin-top:12px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="bulk"><input type="hidden" name="sub" value="delete"><input type="hidden" name="confirm" value="1"><?php foreach ($pendingBulk['ids'] as $fid): ?><input type="hidden" name="ids[]" value="<?= (int) $fid ?>"><?php endforeach; ?><button style="background:#9d3b1c">Evet, <?= count($pendingBulk['ids']) ?> özelliği sil</button></form><a href="/nexustraveltech/admin/ozellik-listeleri" style="display:inline-block;margin-top:10px;color:#6b7774;font-size:13px">Vazgeç</a></div>
+<?php endif; ?>
 <?php if (!empty($deletedAudit)): ?>
 <div class="c" style="border-color:#bcd98a;background:#f4fbea"><h2>✓ "<?= htmlspecialchars($deletedAudit['label']) ?>" silindi</h2><?php if ($deletedAudit['affected']): ?><p>Kaldırıldığı ilanlar (<b><?= count($deletedAudit['affected']) ?></b>):</p><ul><?php foreach ($deletedAudit['affected'] as $a): ?><li><b><?= htmlspecialchars($a['name']) ?></b> <small style="color:#6b7774">(<?= $typeLabel($a['property_type']) ?> · <?= htmlspecialchars($a['company_name']) ?>)</small></li><?php endforeach; ?></ul><?php else: ?><p>Hiçbir ilanda kullanılmıyordu.</p><?php endif; ?><form method="post" style="margin-top:12px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="restore"><input type="hidden" name="id" value="<?= (int) $deletedAudit['id'] ?>"><button style="background:#405b13">↩ Geri al — özelliği ve ilanları geri yükle</button></form></div>
 <?php endif; ?>
@@ -203,9 +266,17 @@ $trash = db()->query("SELECT f.id, f.code, f.group_label, f.label, f.deleted_at,
 <div class="c"><h2><?= htmlspecialchars($txTitle) ?> <small style="color:#6b7774;font-weight:normal">(<?= count($byTx[$txKey]) ?>)</small></h2><form class="r" method="post" style="margin-bottom:12px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="taxonomy_add"><input type="hidden" name="taxonomy_type" value="<?= htmlspecialchars($txKey) ?>"><input name="name" placeholder="Yeni seçenek adı" maxlength="120" required style="flex:1"><input name="sort_order" type="number" value="100" min="0" title="Sıra" style="width:80px"><button>+ Ekle</button></form><?php foreach (($byTx[$txKey] ?? []) as $tx): ?><span class="chip <?= $tx['is_active'] ? '' : 'off' ?>"><?= htmlspecialchars($tx['name']) ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="taxonomy_toggle"><input type="hidden" name="id" value="<?= (int) $tx['id'] ?>"><button class="mini" title="Aktif/pasif"><?= $tx['is_active'] ? 'Pasifleştir' : 'Aktifleştir' ?></button></form></span><?php endforeach; ?><?php if (!$byTx[$txKey]): ?><p style="color:#6b7774">Liste boş.</p><?php endif; ?></div>
 <?php endforeach; ?></div>
 <h2 style="margin:26px 0 4px;border-top:1px solid #e2e6df;padding-top:20px">Özellik katalogları</h2>
+<div id="bulkBar" style="display:none;position:sticky;top:0;z-index:5;background:#10211f;color:#fff;padding:10px 14px;border-radius:8px;margin:14px 0;align-items:center;gap:12px;flex-wrap:wrap"><b id="bulkCount">0</b> özellik seçildi<button type="button" class="mini" style="background:#e6f8c7;color:#10211f;font-weight:bold" onclick="bulkGo('deactivate')">Pasifleştir</button><button type="button" class="mini" style="background:#b0301a;color:#fff;font-weight:bold" onclick="bulkGo('delete')">Sil</button><button type="button" class="mini" style="background:#33424a;color:#fff" onclick="clearBulk()">Seçimi temizle</button></div>
+<form id="bulkForm" method="post" style="display:none"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="bulk"><input type="hidden" name="sub" id="bulkSub" value="delete"></form>
 <div class="two"><?php foreach ($sectionTitles as $code => $title): $isHotelCat = in_array($code, ['amenity', 'activity', 'event'], true); $grouped = []; foreach (($byCode[$code] ?? []) as $item) $grouped[$item['group_label'] ?: 'Genel'][] = $item; ?>
-<div class="c"><h2><?= $title ?> <small style="color:#6b7774;font-weight:normal">(<?= count($byCode[$code]) ?>)</small></h2><?php if (!$byCode[$code]): ?><p style="color:#6b7774">Liste boş — yukarıdan ekleyin.</p><?php endif; ?>
-<?php foreach ($grouped as $groupName => $groupItems): ?><?php if ($isHotelCat): ?><h3 style="font-size:13px;margin:14px 0 4px;color:#405b13"><?= htmlspecialchars($groupName) ?></h3><?php endif; ?><?php foreach ($groupItems as $item): ?><span class="chip <?= $item['is_active'] ? '' : 'off' ?>"><?= htmlspecialchars($item['label']) ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="up"><button class="mini" title="Yukarı taşı">↑</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="down"><button class="mini" title="Aşağı taşı">↓</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini" title="Aktif/pasif"><?= $item['is_active'] ? 'Pasifleştir' : 'Aktifleştir' ?></button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini del" onclick="return confirm('Bu özellik silinsin mi?');">×</button></form></span><?php endforeach; ?><?php endforeach; ?></div>
+<div class="c"><h2><?= $title ?> <small style="color:#6b7774;font-weight:normal">(<?= count($byCode[$code]) ?>)</small></h2><label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#6b7774;margin:0 0 6px"><input type="checkbox" class="selall" data-code="<?= htmlspecialchars($code) ?>"> Tümünü seç</label><?php if (!$byCode[$code]): ?><p style="color:#6b7774">Liste boş — yukarıdan ekleyin.</p><?php endif; ?>
+<?php foreach ($grouped as $groupName => $groupItems): ?><?php if ($isHotelCat): ?><h3 style="font-size:13px;margin:14px 0 4px;color:#405b13"><?= htmlspecialchars($groupName) ?></h3><?php endif; ?><?php foreach ($groupItems as $item): ?><span class="chip <?= $item['is_active'] ? '' : 'off' ?>"><label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-right:2px" title="Toplu işlem için seç"><input type="checkbox" class="feat-check" data-code="<?= htmlspecialchars($code) ?>" value="<?= (int) $item['id'] ?>"></label><?= htmlspecialchars($item['label']) ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="up"><button class="mini" title="Yukarı taşı">↑</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="down"><button class="mini" title="Aşağı taşı">↓</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini" title="Aktif/pasif"><?= $item['is_active'] ? 'Pasifleştir' : 'Aktifleştir' ?></button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini del" onclick="return confirm('Bu özellik silinsin mi?');">×</button></form></span><?php endforeach; ?><?php endforeach; ?></div>
 <?php endforeach; ?></div>
 <?php if ($trash): ?><h2 style="margin:26px 0 4px;border-top:1px solid #e2e6df;padding-top:20px">🗑 Çöp kutusu — geri alınabilir silmeler</h2><div class="c" style="border-color:#e0c9a3;background:#fdf9f2"><p style="color:#6b7774;font-size:13px;margin-top:0">Silinen özellikler burada durur ve tek tıkla geri yüklenebilir; kaldırıldığı ilanlara aynı bölüm ve fiyat durumuyla geri eklenir.</p><?php foreach ($trash as $t): ?><span class="chip" style="opacity:1;border-color:#e0c9a3"><?= htmlspecialchars($t['label']) ?> <small style="color:#6b7774">(<?= htmlspecialchars($sectionTitles[$t['code']] ?? (string) $t['code']) ?> · <?= (int) $t['affected_count'] ?> ilan · <?= htmlspecialchars(mb_substr((string) $t['deleted_at'], 0, 16)) ?>)</small><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="restore"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>"><button class="mini" style="background:#e6f8c7;color:#10211f;border:1px solid #bcd98a" title="Geri yükle">↩ Geri yükle</button></form></span><?php endforeach; ?></div><?php endif; ?>
-</main><?php require_once __DIR__ . '/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); ?></body></html>
+</main><script>
+function bulkRefresh(){var c=document.querySelectorAll('.feat-check:checked').length;document.getElementById('bulkCount').textContent=c;var bar=document.getElementById('bulkBar');bar.style.display=c?'flex':'none';document.querySelectorAll('.selall').forEach(function(sa){var code=sa.dataset.code,all=document.querySelectorAll('.feat-check[data-code="'+code+'"]'),ch=document.querySelectorAll('.feat-check[data-code="'+code+'"]:checked');sa.checked=all.length>0&&ch.length===all.length})}
+function clearBulk(){document.querySelectorAll('.feat-check:checked').forEach(function(c){c.checked=false});bulkRefresh()}
+function bulkGo(sub){var ids=[].map.call(document.querySelectorAll('.feat-check:checked'),function(x){return x.value});if(!ids.length)return;if(sub==='delete'&&!confirm(ids.length+' özellik silinecek. Önce etki özeti gösterilecek, devam edilsin mi?'))return;var f=document.getElementById('bulkForm');f.querySelectorAll('input[name="ids[]"]').forEach(function(x){x.remove()});ids.forEach(function(v){var i=document.createElement('input');i.type='hidden';i.name='ids[]';i.value=v;f.appendChild(i)});document.getElementById('bulkSub').value=sub;f.submit()}
+document.querySelectorAll('.feat-check').forEach(function(c){c.addEventListener('change',bulkRefresh)});
+document.querySelectorAll('.selall').forEach(function(sa){sa.addEventListener('change',function(){var code=sa.dataset.code;document.querySelectorAll('.feat-check[data-code="'+code+'"]').forEach(function(c){c.checked=sa.checked});bulkRefresh()})});
+</script><?php require_once __DIR__ . '/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); ?></body></html>

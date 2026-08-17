@@ -268,3 +268,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
   taşınır, ilan/bölüm anlık görüntüsü feature_delete_backups'a yazılır; "Geri yükle" ile özellik
   ve kaldırıldığı ilanlar (service_pricing değeri dahil) tek tıkla geri eklenir. feature.restore
   denetim kaydına yazılır. verify-platform artık 45 tablo sayar.
+- Özellik kataloğunda toplu işlem: kartlarda çoklu seçim (tümünü seç dahil) + yapışkan
+  toplu çubuk — tek seferde pasifleştirme veya silme (silme önce etki özeti ister).
+  Her özellik tekil akıştan geçer (geri alınabilir); feature.bulk_delete /
+  feature.bulk_deactivate özet denetim kaydı + per-özellik kayıtları yazılır.
