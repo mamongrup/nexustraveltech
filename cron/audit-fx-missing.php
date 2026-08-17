@@ -1,16 +1,20 @@
 <?php
 declare(strict_types=1);
 
-// fx_rates eksik kur çifti denetimi — günlük görev.
+// fx_rates eksik/bayat kur çifti denetimi — günlük görev.
 //
 // 1) Kanıt: son 24 saatte webhook işlemede fx_rate_missing:FROM->TO hatası düşen çiftler
 //    (channel_sync_logs.error_message içinden ayrıştırılır; fiyat satırı o yüzden yazılmamıştır).
 // 2) Önleyici: aktif fiyat planlarının para birimi ile webhook tarafında görülen gelen para
 //    birimleri (varsayılan ayar + son 30 günün yüklerindeki currency alanları) arasında,
 //    bugün itibarıyla kapsanmayan çiftler (doğrudan ya da TRY üzerinden çapraz kur yok).
+// 3) Bayat: gereken çiftlerin en güncel kur kaydı 7+ günden eskiyse ayrı bölümde uyar
+//    (doğrudan kayıt yoksa TRY çaprazını besleyen bacakların en eskisi esas alınır).
 //
-// Eksik çift varsa admin_alert_email'e özet e-postası gider; kur ekleme adresi
-// admin/kur-yonetimi (manuel satır veya TCMB çekme). Kur yokken fiyat satırı yazılmaz.
+// Her çalıştırmada bugünün sonucu fx_audit_daily'ye yazılır (temiz günler dahil) —
+// admin/kur-yonetimi zaman çizelgesini oradan okur. Eksik/bayat varsa admin_alert_email'e
+// özet e-postası gider; kur ekleme adresi admin/kur-yonetimi (manuel satır, TCMB çekme
+// veya "eksik çiftleri TCMB'den doldur").
 //
 // Zamanlayıcı: nexus-fx-missing-audit (varsayılan: her gün 06:15).
 
@@ -98,20 +102,73 @@ foreach (array_keys($incoming) as $from) {
     }
 }
 
+// 3) Bayat — gereken çiftlerin en güncel kur kaydı 7+ günden eski.
+$staleThreshold = date('Y-m-d', strtotime('-7 days'));
+function fx_pair_latest_date(PDO $pdo, string $from, string $to): ?string
+{
+    $q = $pdo->prepare('SELECT MAX(rate_date) FROM fx_rates WHERE base_currency=? AND quote_currency=?');
+    $q->execute([$from, $to]);
+    $d = $q->fetchColumn();
+    return ($d !== false && $d !== null) ? (string) $d : null;
+}
+$stale = [];
+foreach (array_keys($incoming) as $from) {
+    foreach ($targets as $to) {
+        if ($from === $to) {
+            continue;
+        }
+        $direct = fx_pair_latest_date($pdo, $from, $to);
+        if ($direct !== null) {
+            if ($direct < $staleThreshold) {
+                $stale[$from . '->' . $to] = 'doğrudan kur ' . $direct . ' (' . (int) floor((time() - strtotime($direct)) / 86400) . ' gün önce)';
+            }
+            continue;
+        }
+        if ($from !== 'TRY' && $to !== 'TRY') {
+            $leg1 = fx_pair_latest_date($pdo, $from, 'TRY');
+            $leg2 = fx_pair_latest_date($pdo, $to, 'TRY');
+            if ($leg1 !== null && $leg2 !== null) {
+                $oldest = min($leg1, $leg2);
+                if ($oldest < $staleThreshold) {
+                    $stale[$from . '->' . $to] = 'TRY çapraz · en eski bacak ' . $oldest . ' (' . (int) floor((time() - strtotime($oldest)) / 86400) . ' gün önce)';
+                }
+            }
+        }
+    }
+}
+
+// 4) Geçmiş — her çalıştırmada bugünün sonucunu fx_audit_daily'ye yaz (temiz günler dahil).
 $missing = $failed + $preventive;
-if ($missing === []) {
-    echo "Kur denetimi temiz: son 24 saatte eksik kur hatası yok; aktif planlar için gereken tüm çiftler kapsanıyor.\n";
+$histUp = $pdo->prepare(
+    "INSERT INTO fx_audit_daily(audit_date,missing_count,stale_count,details)
+     VALUES(CURRENT_DATE,?,?,?::jsonb)
+     ON CONFLICT(audit_date) DO UPDATE SET
+       missing_count=EXCLUDED.missing_count, stale_count=EXCLUDED.stale_count,
+       details=EXCLUDED.details, created_at=now()"
+);
+$histUp->execute([
+    count($missing),
+    count($stale),
+    json_encode(['missing' => $missing, 'stale' => $stale], JSON_UNESCAPED_UNICODE),
+]);
+
+if ($missing === [] && $stale === []) {
+    echo "Kur denetimi temiz: son 24 saatte eksik kur hatası yok; aktif planlar için gereken tüm çiftler kapsanıyor; 7 günden eski kur yok. (Geçmiş: " . date('Y-m-d') . " → 0 eksik / 0 bayat)\n";
     exit(0);
 }
 
 ksort($missing);
-echo 'Eksik kur çifti: ' . count($missing) . "\n";
+ksort($stale);
+echo 'Kur denetimi: ' . count($missing) . ' eksik çift, ' . count($stale) . ' bayat çift (geçmiş: ' . date('Y-m-d') . ")\n";
 foreach ($missing as $key => $info) {
     if (is_array($info)) {
-        echo '  ' . $key . ' — kanıt · ' . $info['count'] . ' başarısız işlem (' . date('Y-m-d H:i', $info['first']) . ' → ' . date('Y-m-d H:i', $info['last']) . ")\n";
+        echo '  [EKSİK] ' . $key . ' — kanıt · ' . $info['count'] . ' başarısız işlem (' . date('Y-m-d H:i', $info['first']) . ' → ' . date('Y-m-d H:i', $info['last']) . ")\n";
     } else {
-        echo '  ' . $key . ' — önleyici · ' . $info . "\n";
+        echo '  [EKSİK] ' . $key . ' — önleyici · ' . $info . "\n";
     }
+}
+foreach ($stale as $key => $info) {
+    echo '  [BAYAT] ' . $key . ' — ' . $info . "\n";
 }
 
 if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
@@ -119,19 +176,24 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
     foreach ($missing as $key => $info) {
         if (is_array($info)) {
             $rowsHtml .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de"><b>' . htmlspecialchars($key) . '</b></td>'
-                . '<td style="padding:7px 12px;border:1px solid #e1e5de;color:#b0301a">kanıt — ' . (int) $info['count'] . ' başarısız işlem</td>'
+                . '<td style="padding:7px 12px;border:1px solid #e1e5de;color:#b0301a">eksik — kanıt · ' . (int) $info['count'] . ' başarısız işlem</td>'
                 . '<td style="padding:7px 12px;border:1px solid #e1e5de">' . date('Y-m-d H:i', $info['first']) . ' → ' . date('Y-m-d H:i', $info['last']) . '</td></tr>';
         } else {
             $rowsHtml .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de"><b>' . htmlspecialchars($key) . '</b></td>'
-                . '<td style="padding:7px 12px;border:1px solid #e1e5de">önleyici — ' . htmlspecialchars($info) . '</td>'
+                . '<td style="padding:7px 12px;border:1px solid #e1e5de;color:#b0301a">eksik — önleyici · ' . htmlspecialchars($info) . '</td>'
                 . '<td style="padding:7px 12px;border:1px solid #e1e5de">bugün</td></tr>';
         }
     }
+    foreach ($stale as $key => $info) {
+        $rowsHtml .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de"><b>' . htmlspecialchars($key) . '</b></td>'
+            . '<td style="padding:7px 12px;border:1px solid #e1e5de;color:#8a6d00">bayat — ' . htmlspecialchars($info) . '</td>'
+            . '<td style="padding:7px 12px;border:1px solid #e1e5de">en eski kayıt</td></tr>';
+    }
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
-        . '<h2 style="margin:0 0 6px">💱 Eksik kur çiftleri (' . count($missing) . ')</h2>'
-        . '<p style="color:#64716d;margin:0 0 10px">Webhook fiyat dönüşümünde ihtiyaç duyulan ama <b>fx_rates</b>\'te bulunmayan para birimi çiftleri. '
-        . '<b style="color:#b0301a">Kanıt</b> = son 24 saatte bu yüzden başarısız olan işlem (fiyat satırı yazılmadı); '
-        . '<b>önleyici</b> = aktif fiyat planları / görülen gelen birimler nedeniyle bugün gereken çift. Kur eklenene kadar fiyat satırı yazılmaz (yanlış birim engellenir).</p>'
+        . '<h2 style="margin:0 0 6px">💱 Kur denetimi: ' . count($missing) . ' eksik · ' . count($stale) . ' bayat çift</h2>'
+        . '<p style="color:#64716d;margin:0 0 10px">Webhook fiyat dönüşümünde ihtiyaç duyulan para birimi çiftleri. '
+        . '<b style="color:#b0301a">Eksik</b> = fx_rates\'te bulunmayan çift (<b>kanıt</b>: son 24 saatte bu yüzden başarısız işlem — fiyat satırı yazılmadı; <b>önleyici</b>: aktif planlar / görülen gelen birimler nedeniyle bugün gereken); '
+        . '<b style="color:#8a6d00">bayat</b> = kur kaydı var ama 7+ gün önce (eski kurla dönüşüm devam ediyor). Kur eklenene kadar eksik çiftte fiyat satırı yazılmaz (yanlış birim engellenir).</p>'
         . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px">'
         . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Çift</th>'
         . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Neden</th>'
@@ -139,9 +201,9 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
         . $rowsHtml
         . '</table>'
         . '<p style="margin-top:18px">Kur eklemek için: <a href="https://nexustraveltech.com/admin/kur-yonetimi" style="color:#b0301a">Kur yönetimi →</a> '
-        . '(manuel satır veya TCMB bugünkü kuru çekme).</p>'
+        . '(manuel satır, TCMB bugünkü kuru çekme veya "eksik çiftleri TCMB\'den doldur").</p>'
         . '</div>';
-    queue_email($adminEmail, 'Eksik kur çiftleri: ' . count($missing) . ' para birimi eşleşmesi gerekli', $body, 'fx_missing_audit');
+    queue_email($adminEmail, 'Kur denetimi: ' . count($missing) . ' eksik · ' . count($stale) . ' bayat çift', $body, 'fx_missing_audit');
     echo "Admin e-postası kuyruğa eklendi.\n";
 } else {
     echo "admin_alert_email tanımsız — e-posta atlanıyor.\n";

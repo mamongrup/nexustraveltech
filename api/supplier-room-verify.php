@@ -33,7 +33,7 @@ try {
     // entries dizisinde external_room_id eşleşen son pull kaydı (JSONB içerik eşleşmesi).
     $needle = json_encode([['external_room_id' => $code]], JSON_UNESCAPED_UNICODE);
     $q = $pdo->prepare(
-        "SELECT id, scope, status, request_payload, response_payload, error_message, created_at, completed_at
+        "SELECT id, scope, status, request_payload, response_payload, error_message, created_at, completed_at, fx_audit
          FROM channel_sync_logs
          WHERE channel_connection_id=? AND property_id=? AND direction='pull'
            AND request_payload->'entries' @> ?::jsonb
@@ -142,6 +142,7 @@ try {
             'applied_rows' => $appliedRows,
             'skipped_rows' => $skippedRows,
         ],
+        'fx_audit' => json_decode((string) ($row['fx_audit'] ?? '[]'), true) ?: [],
         'series' => $seriesOut,
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
