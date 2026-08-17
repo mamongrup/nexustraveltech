@@ -93,6 +93,23 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
         ? "✓ Tüm kritik kolonlar mevcut.\n"
         : implode("\n", array_map(fn($e) => '✗ ' . $e, $colErrors)) . "\n";
 
+    // --- 2a) Oda eşleştirme tutarlılığı — verify-platform ile aynı yetim/uyumsuz taraması. ---
+    if (!in_array('channel_room_mappings', $missingTables, true)) {
+        $out .= "\n=== 2a) ODA EŞLEŞTİRME DURUMU ===\n";
+        try {
+            $mappingCount = (int) $pdo->query('SELECT COUNT(*) FROM channel_room_mappings')->fetchColumn();
+            $orphanMappings = (int) $pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id))")->fetchColumn();
+            if ($orphanMappings > 0) {
+                $out .= "⚠ " . $orphanMappings . " yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait) — webhook yazımı bu satırlarda başarısız olabilir\n";
+                $errors[] = 'channel_room_mappings: ' . $orphanMappings . ' yetim/uyumsuz eşleştirme';
+            } else {
+                $out .= "✓ Oda eşleştirme durumu: " . $mappingCount . " kayıt, 0 uyumsuz.\n";
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ Oda eşleştirme taraması yapılamadı: " . $e->getMessage() . "\n";
+        }
+    }
+
     // --- 2b) Onarım — yabancı şemalı boş tabloları düşür (migration bölümü yeniden kurar).
     if ($repair) {
         $out .= "\n=== 2b) ONARIM MODU ===\n";
