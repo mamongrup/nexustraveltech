@@ -11,6 +11,7 @@ declare(strict_types=1);
 // @return array{ok: bool, output: string, errors: list<string>}
 
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/platform_settings.php';
 
 function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false): array
 {
@@ -456,36 +457,41 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     }
 
     // --- 4) Operasyonel uyarılar (son 24 saat) ---
+    // Eşikler kontrol merkezinden yönetilir (health_warn_* platform ayarları, kod değişmeden).
     $out .= "\n=== 4) OPERASYONEL UYARILAR (son 24 saat) ===\n";
     $warnCount = 0;
+    $warnLogThreshold = max(1, (int) platform_setting('health_warn_error_logs', 20));
+    $warnEmailThreshold = max(1, (int) platform_setting('health_warn_email_queue', 50));
+    $warnWebhookThreshold = max(1, (int) platform_setting('health_warn_webhook_fail', 10));
+    $warnIcalThreshold = max(1, (int) platform_setting('health_warn_ical_fail', 3));
     try {
         $errCount = (int) $pdo->query("SELECT COUNT(*) FROM error_logs WHERE level IN ('error','critical') AND status='new' AND created_at >= now() - interval '24 hours'")->fetchColumn();
-        $out .= ($errCount > 20 ? '⚠ ' : '✓ ') . "Hata logu (son 24 saat, error/critical, yeni): " . $errCount . ($errCount > 20 ? ' — yüksek, inceleyin (admin/hata-izleme)' : '') . "\n";
-        if ($errCount > 20) $warnCount++;
+        $out .= ($errCount > $warnLogThreshold ? '⚠ ' : '✓ ') . "Hata logu (son 24 saat, error/critical, yeni): " . $errCount . " (eşik " . $warnLogThreshold . ")" . ($errCount > $warnLogThreshold ? ' — yüksek, inceleyin (admin/hata-izleme)' : '') . "\n";
+        if ($errCount > $warnLogThreshold) $warnCount++;
     } catch (Throwable $e) {
         $out .= "⚠ error_logs okunamadı: " . $e->getMessage() . "\n";
         $warnCount++;
     }
     try {
         $emailQ = (int) $pdo->query("SELECT COUNT(*) FROM email_outbox WHERE status='queued' AND created_at >= now() - interval '24 hours'")->fetchColumn();
-        $out .= ($emailQ > 50 ? '⚠ ' : '✓ ') . "Bekleyen e-posta (son 24 saat, kuyrukta): " . $emailQ . ($emailQ > 50 ? ' — kuyruk birikiyor (cron/process-emails.php)' : '') . "\n";
-        if ($emailQ > 50) $warnCount++;
+        $out .= ($emailQ > $warnEmailThreshold ? '⚠ ' : '✓ ') . "Bekleyen e-posta (son 24 saat, kuyrukta): " . $emailQ . " (eşik " . $warnEmailThreshold . ")" . ($emailQ > $warnEmailThreshold ? ' — kuyruk birikiyor (cron/process-emails.php)' : '') . "\n";
+        if ($emailQ > $warnEmailThreshold) $warnCount++;
     } catch (Throwable $e) {
         $out .= "⚠ email_outbox okunamadı: " . $e->getMessage() . "\n";
         $warnCount++;
     }
     try {
         $failWebhook = (int) $pdo->query("SELECT COUNT(*) FROM channel_sync_logs WHERE direction='pull' AND status='failed' AND created_at >= now() - interval '24 hours'")->fetchColumn();
-        $out .= ($failWebhook > 10 ? '⚠ ' : '✓ ') . "Başarısız webhook yükü (son 24 saat): " . $failWebhook . ($failWebhook > 10 ? ' — yüksek başarısızlık oranı, cron/process-channel-webhooks.php + retry-channel-webhooks.php denetleyin' : '') . "\n";
-        if ($failWebhook > 10) $warnCount++;
+        $out .= ($failWebhook > $warnWebhookThreshold ? '⚠ ' : '✓ ') . "Başarısız webhook yükü (son 24 saat): " . $failWebhook . " (eşik " . $warnWebhookThreshold . ")" . ($failWebhook > $warnWebhookThreshold ? ' — yüksek başarısızlık oranı, cron/process-channel-webhooks.php + retry-channel-webhooks.php denetleyin' : '') . "\n";
+        if ($failWebhook > $warnWebhookThreshold) $warnCount++;
     } catch (Throwable $e) {
         $out .= "⚠ channel_sync_logs okunamadı: " . $e->getMessage() . "\n";
         $warnCount++;
     }
     try {
         $failIcal = (int) $pdo->query("SELECT COUNT(*) FROM ical_sync_logs WHERE status='failed' AND created_at >= now() - interval '24 hours'")->fetchColumn();
-        $out .= ($failIcal > 3 ? '⚠ ' : '✓ ') . "iCal senkron hata (son 24 saat): " . $failIcal . ($failIcal > 3 ? ' — tekrarlayan hatalar olabilir, cron/sync-ical-calendars.php + alert-ical-repeat.php denetleyin' : '') . "\n";
-        if ($failIcal > 3) $warnCount++;
+        $out .= ($failIcal > $warnIcalThreshold ? '⚠ ' : '✓ ') . "iCal senkron hata (son 24 saat): " . $failIcal . " (eşik " . $warnIcalThreshold . ")" . ($failIcal > $warnIcalThreshold ? ' — tekrarlayan hatalar olabilir, cron/sync-ical-calendars.php + alert-ical-repeat.php denetleyin' : '') . "\n";
+        if ($failIcal > $warnIcalThreshold) $warnCount++;
     } catch (Throwable $e) {
         $out .= "⚠ ical_sync_logs okunamadı: " . $e->getMessage() . "\n";
         $warnCount++;

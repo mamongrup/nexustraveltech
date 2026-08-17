@@ -67,6 +67,11 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
     $opsBlock = '';
     try {
         $maxRetries = max(2, min(10, (int) platform_setting('channel_webhook_max_retries', 3)));
+        // Uyarı eşikleri kontrol merkezinden (health_warn_* ayarları) — health-check çıktısıyla tutarlı.
+        $warnWebhook = max(1, (int) platform_setting('health_warn_webhook_fail', 10));
+        $warnIcal = max(1, (int) platform_setting('health_warn_ical_fail', 3));
+        $warnEmail = max(1, (int) platform_setting('health_warn_email_queue', 50));
+        $warnLog = max(1, (int) platform_setting('health_warn_error_logs', 20));
         $fetchCount = function (string $sql) use ($pdo): ?int {
             try { return (int) $pdo->query($sql)->fetchColumn(); }
             catch (Throwable $e) { return null; }
@@ -90,12 +95,12 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
                 . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center">' . $renderVal($v, $warn) . '</td></tr>';
         };
         $addRow('⏳ Bekleyen kanal webhook işi (kuyrukta)', $pendingWebhook, ($pendingWebhook ?? 0) > 0);
-        $addRow('🔁 Yeniden denemeyi bekleyen (max ' . $maxRetries . ' deneme)', $retryable, ($retryable ?? 0) > 10);
+        $addRow('🔁 Yeniden denemeyi bekleyen (max ' . $maxRetries . ' deneme)', $retryable, ($retryable ?? 0) > $warnWebhook);
         $addRow('✗ Denemesi tükenen kanal yükü (son 24s)', $exhausted, ($exhausted ?? 0) > 0);
         $addRow('📅 iCal senkron — başarılı (son 24s)', $icalOk, false);
-        $addRow('📅 iCal senkron — hata (son 24s)', $icalFail, ($icalFail ?? 0) > 3);
-        $addRow('📧 Bekleyen e-posta kuyruğu', $emailQ, ($emailQ ?? 0) > 50);
-        $addRow('🐞 Yeni hata logu (son 24s)', $errLog, ($errLog ?? 0) > 20);
+        $addRow('📅 iCal senkron — hata (son 24s)', $icalFail, ($icalFail ?? 0) > $warnIcal);
+        $addRow('📧 Bekleyen e-posta kuyruğu', $emailQ, ($emailQ ?? 0) > $warnEmail);
+        $addRow('🐞 Yeni hata logu (son 24s)', $errLog, ($errLog ?? 0) > $warnLog);
         $opsBlock = '<h3 style="margin:18px 0 4px;font-size:14px">📊 Operasyonel metrikler (şu an)' . ($warned > 0 ? ' — <span style="color:#8e2410">' . $warned . ' kalem dikkat gerektiriyor</span>' : '') . '</h3>'
             . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:12px">'
             . '<tr><th style="text-align:left;padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Metrik</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Değer</th></tr>'
