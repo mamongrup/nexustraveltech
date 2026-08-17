@@ -258,3 +258,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Tesisler kartinda "Tum kalemler" genisletilebilir bolum: her hazirlik kalemi ikon + etiket + detay metni + eksikse "Doldur ->" / sariysa "Incele ->" baglantisiyla listelenir
 - Sari iCal rozetine senkron yasi eklendi: "son senkron N gun once" (listing_readiness age_days alani)
 - Tesisler kartindaki kirmizi eksik kalemler tiklanabilir: rooms/media/description/location/pool/liman/murettebat -> ilan duzenleyici, rates/inventory -> fiyat-kontenjan, ical -> iCal takvimler, rules -> satis-kurallari
+- ical-takvimler sayfasindaki disa aktarma URL alani artik kisa etiket (api/ical?token=XXXX...xxxx) + Kopyala butonuyla gosterilir; tam URL hover ve panoda
