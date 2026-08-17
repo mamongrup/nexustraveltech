@@ -638,11 +638,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               }
           }
           audit_log($sub === 'delete' ? 'feature.bulk_delete' : ($sub === 'activate' ? 'feature.bulk_activate' : 'feature.bulk_deactivate'), 'feature_catalog', null, $auditDetails);
+          // İşlenen ve atlanan özellik adlarını mesajda ayrı ayrı göster — hangi özelliklerin değiştiği net olsun.
+          $doneLabel = $sub === 'delete' ? 'Silinen' : ($sub === 'activate' ? 'Aktifleştirilen' : 'Pasifleştirilen');
+          $donePart = $doneNames ? ' ' . $doneLabel . ': ' . implode(', ', array_slice($doneNames, 0, 12)) . (count($doneNames) > 12 ? ' …' : '') : '';
+          $skipReason = $sub === 'delete' ? 'zaten çöp kutusunda olduğu için atlandı (sayılmadı)' : ($sub === 'activate' ? 'zaten aktif olduğu için atlandı (sayılmadı)' : 'zaten pasif olduğu için atlandı (sayılmadı)');
+          $skipPart = $skipped ? ', ' . $skipped . ' özellik ' . $skipReason . ($skippedNames ? ': ' . implode(', ', array_slice($skippedNames, 0, 12)) . (count($skippedNames) > 12 ? ' …' : '') : '') : '';
           $msg = $sub === 'delete'
-              ? "$done özellik silindi, $removed ilandan kaldırıldı" . ($skipped ? ", $skipped özellik zaten çöp kutusunda olduğu için atlandı (sayılmadı)" : '') . ". Çöp kutusundan geri alınabilir."
+              ? "$done özellik silindi, $removed ilandan kaldırıldı" . $donePart . $skipPart . '. Çöp kutusundan geri alınabilir.'
               : ($sub === 'activate'
-                  ? "$done özellik aktifleştirildi" . ($skipped ? ", $skipped özellik zaten aktif olduğu için atlandı (sayılmadı)" : '') . '.'
-                  : "$done özellik pasifleştirildi" . ($skipped ? ", $skipped özellik zaten pasif olduğu için atlandı (sayılmadı)" : '') . '.');
+                  ? "$done özellik aktifleştirildi" . $donePart . $skipPart . '.'
+                  : "$done özellik pasifleştirildi" . $donePart . $skipPart . '.');
           if ($errors) $msg .= ' Hatalar: ' . implode('; ', $errors) . '.';
           // Toplu işlem sonucunu çereze yaz — sayfa yenilense bile kalıcı bildirim olarak görünür.
           // Toplu işlem sonucunu yapılandırılmış özet kartı olarak çereze yaz (atlanan adlar dahil).
