@@ -21,12 +21,23 @@ function default_product_types(): array {
   ];
 }
 
+function default_step_targets(string $code, bool $roomSetup): array {
+  // Kurulum sayfasındaki bölüm çapaları: adım 0 her zaman sec-01 (temel bilgiler),
+  // oda/birim kurulumu yapan türlerde adım 1 sec-02; diğer adımlar ilan düzenleyicide
+  // devam eden bölümleri işaret eder (villa/yat için sec-04, diğerleri için boş).
+  $secondary = ($code === 'hotel' || $code === 'villa' || $code === 'yacht') ? 'sec-04' : '';
+  return [$roomSetup ? 'sec-01' : 'sec-01', $roomSetup ? 'sec-02' : $secondary, $secondary, $secondary];
+}
+
 function product_types(): array {
   try {
-    $rows = db()->query('SELECT code,label,unit,steps,fields,room_setup,hint FROM product_type_catalog WHERE is_active=true ORDER BY sort_order,code')->fetchAll();
+    $rows = db()->query('SELECT code,label,unit,steps,fields,step_targets,room_setup,hint FROM product_type_catalog WHERE is_active=true ORDER BY sort_order,code')->fetchAll();
     if ($rows) {
       $types=[];
-      foreach($rows as $row) $types[$row['code']]=['label'=>$row['label'],'unit'=>$row['unit'],'steps'=>json_decode($row['steps'],true)?:[],'fields'=>json_decode($row['fields'],true)?:[],'room_setup'=>(bool)$row['room_setup'],'hint'=>$row['hint']];
+      foreach($rows as $row) {
+        $roomSetup=(bool)$row['room_setup'];
+        $types[$row['code']]=['label'=>$row['label'],'unit'=>$row['unit'],'steps'=>json_decode($row['steps'],true)?:[],'fields'=>json_decode($row['fields'],true)?:[],'step_targets'=>json_decode((string)$row['step_targets'],true)?:default_step_targets((string)$row['code'],$roomSetup),'room_setup'=>$roomSetup,'hint'=>$row['hint']];
+      }
       return $types;
     }
   } catch (Throwable) {}
