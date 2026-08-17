@@ -14,7 +14,7 @@ require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/platform_settings.php';
 require_once __DIR__ . '/audit.php';
 
-function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false, bool $yes = false): array
+function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false, bool $yes = false, bool $orphans = false): array
 {
     $pdo = db();
     $errors = [];
@@ -150,9 +150,30 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $out .= "\n=== 2a) ODA EŞLEŞTİRME DURUMU ===\n";
         try {
             $mappingCount = (int) $pdo->query('SELECT COUNT(*) FROM channel_room_mappings')->fetchColumn();
-            $orphanMappings = (int) $pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id))")->fetchColumn();
+            $orphanRows = $pdo->query("SELECT m.id, m.external_room_id AS code, m.status,
+                CASE
+                    WHEN rt.id IS NULL THEN 'oda tipi yok'
+                    WHEN c.id IS NULL THEN 'kanal yok'
+                    WHEN rt.property_id<>m.property_id THEN 'oda tipi başka ürüne ait'
+                    WHEN m.rate_plan_id IS NOT NULL AND rp.id IS NULL THEN 'fiyat planı yok'
+                    WHEN m.rate_plan_id IS NOT NULL AND rp.property_id<>m.property_id THEN 'fiyat planı başka ürüne ait'
+                    ELSE 'bilinmiyor'
+                END AS issue
+                FROM channel_room_mappings m
+                LEFT JOIN room_types rt ON rt.id=m.room_type_id
+                LEFT JOIN channel_connections c ON c.id=m.channel_connection_id
+                LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id
+                WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id))
+                ORDER BY m.id")->fetchAll();
+            $orphanMappings = count($orphanRows);
             if ($orphanMappings > 0) {
                 $out .= "⚠ " . $orphanMappings . " yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait) — webhook yazımı bu satırlarda başarısız olabilir\n";
+                if ($orphans) {
+                    $out .= "— Ayrıntı (ID · dış kod · durum · sorun):\n";
+                    foreach ($orphanRows as $or) {
+                        $out .= '  #' . (int) $or['id'] . ' · ' . htmlspecialchars((string) $or['code']) . ' · ' . htmlspecialchars((string) ($or['status'] ?? '')) . ' · ' . htmlspecialchars((string) $or['issue']) . "\n";
+                    }
+                }
                 $errors[] = 'channel_room_mappings: ' . $orphanMappings . ' yetim/uyumsuz eşleştirme';
             } else {
                 $out .= "✓ Oda eşleştirme durumu: " . $mappingCount . " kayıt, 0 uyumsuz.\n";
@@ -431,28 +452,37 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 'join' => 'LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id',
                 'where' => 'm.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))',
                 'cols' => 'm.id, m.external_room_id AS code, m.status',
+                'issue' => "CASE WHEN rt.id IS NULL THEN 'oda tipi yok' WHEN c.id IS NULL THEN 'kanal yok' WHEN rt.property_id<>m.property_id THEN 'oda tipi başka ürüne ait' WHEN m.rate_plan_id IS NOT NULL AND rp.id IS NULL THEN 'fiyat planı yok' WHEN m.rate_plan_id IS NOT NULL AND rp.property_id<>m.property_id THEN 'fiyat planı başka ürüne ait' ELSE 'bilinmiyor' END AS issue",
             ],
             'channel_rate_plan_mappings' => [
                 'label' => 'fiyat planı eşleştirmesi',
                 'join' => 'LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
                 'where' => '(m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL',
                 'cols' => 'm.id, m.external_rate_plan_id AS code, m.status',
+                'issue' => "CASE WHEN c.id IS NULL THEN 'kanal yok' WHEN m.rate_plan_id IS NOT NULL AND rp.id IS NULL THEN 'fiyat planı yok' WHEN m.rate_plan_id IS NOT NULL AND rp.property_id<>m.property_id THEN 'fiyat planı başka ürüne ait' ELSE 'bilinmiyor' END AS issue",
             ],
             'channel_property_mappings' => [
                 'label' => 'ürün eşleştirmesi',
                 'join' => 'LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
                 'where' => 'p.id IS NULL OR c.id IS NULL',
                 'cols' => 'm.id, m.external_property_id AS code, m.status',
+                'issue' => "CASE WHEN p.id IS NULL THEN 'ürün yok' WHEN c.id IS NULL THEN 'kanal yok' ELSE 'bilinmiyor' END AS issue",
             ],
         ];
         foreach ($orphanSpecs as $orphanTable => $spec) {
             if (in_array($orphanTable, $missingTables, true)) continue;
             try {
-                $orphanSql = 'SELECT ' . $spec['cols'] . ' FROM ' . $orphanTable . ' m ' . $spec['join'] . ' WHERE ' . $spec['where'];
+                $orphanSql = 'SELECT ' . $spec['cols'] . ', ' . $spec['issue'] . ' FROM ' . $orphanTable . ' m ' . $spec['join'] . ' WHERE ' . $spec['where'];
                 $orphans = $pdo->query($orphanSql)->fetchAll();
                 if ($orphans) {
                     if ($dryRun) {
                         $out .= '→ [dry-run] ' . count($orphans) . ' yetim ' . $spec['label'] . ' SILİNECEK (örnek: ' . htmlspecialchars((string) $orphans[0]['code']) . ')' . "\n";
+                        if ($orphans) {
+                            $out .= '  — Ayrıntı (ID · dış kod · durum · sorun):' . "\n";
+                            foreach ($orphans as $o) {
+                                $out .= '    #' . (int) $o['id'] . ' · ' . htmlspecialchars((string) $o['code']) . ' · ' . htmlspecialchars((string) ($o['status'] ?? '')) . ' · ' . htmlspecialchars((string) $o['issue']) . "\n";
+                            }
+                        }
                     } else {
                         $del = $pdo->prepare('DELETE FROM ' . $orphanTable . ' WHERE id=?');
                         $removed = 0;

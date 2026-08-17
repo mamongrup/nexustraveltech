@@ -10,6 +10,8 @@ declare(strict_types=1);
 //     Önce --repair --dry-run ile tespiti görün — kuru mod hiçbir şey düşürmez.
 //   /opt/plesk/php/8.5/bin/php scripts/health-check.php --fix      → eksik/geçersiz/tekrarlanan kanal tokenlarını
 //     otomatik yeniler (64 hex, benzersiz); --dry-run ile yalnızca önizleme
+//   /opt/plesk/php/8.5/bin/php scripts/health-check.php --orphans  → yetim/uyumsuz eşleştirmeleri sayı yerine
+//     satır satır ayrıntılı gösterir (ID + dış kod + sorun türü) — oda/plan/ürün eşleştirmeleri
 //
 // Bölümler: 1) tablolar   2) kritik kolonlar   2b) kanal token doğrulama   3) migration durumu   4) ortam.
 // Herhangi bir sorun varsa çıkış kodu 1. Mantık, günlük zamanlayıcı göreviyle
@@ -21,7 +23,8 @@ $dryRun = in_array('--dry-run', $argv ?? [], true);
 $repair = in_array('--repair', $argv ?? [], true);
 $fix = in_array('--fix', $argv ?? [], true);
 $yes = in_array('--yes', $argv ?? [], true);
-$result = health_check_run($dryRun, $repair, $fix, $yes);
+$orphans = in_array('--orphans', $argv ?? [], true);
+$result = health_check_run($dryRun, $repair, $fix, $yes, $orphans);
 
 echo $result['output'];
 exit($result['ok'] ? 0 : 1);
