@@ -102,3 +102,7 @@
 .readiness-all-text small{display:block;color:var(--muted);font-size:11px;line-height:1.4;margin-top:1px}
 .readiness-all-row a{white-space:nowrap;font-size:11px;font-weight:700;color:#0d7a4a;text-decoration:none}
 .readiness-all-row.missing a{color:#b0301a}
+/* --- Tıklanabilir eksik kalemler (tesisler kartı) --- */
+.readiness-missing li a.readiness-miss-link{color:#b0301a;text-decoration:none;font-weight:700}
+.readiness-missing li a.readiness-miss-link:hover{text-decoration:underline}
+.readiness-missing li a.readiness-miss-link em{font-weight:400;opacity:.8}

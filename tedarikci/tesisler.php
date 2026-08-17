@@ -87,12 +87,12 @@ supply_start('Tesisler & ürünler', $active_module);
     <div class="readiness-block">
         <div class="readiness-head"><span>YAYIN HAZIRLIĞI</span><b><?= $readiness['score'] ?>/100</b></div>
         <div class="readiness-bar"><i style="width:<?= (int) $readiness['score'] ?>%"></i></div>
-        <?php $missing = array_filter($readiness['items'], fn($i) => !$i['ok']); $warnings = array_filter($readiness['items'], fn($i) => !empty($i['warn'])); $warnLinks = ['ical' => '/nexustraveltech/tedarikci/ical-takvimler']; ?>
+        <?php $missing = array_filter($readiness['items'], fn($i) => !$i['ok']); $warnings = array_filter($readiness['items'], fn($i) => !empty($i['warn'])); $warnLinks = ['ical' => '/nexustraveltech/tedarikci/ical-takvimler']; $editBase = $item['property_type'] === 'hotel' ? '/nexustraveltech/tedarikci/otel-detay?product=' . (int) $item['id'] : '/nexustraveltech/tedarikci/villa-detay?product=' . (int) $item['id']; $missLinks = ['rooms' => $editBase, 'rates' => '/nexustraveltech/tedarikci/fiyat-kontenjan?property=' . (int) $item['id'], 'inventory' => '/nexustraveltech/tedarikci/fiyat-kontenjan?property=' . (int) $item['id'], 'media' => $editBase, 'description' => $editBase, 'location' => $editBase, 'pool' => $editBase, 'home_port' => $editBase, 'crew' => $editBase, 'ical' => '/nexustraveltech/tedarikci/ical-takvimler', 'rules' => '/nexustraveltech/tedarikci/satis-kurallari?property=' . (int) $item['id']]; ?>
         <?php if ($warnings): ?>
         <ul class="readiness-warn"><?php foreach ($warnings as $w): ?><li><a class="readiness-warn-link" href="<?= htmlspecialchars($warnLinks[$w['key']] ?? '/nexustraveltech/tedarikci/ical-takvimler') ?>">⚠ <?= htmlspecialchars($w['label']) ?> — <?= htmlspecialchars($w['detail']) ?><?php if (array_key_exists('age_days', $w) && $w['age_days'] !== null): ?> <em>(son senkron <?= (int) $w['age_days'] ?> gün önce)</em><?php endif; ?></a></li><?php endforeach; ?></ul>
         <?php endif; ?>
         <?php if ($missing): ?>
-        <ul class="readiness-missing"><?php foreach ($missing as $m): ?><li>✗ <?= htmlspecialchars($m['label']) ?><?php if ($m['key'] === 'rules'): ?> <em>(opsiyonel)</em><?php endif; ?></li><?php endforeach; ?></ul>
+        <ul class="readiness-missing"><?php foreach ($missing as $m): ?><li><a class="readiness-miss-link" href="<?= htmlspecialchars($missLinks[$m['key']] ?? $editBase) ?>">✗ <?= htmlspecialchars($m['label']) ?><?php if ($m['key'] === 'rules'): ?> <em>(opsiyonel)</em><?php endif; ?> →</a></li><?php endforeach; ?></ul>
         <?php elseif (!$warnings): ?>
         <p class="readiness-ok">✓ Tüm kalemler tamam — yayına hazır.</p>
         <?php else: ?>

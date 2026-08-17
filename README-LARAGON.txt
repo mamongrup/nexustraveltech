@@ -257,3 +257,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Dagitim sagligi ozetine konum bazli kirilim: sorunlu iCal ilanlari sehir/limana gore gruplanir (yatlar icin home_port, degilse city); e-posta govdesinde ve PDF ekinde "Konum bazli kirilim" bolumu
 - Tesisler kartinda "Tum kalemler" genisletilebilir bolum: her hazirlik kalemi ikon + etiket + detay metni + eksikse "Doldur ->" / sariysa "Incele ->" baglantisiyla listelenir
 - Sari iCal rozetine senkron yasi eklendi: "son senkron N gun once" (listing_readiness age_days alani)
+- Tesisler kartindaki kirmizi eksik kalemler tiklanabilir: rooms/media/description/location/pool/liman/murettebat -> ilan duzenleyici, rates/inventory -> fiyat-kontenjan, ical -> iCal takvimler, rules -> satis-kurallari
