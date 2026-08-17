@@ -159,6 +159,19 @@ $tcmbBad = $tcmbFail !== null && ($tcmbOk === null || strtotime((string) $tcmbFa
 $history = $pdo->query("SELECT audit_date, missing_count, stale_count, details FROM fx_audit_daily ORDER BY audit_date DESC LIMIT 30")->fetchAll();
 $histMax = 1;
 foreach ($history as $h) $histMax = max($histMax, (int) $h['missing_count'], (int) $h['stale_count']);
+// Son denetim bulguları — fx_missing_audit'in en güncel çalıştırma sonucu.
+$lastAudit = null;
+$lastAuditMissing = [];
+$lastAuditStale = [];
+$lastAuditRow = $pdo->query("SELECT audit_date, missing_count, stale_count, details FROM fx_audit_daily ORDER BY audit_date DESC LIMIT 1")->fetch();
+if ($lastAuditRow) {
+    $det = json_decode((string) ($lastAuditRow['details'] ?? '{}'), true);
+    $det = is_array($det) ? $det : [];
+    $lastAuditMissing = (array) ($det['missing'] ?? []);
+    $lastAuditStale = (array) ($det['stale'] ?? []);
+    $lastAudit = $lastAuditRow;
+}
+$lastAuditEmail = $pdo->query("SELECT subject, created_at FROM email_outbox WHERE related_type='fx_missing_audit' ORDER BY id DESC LIMIT 1")->fetch();
 ?>
 <!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Döviz kuru yönetimi | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(980px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.back{color:#10211f}.notice,.error{padding:11px}.notice{background:#e6f8c7}.error{background:#ffe2de}.card{background:#fff;border:1px solid #e1e5de;padding:20px;margin-top:16px}.form{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.form input,.form button{padding:10px;border:1px solid #d8ded8;font:inherit}.form button{background:#10211f;color:#fff;font-weight:700;border:0;cursor:pointer}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:9px 10px;font-size:13px}th{font-size:11px;text-transform:uppercase;color:#64716d}.btn-tcmb{background:#0d7a4a;color:#fff;border:0;padding:10px 14px;font-weight:700;cursor:pointer;margin-top:12px}.btn-fill{background:#b26a00;color:#fff;border:0;padding:10px 14px;font-weight:700;cursor:pointer;margin-top:8px;display:inline-block}.tcmb-status{display:block;font-size:12px;margin-top:8px}.tcmb-ok{color:#0d7a4a}.tcmb-err{color:#b0301a;font-weight:700}.quick{display:grid;gap:8px;max-width:440px}.quick-row{display:flex;align-items:center;gap:10px}.quick-row label{min-width:120px;font-size:13px;font-weight:700}.quick-row input{flex:1;padding:9px;border:1px solid #d8ded8;font:inherit}.quick button{padding:10px;background:#10211f;color:#fff;font-weight:700;border:0;cursor:pointer;justify-self:start}.fx-hist{display:flex;align-items:flex-end;gap:3px;height:90px;margin-top:12px;overflow-x:auto}.fx-hist-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:14px;flex:1}.fx-hist-bar{width:10px;border-radius:2px 2px 0 0}.fx-hist-bar.miss{background:#b0301a}.fx-hist-bar.stale{background:#e0a800}.fx-hist-day{font-size:9px;color:#64716d;margin-top:3px;white-space:nowrap}.fx-hist-wrap{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}.fx-legend{font-size:12px;color:#64716d;margin-top:6px}.report-link{display:inline-block;margin-top:10px;color:#0d7a4a;font-weight:700;text-decoration:none}.report-link:hover{text-decoration:underline}@media(max-width:700px){.form{grid-template-columns:1fr 1fr}}</style></head><body><main class="wrap"><div class="top"><div><div class="brand">N<span>∿</span>XUS Admin</div><p>Döviz kuru tablosu — EUR/TRY/USD dönüşümleri buradan beslenir</p></div><div style="text-align:right"><a class="back" href="/nexustraveltech/admin/">← Panele dön</a><br><a class="report-link" href="/nexustraveltech/admin/fx-rapor.php">📊 Aylık dönüşüm raporu →</a></div></div>
 <?php if ($message): ?><p class="notice"><?=htmlspecialchars($message)?></p><?php endif; ?>
@@ -174,6 +187,20 @@ foreach ($history as $h) $histMax = max($histMax, (int) $h['missing_count'], (in
 <?php if ($tcmbOk !== null): ?><span class="tcmb-status tcmb-ok">✅ Son başarılı çekme: <?=htmlspecialchars(date('d.m.Y H:i', strtotime((string) $tcmbOk)))?> · kaynak: TCMB<?= $tcmbLastDate ? ' (kur tarihi ' . htmlspecialchars((string) $tcmbLastDate) . ')' : '' ?></span><?php endif; ?>
 <?php if ($tcmbBad): ?><span class="tcmb-status tcmb-err">⚠ Son çekme başarısız (<?=htmlspecialchars(date('d.m.Y H:i', strtotime((string) $tcmbFail)))?>): <?=htmlspecialchars($tcmbErr !== '' ? $tcmbErr : 'bilinmeyen hata')?></span><?php endif; ?>
 <?php if ($tcmbOk === null && $tcmbFail === null): ?><span class="tcmb-status" style="color:#64716d">Henüz TCMB çekmesi yapılmadı — ilk çekme sonrası burada durum görünür.</span><?php endif; ?>
+</section>
+<section class="card"><h2 style="margin:0 0 6px;font-size:18px">📋 Son denetim bulguları <span style="font-size:12px;color:#64716d;font-weight:400">(fx_missing_audit)</span></h2>
+<?php if ($lastAudit): ?><p style="color:#64716d;margin:0 0 10px;font-size:13px">Günlük görevin en son çalıştırma sonucu: <b><?=htmlspecialchars((string) $lastAudit['audit_date'])?></b> — <?=(int) $lastAudit['missing_count']?> eksik · <?=(int) $lastAudit['stale_count']?> bayat. Eksik çiftlerde fiyat satırı yazılmaz; çoğu <b>⚡ Eksik çiftleri TCMB'den doldur</b> ile tek tıkla eklenir.</p>
+<?php if (!$lastAuditMissing && !$lastAuditStale): ?><p style="color:#0d7a4a;font-weight:700;margin:0">✓ Son denetim temiz — bekleyen eksik/bayat çift yok.</p>
+<?php else: ?><div style="display:grid;gap:6px;margin-top:8px">
+<?php foreach ($lastAuditMissing as $pk => $pv): $reason = is_array($pv) ? 'kanıt · ' . (int) ($pv['count'] ?? 0) . ' başarısız işlem (' . date('d.m H:i', (int) ($pv['first'] ?? time())) . ' → ' . date('d.m H:i', (int) ($pv['last'] ?? time())) . ')' : 'önleyici · ' . (string) $pv; ?>
+<div style="display:flex;gap:8px;align-items:baseline;font-size:13px"><span style="color:#b0301a">●</span><b><?=htmlspecialchars((string) $pk)?></b><span style="color:#64716d"><?=htmlspecialchars($reason)?></span><span style="color:#b0301a;font-size:12px">eksik</span></div>
+<?php endforeach; ?>
+<?php foreach ($lastAuditStale as $pk => $pv): ?>
+<div style="display:flex;gap:8px;align-items:baseline;font-size:13px"><span style="color:#e0a800">●</span><b><?=htmlspecialchars((string) $pk)?></b><span style="color:#64716d"><?=htmlspecialchars((string) $pv)?></span><span style="color:#8a6d00;font-size:12px">bayat</span></div>
+<?php endforeach; ?>
+</div><?php endif; ?>
+<?php elseif ($lastAuditEmail): ?><p style="color:#64716d;margin:0;font-size:13px">Denetim henüz fx_audit_daily'ye yazmadı (görev 055 sonrası ilk kez çalışmadı). En son e-posta bulgusu: <b><?=htmlspecialchars((string) $lastAuditEmail['subject'])?></b> (<?=htmlspecialchars(date('d.m.Y H:i', strtotime((string) $lastAuditEmail['created_at'])))?>).</p>
+<?php else: ?><p style="color:#64716d;margin:0;font-size:13px">Henüz denetim bulgusu yok — günlük görev (nexus-fx-missing-audit) ilk çalıştığında burada görünür.</p><?php endif; ?>
 </section>
 <section class="card"><h2 style="margin:0 0 6px;font-size:18px">Hızlı giriş — EUR / USD / GBP → TRY</h2><p style="color:#64716d;margin:0 0 12px;font-size:13px">TCMB dışında günlük kurları elle girmek için opsiyonel satırlar; her satır <b>TRY → ters kuru</b> da otomatik yazar (çapraz kur hesaplarında kullanılır). Boş bırakılan satır kaydedilmez. <b>Kutular son kaydedilen değerlerle önceden doludur</b> — bugünün kuru aynıysa olduğu gibi "Hızlı kurları kaydet" ile güncelleyebilirsiniz.</p>
 <form method="post" class="quick"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="quick"><input type="hidden" name="rate_date" value="<?=date('Y-m-d')?>">
