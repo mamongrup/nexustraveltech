@@ -294,6 +294,38 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         }
     }
 
+    // 2c-6) Yetim iCal bağlantıları — silinmiş ürüne işaret eden ical_connections satırları
+    //        (FK yoksa veya yabancı şemalı tabloda oluşmuşsa görülür) ve silinmiş bağlantıya
+    //        işaret eden ical_sync_logs satırları.
+    if (!in_array('ical_connections', $missingTables, true) && !in_array('properties', $missingTables, true)) {
+        $consistencyChecks++;
+        try {
+            $orphan = (int) $pdo->query("SELECT COUNT(*) FROM ical_connections c LEFT JOIN properties p ON p.id=c.property_id WHERE p.id IS NULL")->fetchColumn();
+            if ($orphan > 0) {
+                $out .= "⚠ ical_connections: " . $orphan . " yetim bağlantı (silinmiş ürün)" . "\n";
+                $consistencyErrors[] = 'ical_connections: ' . $orphan . ' yetim bağlantı (silinmiş ürün)';
+            } else {
+                $out .= "✓ Yetim iCal bağlantısı yok (tümü geçerli ürüne bağlı)." . "\n";
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ iCal yetim denetimi yapılamadı: " . $e->getMessage() . "\n";
+        }
+    }
+    if (!in_array('ical_sync_logs', $missingTables, true) && !in_array('ical_connections', $missingTables, true)) {
+        $consistencyChecks++;
+        try {
+            $orphan = (int) $pdo->query("SELECT COUNT(*) FROM ical_sync_logs l LEFT JOIN ical_connections c ON c.id=l.ical_connection_id WHERE c.id IS NULL")->fetchColumn();
+            if ($orphan > 0) {
+                $out .= "⚠ ical_sync_logs: " . $orphan . " yetim satır (iCal bağlantısı yok)" . "\n";
+                $consistencyErrors[] = 'ical_sync_logs: ' . $orphan . ' yetim satır';
+            } else {
+                $out .= "✓ Yetim iCal senkron günlüğü satırı yok." . "\n";
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ iCal log yetim denetimi yapılamadı: " . $e->getMessage() . "\n";
+        }
+    }
+
     // 2c-5) Yetim kalıcı silme onayları — yedeği olmayan (geri yüklenmiş ama temizlenmemiş) onaylar.
     if (!in_array('pending_trash_purges', $missingTables, true) && !in_array('feature_delete_backups', $missingTables, true)) {
         $consistencyChecks++;
