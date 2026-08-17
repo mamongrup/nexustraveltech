@@ -55,21 +55,41 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
         $runQ = db()->prepare("SELECT to_char(r.created_at, 'YYYY-MM-DD') AS day, COUNT(*) AS runs, COUNT(*) FILTER (WHERE r.status = 'failed') AS fails, COALESCE(ROUND(AVG(r.duration_ms)), 0) AS avg_ms FROM scheduled_job_runs r JOIN scheduled_jobs j ON j.id = r.job_id WHERE j.code = 'nexus-health-check' AND r.created_at >= now() - interval '7 days' GROUP BY day ORDER BY day DESC");
         $runQ->execute();
         $runs = $runQ->fetchAll();
+        // Günün son koşusunun çıktısı — 'SONUÇ: N sorun' satırından günün gerçek sonucu (temiz / N sorun) ayrıştırılır.
+        $lastOut = [];
+        try {
+            $loQ = db()->prepare("SELECT DISTINCT ON (to_char(r.created_at,'YYYY-MM-DD')) to_char(r.created_at,'YYYY-MM-DD') AS day, r.output AS last_output FROM scheduled_job_runs r JOIN scheduled_jobs j ON j.id = r.job_id WHERE j.code = 'nexus-health-check' AND r.created_at >= now() - interval '7 days' ORDER BY to_char(r.created_at,'YYYY-MM-DD'), r.created_at DESC");
+            $loQ->execute();
+            foreach ($loQ->fetchAll() as $lo) $lastOut[(string) $lo['day']] = (string) ($lo['last_output'] ?? '');
+        } catch (Throwable $e) {}
         if ($runs) {
             $totalRuns = (int) array_sum(array_column($runs, 'runs'));
             $totalFails = (int) array_sum(array_column($runs, 'fails'));
+            $problemDays = 0;
             $runsBlock = '<h3 style="margin:18px 0 4px;font-size:14px">📅 Son 7 gün — sağlık kontrolü çalıştırmaları: ' . $totalRuns . ' çalıştırma, ' . $totalFails . ' hatalı' . '</h3>'
                 . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:12px">'
-                . '<tr><th style="text-align:left;padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Gün</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Çalışma</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Hata</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Ort. süre</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Durum</th></tr>';
+                . '<tr><th style="text-align:left;padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Gün</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Çalışma</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Hata</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Ort. süre</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Sonuç</th><th style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Durum</th></tr>';
             foreach ($runs as $rd) {
                 $fails = (int) $rd['fails'];
+                $out = $lastOut[(string) $rd['day']] ?? '';
+                $probs = -1;
+                if (preg_match('/SONUÇ:\s*(\d+)\s+sorun/i', $out, $m)) $probs = (int) $m[1];
+                elseif (mb_stripos($out, 'Tüm kontroller başarılı') !== false) $probs = 0;
+                if ($probs > 0) $problemDays++;
+                $resCell = $probs < 0
+                    ? '<span style="color:#64716d">—</span>'
+                    : ($probs > 0 ? '<b style="color:#8e2410">' . $probs . ' sorun</b>' : '<span style="color:#2e7d32">temiz</span>');
                 $runsBlock .= '<tr><td style="padding:6px 12px;border:1px solid #e1e5de">' . htmlspecialchars((string) $rd['day']) . '</td>'
                     . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center">' . (int) $rd['runs'] . '</td>'
                     . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center">' . ($fails > 0 ? '<b style="color:#8e2410">' . $fails . '</b>' : '<span style="color:#2e7d32">0</span>') . '</td>'
                     . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center">' . (int) $rd['avg_ms'] . ' ms</td>'
+                    . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center">' . $resCell . '</td>'
                     . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center">' . ($fails > 0 ? '✗' : '✓') . '</td></tr>';
             }
             $runsBlock .= '</table>';
+            $runsBlock .= $problemDays > 0
+                ? '<p style="margin:6px 0 0;font-size:12px;color:#8e2410"><b>' . $problemDays . '/7 gün sorunlu</b> — çıktıdaki SONUÇ satırına göre.</p>'
+                : '<p style="margin:6px 0 0;font-size:12px;color:#2e7d32">Son 7 günün tamamı temiz — çıktıdaki SONUÇ satırına göre.</p>';
         } else {
             $runsBlock = '<p style="margin-top:16px;color:#64716d;font-size:12px">📅 Son 7 günde kayıtlı sağlık kontrolü çalıştırması yok (zamanlayıcı geçmişi boş).</p>';
         }
