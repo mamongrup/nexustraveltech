@@ -45,6 +45,18 @@ function channel_webhook_apply(array $log, array $payload): array
     // Tanınmayan dış oda kodu: onay bekleyen eşleştirme önerisi oluştur (admin -> Kontrol merkezi; onay dağıtım merkezi bölüm 3).
     // Ayar kapalıysa eski güvenli varsayılan korunur: ilk aktif oda tipine yazılır (öneri oluşturulmaz).
     $autoMap = (bool) platform_setting('channel_webhook_auto_map', true);
+    // Reddedilen kod karalistesi — aynı kod tekrar gelirse yeniden öneri oluşturulmaz
+    // (manuel eşleştirme gerekir; elle kaydetmek karalisteyi otomatik temizler).
+    $blacklist = ['room' => [], 'plan' => []];
+    try {
+        $blSt = $pdo->prepare('SELECT code_type, external_code FROM channel_mapping_blacklist WHERE channel_connection_id=?');
+        $blSt->execute([$connId]);
+        foreach ($blSt->fetchAll() as $bl) {
+            $blacklist[(string) $bl['code_type']][(string) $bl['external_code']] = true;
+        }
+    } catch (Throwable $e) {
+        // Karaliste tablosu yoksa sessiz geç (migration bekliyor) — eski davranış korunur.
+    }
     $suggestSt = $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status, suggested_at, suggestion_count, suggestion_score)
         VALUES(?,?,?,?,?,'suggested',now(),1,?)
         ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET status='suggested', suggested_at=now(), suggestion_count=channel_room_mappings.suggestion_count+1, room_type_id=EXCLUDED.room_type_id, property_id=EXCLUDED.property_id, rate_plan_id=EXCLUDED.rate_plan_id, suggestion_score=EXCLUDED.suggestion_score");
@@ -175,9 +187,15 @@ function channel_webhook_apply(array $log, array $payload): array
     $supplierSt = $pdo->prepare('SELECT supplier_id FROM properties WHERE id=?');
     $supplierSt->execute([$propertyId]);
     $supplierId = (int) ($supplierSt->fetchColumn() ?: 0);
-    $roomResolve = function (string $ext, ?string $planHint = null) use ($roomMap, $bestRoom, $suggestSt, $planSuggestSt, $planMap, $bestPlanFor, $planNames, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $bestRoomFor, $roomByName): array {
+    $roomResolve = function (string $ext, ?string $planHint = null) use ($roomMap, $bestRoom, $blacklist, $suggestSt, $planSuggestSt, $planMap, $bestPlanFor, $planNames, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $bestRoomFor, $roomByName): array {
         if (isset($roomMap[$ext])) {
             return $roomMap[$ext];
+        }
+        // Reddedilmiş kod — yeniden öneri oluşturulmaz, veri yazılmaz (manuel eşleştirme gerekir).
+        if (isset($blacklist['room'][$ext])) {
+            $errors[] = 'blacklisted_room:' . $ext;
+            $roomMap[$ext] = ['room' => 0, 'plan' => null];
+            return ['room' => 0, 'plan' => null];
         }
         // Tanınmayan kod: ilk aktif oda tipine yazmak yerine isim benzerliğine göre EN İYİ
         // eşleşen oda tipine onay bekleyen öneri oluştur. Kanal plan ipucu (external_rate_plan_id)
@@ -219,7 +237,7 @@ function channel_webhook_apply(array $log, array $payload): array
     $suggestedPlanCount = 0;
     // Dış fiyat planı kodu çözümü: boşsa oda eşleştirmesindeki plan / ilk aktif plan;
     // tanınmayan kod (ayar açıkken) isim benzerliğine göre onay bekleyen öneri oluşturur, satır yazılmaz.
-    $planResolve = function (string $ext) use (&$planMap, $plansById, $planSuggestSt, $connId, $propertyId, $autoMap, &$suggestedPlanCount, $supplierId, $bestPlanFor, $planNames): array {
+    $planResolve = function (string $ext) use (&$planMap, $plansById, $planSuggestSt, $connId, $propertyId, $autoMap, &$suggestedPlanCount, $supplierId, $bestPlanFor, $planNames, $blacklist): array {
         if ($ext === '') {
             return ['skip' => false, 'plan' => null];
         }
@@ -229,6 +247,12 @@ function channel_webhook_apply(array $log, array $payload): array
                 return ['skip' => true, 'plan' => null]; // bu yükte aynı kod tekrar denendi
             }
             return ['skip' => false, 'plan' => isset($plansById[$pid]) ? $plansById[$pid] : null];
+        }
+        // Reddedilmiş fiyat planı kodu — yeniden öneri yok, veri yazılmaz.
+        if (isset($blacklist['plan'][$ext])) {
+            $errors[] = 'blacklisted_plan:' . $ext;
+            $planMap[$ext] = -1;
+            return ['skip' => true, 'plan' => null];
         }
         if ($autoMap) {
             $match = $bestPlanFor($ext);
