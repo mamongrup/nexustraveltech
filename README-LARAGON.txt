@@ -244,3 +244,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Kanal webhook uç noktası (api/channel-webhook) + dağıtım merkezinde kopyalanabilir webhook URL (migration 044: channel_connections.access_token)
 - Ozellik katalogu islemleri (ekle/sil/aktiflestir/tasi) admin_audit_logs'a kaydedilir; silme kaydinda etkilenen ilan sayisi + listesi bulunur
 - Katalog & siniflandirma yonetimi tek sayfada: otel tipleri/yildizlar/temalar (hotel_taxonomies) + villa/yat + otel olanak/aktivite/etkinlik kataloglari (ozellik-listeleri); eski otel-siniflandirma sayfasi yonlendirir, ceviriler ayri sayfada kalir
+- Kanal baglantisi error durumunda dagitim merkezinde kirmizi rozet + kirmizi kart + son hata metni gorunur
