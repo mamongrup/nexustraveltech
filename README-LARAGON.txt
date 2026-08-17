@@ -172,3 +172,6 @@ AYLIK SOHBET RAPORU (E-POSTA)
   ilanları gördüğü için bu adım oteli satışa açan tek kapıdır.
 - tedarikci/yapay-zeka.php: sabit "68/100" yerine tedarikçinin tüm ilanlarının gerçek ortalama hazırlık
   skorunu ve yayına hazır ilan sayısını gösterir.
+- otel-detay.php bölüm numaraları elle değil, $editorSections dizisinden türetilir (id=sec-XX, span numarası,
+  sol içindekiler menüsü). Yeni bölüm eklerken yalnızca diziye satır ekleyip bölüm bloğunu aynı sayaç
+  deseniyle (<?php $sec = $editorToc[$editorN++]; ?>) kopyalamak yeterlidir — numaralar bozulmaz.
