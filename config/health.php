@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/platform_settings.php';
+require_once __DIR__ . '/audit.php';
 
 function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false, bool $yes = false): array
 {
@@ -386,6 +387,8 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 $pdo->exec('DROP TABLE IF EXISTS \"' . $table . '\" CASCADE');
                 $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . implode(', ', $migs) . " zinciriyle yeniden kurulacak\n";
                 $dropped++;
+                // Onarım denetimi: ne zaman, hangi tablo, hangi migration zinciri yeniden kurulacak.
+                audit_log('health.repair_drop', 'schema', null, ['table' => $table, 'migrations' => $migs, 'missing_columns' => $missingCols, 'note' => 'yabancı şema düşürüldü; migration zinciri tabloyu yeniden kuracak'], 'health-check');
             } catch (Throwable $e) {
                 $out .= "✗ " . $table . " düşürülemedi: " . $e->getMessage() . "\n";
                 $errors[] = $table . ' onarılamadı: ' . $e->getMessage();
@@ -489,6 +492,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                     $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
                 }
                 $out .= '♻ ' . $base . ' yeniden uygulandı' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : '') . "\n";
+                audit_log('health.repair_rebuild', 'schema', null, ['migration' => $base, 'commit' => $commitNow !== '' ? substr($commitNow, 0, 7) : null, 'reapplied' => true, 'note' => 'onarım sonrası tablo yeniden kuruldu'], 'health-check');
             } else {
                 $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
                 $out .= '→ ' . $base . ' uygulandı' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : ' (commit hash bulunamadı)') . "\n";
