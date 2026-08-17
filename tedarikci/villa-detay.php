@@ -16,6 +16,7 @@ $isYacht = $listing['property_type'] === 'yacht';
 $unitLabel = $isYacht ? 'Kabin / yat' : 'Konaklama birimi';
 $details = json_decode($listing['product_details'] ?? '{}', true) ?: [];
 $error = '';
+$errorSec = ''; // form gönderimi sonrası yumuşak otomatik kaydırma hedefi (sec-XX)
 $notice = isset($_GET['published']) ? 'Ürün yayına alındı — acente müsaitlik sorgularında artık görünür.' : (isset($_GET['saved']) ? 'Detaylar kaydedildi.' : (isset($_GET['room_saved']) ? 'Yeni birim çoğaltıldı; özellik ve fiyatı kaydedildi.' : ''));
 
 // --- Yayına al ---
@@ -26,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'publi
     if (!$readiness['ready']) {
       $missing = array_map(fn($i) => $i['label'], array_filter($readiness['items'], fn($i) => !$i['ok']));
       $error = 'Ürün yayına alınamadı — eksik kalemler: ' . implode(', ', $missing) . '.';
+      $errorSec = (string) (listing_first_missing_section($listing) ?? '');
     } else {
       db()->prepare("UPDATE properties SET status='active' WHERE id=? AND supplier_id=?")->execute([$id, $u['supplier_id']]);
       record_audit_event('supplier', (int) $u['id'], 'publish', 'property', $id, ['name' => $listing['name']]);
@@ -82,17 +84,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['room_action'] ?? '') !== '
     $details['collection_model'] = $details['collection_model'] ?? 'agency_collects_deposit';
     if ($commission < 0 || $commission > 100 || $deposit < 0 || $deposit > 100 || !in_array($details['collection_model'], $allowedCollectionModels, true)) {
       $error = 'Komisyon, ön ödeme ve tahsilat modeli bilgilerini kontrol edin.';
+      $errorSec = 'sec-06';
     }
     $iban = preg_replace('/\s+/', '', strtoupper($details['iban'] ?? ''));
-    if ($iban !== '' && !preg_match('/^TR\d{24}$/', $iban)) $error = 'IBAN, TR ile başlayan 26 karakterlik geçerli bir Türkiye IBAN’ı olmalıdır.';
+    if ($iban !== '' && !preg_match('/^TR\d{24}$/', $iban)) { $error = 'IBAN, TR ile başlayan 26 karakterlik geçerli bir Türkiye IBAN’ı olmalıdır.'; $errorSec = 'sec-06'; }
     $details['iban'] = $iban;
     foreach (['cancellation_advance_days','cancellation_fee_rate','no_show_fee_rate','refund_processing_days'] as $key) {
       $value = (float)str_replace(',', '.', $details[$key] ?? '0');
       $max = $key === 'cancellation_advance_days' ? 365 : ($key === 'refund_processing_days' ? 60 : 100);
-      if ($value < 0 || $value > $max) $error = 'İptal ve iade oranlarını kontrol edin.';
+      if ($value < 0 || $value > $max) { $error = 'İptal ve iade oranlarını kontrol edin.'; $errorSec = 'sec-07'; }
     }
     $allowedRefundMethods = ['original_payment','bank_transfer','agency_settlement','voucher'];
-    if (($details['refund_method'] ?? '') !== '' && !in_array($details['refund_method'], $allowedRefundMethods, true)) $error = 'Geçerli bir iade yöntemi seçin.';
+    if (($details['refund_method'] ?? '') !== '' && !in_array($details['refund_method'], $allowedRefundMethods, true)) { $error = 'Geçerli bir iade yöntemi seçin.'; $errorSec = 'sec-07'; }
     if ($error === '') {
     try {
       $pdo = db(); $pdo->beginTransaction();
@@ -127,7 +130,8 @@ supply_start(htmlspecialchars($listing['name']).' · ilan detayları', $active_m
 <?php if($error): ?><p class="login-error"><?= htmlspecialchars($error) ?></p><?php endif; ?><?php if($notice): ?><p class="save-success">✓ <?= htmlspecialchars($notice) ?></p><?php endif; ?>
 <?php /* URL'deki #sec-XX çapasından bölüm adını çöz — sayfa üstüne "kaldığın yerden devam et" bandı. */ $kkSecMap = []; foreach ($editorToc as $kkT) { $kkSecMap[$kkT['id']] = $kkT['short']; } ?>
 <script>(function(){var map=<?= json_encode($kkSecMap, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) ?>;var m=(location.hash||'').match(/^#(sec-\d{2})$/);if(!m||!map[m[1]])return;var sec=document.getElementById(m[1]);if(!sec)return;var bar=document.createElement('div');bar.className='kk-resume';bar.setAttribute('role','status');bar.innerHTML='<span class="kk-resume-ico">↩</span><span class="kk-resume-txt"><b>Kaldığın yerden devam et:</b> '+map[m[1]]+'</span><button type="button" class="kk-resume-go">Git →</button><button type="button" class="kk-resume-x" title="Kapat" aria-label="Kapat">×</button>';var host=document.querySelector('.supply-top');(host?host.parentNode.insertBefore(bar,host.nextSibling):document.body.insertBefore(bar,document.body.firstChild));function jump(){sec.scrollIntoView({behavior:'smooth',block:'start'});sec.classList.add('kk-sec-flash');setTimeout(function(){sec.classList.remove('kk-sec-flash')},2400)}bar.querySelector('.kk-resume-go').addEventListener('click',jump);bar.querySelector('.kk-resume-x').addEventListener('click',function(){bar.remove()});if(location.hash===m[0]){sec.classList.add('kk-sec-flash');setTimeout(function(){sec.classList.remove('kk-sec-flash')},1800)}})();</script>
-<div class="hotel-editor-wrap"><aside class="editor-toc"><div class="editor-toc-head"><span>İÇİNDEKİLER</span><b><?= count($editorToc) ?> bölüm</b></div><nav><?php foreach ($editorToc as $t): ?><a href="#<?= $t['id'] ?>"><span><?= $t['no'] ?></span><?= htmlspecialchars($t['short']) ?></a><?php endforeach; ?></nav><p class="editor-toc-hint">Bölüme gitmek için tıklayın.</p></aside><form method="post" enctype="multipart/form-data" class="hotel-editor"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+<script>(function(){var f=document.querySelector('form.hotel-editor');if(!f)return;var es=f.getAttribute('data-error-sec');if(!es)return;var el=document.getElementById(es);if(!el)return;setTimeout(function(){el.scrollIntoView({behavior:'smooth',block:'start'});el.classList.add('kk-sec-flash');setTimeout(function(){el.classList.remove('kk-sec-flash')},2400)},150)})();</script>
+<div class="hotel-editor-wrap"><aside class="editor-toc"><div class="editor-toc-head"><span>İÇİNDEKİLER</span><b><?= count($editorToc) ?> bölüm</b></div><nav><?php foreach ($editorToc as $t): ?><a href="#<?= $t['id'] ?>"><span><?= $t['no'] ?></span><?= htmlspecialchars($t['short']) ?></a><?php endforeach; ?></nav><p class="editor-toc-hint">Bölüme gitmek için tıklayın.</p></aside><form method="post" enctype="multipart/form-data" class="hotel-editor" data-error-sec="<?= htmlspecialchars((string) $errorSec) ?>"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
 <?php $sec = $editorToc[$editorN++]; ?><section id="<?= $sec['id'] ?>" class="editor-section"><div class="editor-title"><span><?= $sec['no'] ?></span><div><h3><?= htmlspecialchars($sec['title']) ?></h3><p><?= $isYacht ? 'Kabin yapısı, kapasite, uzunluk ve liman bilgileri acente filtrelerini besler.' : 'Yatak odası, kapasite, havuz ve konum bilgileri acente filtrelerini besler.' ?></p></div></div><div class="editor-fields">
 <?php if ($isYacht): ?>
 <label>Kabin sayısı<input type="number" name="details[cabins]" min="0" value="<?= htmlspecialchars($details['cabins'] ?? '') ?>" placeholder="Örn. 4"></label>

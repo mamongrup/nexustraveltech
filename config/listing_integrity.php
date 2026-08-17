@@ -180,3 +180,36 @@ function listing_readiness(array $property): array
         'items' => $items,
     ];
 }
+
+/**
+ * İlk EKSİK çekirdek kalemin yerel düzenleyici bölümünü döndürür (örn. 'sec-05').
+ * Öncelik sırası karşı karşıya ekranıyla aynı: location → description → media →
+ * rooms → inventory → rates → villa/yat ekleri (pool/home_port/crew). Yalnızca
+ * otel/villa-detay'da yerel bölümü olan kalemler eşlenir; iCal/kanal/kural gibi
+ * başka sayfaya gidenler null döner. Hiç eksik yoksa null.
+ */
+function listing_first_missing_section(array $property): ?string
+{
+    $rd = listing_readiness($property);
+    $secMap = [
+        'location' => 'sec-01',
+        'description' => 'sec-02',
+        'media' => 'sec-05',
+        'rooms' => 'sec-04',
+        'inventory' => 'sec-04',
+        'rates' => 'sec-04',
+        'pool' => 'sec-01',
+        'home_port' => 'sec-01',
+        'crew' => 'sec-01',
+    ];
+    $order = ['location', 'description', 'media', 'rooms', 'inventory', 'rates', 'pool', 'home_port', 'crew'];
+    foreach ($order as $key) {
+        if (!isset($secMap[$key])) continue;
+        foreach ($rd['items'] as $it) {
+            if ($it['key'] === $key && empty($it['ok'])) {
+                return $secMap[$key];
+            }
+        }
+    }
+    return null;
+}
