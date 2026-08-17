@@ -60,6 +60,24 @@ try {
         }
     }
 
+    // Örnek webhook yükü — "Test et" sonucunda kopyalanabilir gösterilir (rates kapsamı,
+    // bu dış kod + iki örnek tarih; dış ürün kodu eşleştirmeden, birim seçiciden alınır).
+    $ext = '';
+    $pmSt = $pdo->prepare('SELECT external_property_id FROM channel_property_mappings WHERE channel_connection_id=? AND property_id=? LIMIT 1');
+    $pmSt->execute([$connId, $propId]);
+    if ($pmSt->fetch()) $ext = (string) $pmSt->fetchColumn();
+    $sampleCur = strtoupper(trim((string) ($_GET['currency'] ?? '')));
+    $sample = [
+        'scope' => 'rates',
+        'external_property_id' => $ext !== '' ? $ext : 'KANAL-OTEL-KODU',
+        'entries' => [
+            ['external_room_id' => $code, 'date' => date('Y-m-d', strtotime('+30 days')), 'price' => 185.50],
+            ['external_room_id' => $code, 'date' => date('Y-m-d', strtotime('+31 days')), 'price' => 195.00],
+        ],
+    ];
+    if (preg_match('/^[A-Z]{3}$/', $sampleCur)) $sample['currency'] = $sampleCur;
+    $sampleText = json_encode($sample, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+
     // Eşleştirme: bu dış kod hangi NEXUS oda tipine + plana bağlı?
     $map = $pdo->prepare('SELECT room_type_id, rate_plan_id, status, suggestion_score, suggestion_count FROM channel_room_mappings WHERE channel_connection_id=? AND property_id=? AND external_room_id=?');
     $map->execute([$connId, $propId, $code]);
@@ -82,6 +100,8 @@ try {
                 'message' => 'Bu kod henüz hiçbir oda tipine eşleştirilmedi. Webhook geldiğinde onay bekleyen öneri olarak kaydedilir ve veri YAZILMAZ — aşağıdaki formdan bir oda tipine yazıp kaydedin veya öneriyi yukarıdan onaylayın.',
                 'room' => null,
                 'plan' => null,
+                'sample' => $sample,
+                'sampleText' => $sampleText,
             ], JSON_UNESCAPED_UNICODE);
             exit;
         }
@@ -94,6 +114,8 @@ try {
             'message' => 'Eşleştirme yok; kontrol merkezi ayarı kapalı olduğu için webhook veriyi ilk aktif oda tipine ("' . htmlspecialchars((string) ($firstActiveRoom['name'] ?? '#')) . '") yazar. Kalıcı kontrol için bu kod bir oda tipine eşleştirin.',
             'room' => ['id' => (int) ($firstActiveRoom['id'] ?? 0), 'name' => (string) ($firstActiveRoom['name'] ?? '')],
             'plan' => $firstActivePlan ? ['id' => (int) $firstActivePlan['id'], 'name' => (string) $firstActivePlan['name'], 'currency' => (string) $firstActivePlan['currency']] : null,
+            'sample' => $sample,
+            'sampleText' => $sampleText,
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -111,6 +133,8 @@ try {
             'message' => 'Bu kod ' . $targetName . ' için onay bekleyen öneri durumunda' . ($score !== null ? ' (%' . $score . ' benzerlik)' : '') . ' — veri onaylanana kadar YAZILMAZ. Öneriyi onaylayın veya kodu başka oda tipine yazıp kaydedin.',
             'room' => ['id' => $target, 'name' => $targetName],
             'plan' => null,
+            'sample' => $sample,
+            'sampleText' => $sampleText,
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -161,6 +185,8 @@ try {
         'plan' => $plan ? ['id' => (int) $plan['id'], 'name' => (string) $plan['name'], 'currency' => $planCur] : null,
         'fx' => $fxNote,
         'issues' => $issues,
+        'sample' => $sample,
+        'sampleText' => $sampleText,
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     echo json_encode(['ok' => false, 'message' => 'Test sırasında hata: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
