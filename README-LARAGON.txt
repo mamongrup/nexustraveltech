@@ -245,3 +245,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Ozellik katalogu islemleri (ekle/sil/aktiflestir/tasi) admin_audit_logs'a kaydedilir; silme kaydinda etkilenen ilan sayisi + listesi bulunur
 - Katalog & siniflandirma yonetimi tek sayfada: otel tipleri/yildizlar/temalar (hotel_taxonomies) + villa/yat + otel olanak/aktivite/etkinlik kataloglari (ozellik-listeleri); eski otel-siniflandirma sayfasi yonlendirir, ceviriler ayri sayfada kalir
 - Kanal baglantisi error durumunda dagitim merkezinde kirmizi rozet + kirmizi kart + son hata metni gorunur
+- Zamanlayici gorevi nexus-channel-sync-job-alerts (varsayilan: 15 dakikada bir): channel_sync_jobs tablosunda son 24 saatte failed olan veya 30 dakikadan uzun running takili kalan isleri tarar, tedarikciye panel bildirimi (dagitim merkezine baglantili) ve admin_alert_email'e e-posta gonderir. Ayni tedarikci icin 24 saatte bir (notifications tipi channel_job_failed_{id}).
