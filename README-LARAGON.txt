@@ -259,3 +259,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Sari iCal rozetine senkron yasi eklendi: "son senkron N gun once" (listing_readiness age_days alani)
 - Tesisler kartindaki kirmizi eksik kalemler tiklanabilir: rooms/media/description/location/pool/liman/murettebat -> ilan duzenleyici, rates/inventory -> fiyat-kontenjan, ical -> iCal takvimler, rules -> satis-kurallari
 - ical-takvimler sayfasindaki disa aktarma URL alani artik kisa etiket (api/ical?token=XXXX...xxxx) + Kopyala butonuyla gosterilir; tam URL hover ve panoda
+- otel-detay sayfasinda "Entegrasyon" paneli: tedarikcinin kanal webhook adresleri kisa etiket + Kopyala ile gosterilir (dagitim merkezindeki desen)
