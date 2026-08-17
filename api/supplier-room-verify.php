@@ -124,6 +124,35 @@ try {
         $seriesOut[] = ['date' => $d, 'price' => $v['price'], 'allotment' => $v['allotment']];
     }
 
+    // fx_audit'ten bu girdi için kullanılan kur ve dönüştürülmüş fiyat.
+    // Çift satır bazlı özet yerine, doğrulanan girdinin kendi fiyatına uygulanan dönüşüm:
+    // girdinin (veya yükün) birimi fx_audit'teki 'from' ile eşleştirilir, kur o girdiden alınır.
+    $conversion = null;
+    $rowFx = json_decode((string) ($row['fx_audit'] ?? '[]'), true);
+    if (is_array($rowFx) && $entry !== null && array_key_exists('price', $entry)) {
+        $entryPrice = (float) $entry['price'];
+        $inCur = isset($entry['currency']) && is_string($entry['currency']) ? strtoupper($entry['currency']) : '';
+        if ($inCur === '' && is_array($payload)) {
+            $inCur = isset($payload['currency']) && is_string($payload['currency']) ? strtoupper($payload['currency']) : '';
+        }
+        foreach ($rowFx as $fx) {
+            if (!is_array($fx)) continue;
+            $fxFrom = strtoupper((string) ($fx['from'] ?? ''));
+            if ($inCur !== '' && $fxFrom !== '' && $fxFrom !== $inCur) continue;
+            $rate = (float) ($fx['rate'] ?? 0);
+            if ($entryPrice > 0 && $rate > 0) {
+                $conversion = [
+                    'from' => $fxFrom,
+                    'to' => strtoupper((string) ($fx['to'] ?? '')),
+                    'rate' => $rate,
+                    'original' => $entryPrice,
+                    'converted' => round($entryPrice * $rate, 2),
+                ];
+            }
+            break;
+        }
+    }
+
     echo json_encode([
         'ok' => true,
         'found' => true,
@@ -143,6 +172,7 @@ try {
             'skipped_rows' => $skippedRows,
         ],
         'fx_audit' => json_decode((string) ($row['fx_audit'] ?? '[]'), true) ?: [],
+        'conversion' => $conversion,
         'series' => $seriesOut,
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
