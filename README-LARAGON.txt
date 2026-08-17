@@ -119,7 +119,8 @@ ZAMANLAYICI ÇALIŞMA GEÇMİŞİ
   görevi admin_alert_email'e bildirir — aynı hata serisi için tek e-posta (scheduled_jobs.last_fail_alert_at);
   araya giren başarı bayrağı sıfırlar, sonraki seri tekrar uyarır. E-posta: görev, komut, zamanlama,
   son hata zamanı ve son çıktı özeti + geçmişe bağlantı. Ek olarak son 24 saatin hata özeti eklenir:
-  toplam hata sayısı ve en sık hata veren 3 görev (bağlam için).
+  toplam hata sayısı ve en sık hata veren 3 görev (bağlam için). Görev sonraki başarılı çalışmasında
+  kurtarılırsa admin'e bilgi e-postası gider (uyarı zamanı, kurtarma zamanı, kesinti süresi).
 - Günlük görev sağlık raporu (nexus-job-status-digest, her gün 09:00): tüm görevlerin son 24 saatteki
   durumunu tek tabloda e-postayla gönderir — hata verenler, vadesi geldiği halde çalışmayanlar ve nabız
   (tick) sağlığı uyarısı; her şey sorunsuzsa yeşil onay mesajı. Günde bir kez idempotent.

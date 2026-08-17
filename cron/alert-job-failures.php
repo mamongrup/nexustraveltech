@@ -35,18 +35,48 @@ $summaryHtml = '<h2 style="font-family:Arial;color:#10211f;margin:22px 0 6px">So
     . '<p style="font-family:Arial;color:#64716d;margin:0 0 8px">Toplam hata: <b style="color:' . ($totalErr24 > 0 ? '#b0301a' : '#0d7a4a') . '">' . $totalErr24 . '</b></p>'
     . ($summaryRows !== '' ? '<table style="border-collapse:collapse;font-family:Arial;color:#10211f;width:100%;max-width:480px"><tr><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">En sık hata veren görevler</th><th style="padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d;text-align:center">Hata</th></tr>' . $summaryRows . '</table>' : '<p style="font-family:Arial;color:#64716d">Son 24 saatte başka hata kaydı yok.</p>');
 
+$recovered = 0;
+
 foreach ($jobs as $job) {
     $q = $pdo->prepare('SELECT id,status,output,created_at FROM scheduled_job_runs WHERE job_id=? ORDER BY id DESC LIMIT 3');
     $q->execute([$job['id']]);
     $runs = $q->fetchAll();
-    if (count($runs) < 3) continue;
+    if ($runs === []) continue;
 
     $newest = $runs[0];
-    $oldest = $runs[2];
 
-    // Güncellik: en son çalışma 24 saat içinde olmalı (eski/uzak hatalar uyarı üretmez).
+    // Güncellik: en son çalışma 24 saat içinde olmalı (eski/uzak kayıtlar bildirim üretmez).
     if (strtotime((string) $newest['created_at']) < time() - 86400) continue;
 
+    // Kurtarma bildirimi: en son çalışma başarılı ve daha önce hata uyarısı gönderilmişti.
+    if ($newest['status'] === 'ok') {
+        if ($job['last_fail_alert_at'] !== null) {
+            $downSec = max(0, strtotime((string) $newest['created_at']) - strtotime((string) $job['last_fail_alert_at']));
+            $downTxt = $downSec >= 3600
+                ? (int) floor($downSec / 3600) . ' sa ' . (int) round(($downSec % 3600) / 60) . ' dk'
+                : max(1, (int) round($downSec / 60)) . ' dk';
+            $recBody = '<div style="font-family:Arial,sans-serif;color:#10211f">'
+                . '<h2 style="margin:0 0 6px">✅ Zamanlayıcı görevi kurtarıldı</h2>'
+                . '<table style="border-collapse:collapse;width:100%;max-width:560px;margin-top:10px">'
+                . '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de;color:#64716d">Görev</td><td style="padding:7px 12px;border-bottom:1px solid #e1e5de"><b>' . htmlspecialchars((string) $job['name']) . '</b></td></tr>'
+                . '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de;color:#64716d">Kod</td><td style="padding:7px 12px;border-bottom:1px solid #e1e5de"><code>' . htmlspecialchars((string) $job['code']) . '</code></td></tr>'
+                . '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de;color:#64716d">Uyarı zamanı</td><td style="padding:7px 12px;border-bottom:1px solid #e1e5de">' . htmlspecialchars((string) $job['last_fail_alert_at']) . '</td></tr>'
+                . '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de;color:#64716d">Kurtarma zamanı</td><td style="padding:7px 12px;border-bottom:1px solid #e1e5de">' . htmlspecialchars((string) $newest['created_at']) . '</td></tr>'
+                . '<tr><td style="padding:7px 12px;border-bottom:1px solid #e1e5de;color:#64716d">Kesinti süresi</td><td style="padding:7px 12px;border-bottom:1px solid #e1e5de"><b>' . $downTxt . '</b></td></tr>'
+                . '</table>'
+                . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/zamanlayici-gecmisi?job=' . (int) $job['id'] . '" style="color:#0d7a4a">Çalışma geçmişini görüntüle →</a></p>'
+                . '</div>';
+            queue_email($to, 'Zamanlayıcı kurtarıldı: ' . htmlspecialchars((string) $job['name']), $recBody, 'job_recovery_alert', (int) $job['id']);
+            $pdo->prepare('UPDATE scheduled_jobs SET last_fail_alert_at=NULL WHERE id=?')->execute([$job['id']]);
+            $recovered++;
+            echo 'Kurtarma bildirimi kuyruğa eklendi: ' . $job['code'] . ' (kesinti ' . $downTxt . ")\n";
+        }
+        continue;
+    }
+
+    // Ardışık 3 hata kontrolü (yalnızca en son çalışma hata ise).
+    if (count($runs) < 3) continue;
+    $oldest = $runs[2];
     $allError = true;
     foreach ($runs as $r) {
         if ($r['status'] !== 'error') {
@@ -54,14 +84,7 @@ foreach ($jobs as $job) {
             break;
         }
     }
-
-    if (!$allError) {
-        // Başarılı çalışma seriyi kırdı — bayrağı temizle (sonraki seri tekrar uyarabilir).
-        if ($job['last_fail_alert_at'] !== null) {
-            $pdo->prepare('UPDATE scheduled_jobs SET last_fail_alert_at=NULL WHERE id=?')->execute([$job['id']]);
-        }
-        continue;
-    }
+    if (!$allError) continue;
 
     // Aynı seri için daha önce uyarı gitti mi? (serinin en eski çalışmasından sonra)
     $already = $job['last_fail_alert_at'] !== null
@@ -88,4 +111,7 @@ foreach ($jobs as $job) {
     echo 'Uyarı kuyruğa eklendi: ' . $job['code'] . "\n";
 }
 
-echo $sent === 0 ? "Ardışık 3 hatası olan görev yok.\n" : "Toplam {$sent} uyarı kuyruğa eklendi.\n";
+$summary = [];
+if ($sent > 0) $summary[] = "{$sent} uyarı eklendi";
+if ($recovered > 0) $summary[] = "{$recovered} kurtarma bildirimi eklendi";
+echo $summary !== [] ? implode(', ', $summary) . ".\n" : "Ardışık 3 hatası veya kurtarma bildirimi yok.\n";
