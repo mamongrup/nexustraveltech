@@ -26,6 +26,7 @@ function scheduler_seed_defaults(): void
         ['nexus-job-fail-alerts', 'Görev hata uyarıları', 'cron/alert-job-failures.php', '*/15 * * * *'],
         ['nexus-ical-inactive-alerts', 'iCal bağlantısı pasif uyarıları', 'cron/alert-ical-inactive.php', '*/15 * * * *'],
         ['nexus-channel-inactive-alerts', 'Kanal dağıtımı pasif uyarıları', 'cron/alert-channel-inactive.php', '*/15 * * * *'],
+        ['nexus-ical-health-digest', 'iCal sağlık haftalık özeti', 'cron/send-ical-health-digest.php', '0 8 * * 1'],
         ['nexus-job-status-digest', 'Görev sağlık raporu', 'cron/send-job-status-digest.php', '0 9 * * *'],
     ];
     $q = db()->prepare('INSERT INTO scheduled_jobs(code,name,command,schedule) VALUES(?,?,?,?) ON CONFLICT(code) DO NOTHING');

@@ -230,3 +230,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - iCal senkron aşamalı uyarı şiddeti: 7–30 gün → sarı ⚠ (skoru düşürmez), 30+ gün veya hiç senkron yok →
   kırmızı ✗ eksik kalem (çekirdek, skoru düşürür ve yayına engel olur). Tedarikçi ana sayfasındaki
   iCal sağlık kartı da aynı üç durumu gösterir.
+- Zamanlayıcı görevi nexus-ical-health-digest (varsayılan: pazartesi 08:00): yayındaki villa/yat ilanlarının
+  haftalık iCal sağlık özetini admin_alert_email'e gönderir — 7+ gün eski senkron (sarı), 30+ gün/hiç yok
+  (kırmızı), pasif bağlantı durumlarını tek tabloda; sorun yoksa e-posta gitmez. Haftada bir kez
+  (platform ayarı ical_health_digest_week = ISO yıl-hafta) idempotent.
