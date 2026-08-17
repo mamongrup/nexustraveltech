@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/fx.php';
 require_once __DIR__ . '/platform_settings.php';
+require_once __DIR__ . '/mailer.php';
 
 /**
  * Kanal webhook yükünü NEXUS takvimi/fiyatlarına uygular.
@@ -189,7 +190,7 @@ function channel_webhook_apply(array $log, array $payload): array
     $supplierSt = $pdo->prepare('SELECT supplier_id FROM properties WHERE id=?');
     $supplierSt->execute([$propertyId]);
     $supplierId = (int) ($supplierSt->fetchColumn() ?: 0);
-    $roomResolve = function (string $ext, ?string $planHint = null) use ($roomMap, $bestRoom, $blacklist, $suggestSt, $planSuggestSt, $planMap, $bestPlanFor, $planNames, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $bestRoomFor, $roomByName): array {
+    $roomResolve = function (string $ext, ?string $planHint = null) use ($roomMap, $bestRoom, $blacklist, $suggestSt, $planSuggestSt, $planMap, $bestPlanFor, $planNames, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $bestRoomFor, $roomByName, $simThreshold): array {
         if (isset($roomMap[$ext])) {
             return $roomMap[$ext];
         }
@@ -204,6 +205,22 @@ function channel_webhook_apply(array $log, array $payload): array
         // varsa ilk aktif plan yerine ona göre plan önerisi de yapılır — onayda plan hazır gelir.
         if ($autoMap && $ext !== '') {
             $match = $bestRoomFor($ext);
+            if ($match['score'] <= 0) {
+                // Eşik altı benzerlik — öneri oluşturulmaz; ilk aktif oda tipine yazılır (eski davranış).
+                // Yöneticiye e-posta ile bilgi verilir; aynı kod bu yükte bir daha bildirilmez (cache).
+                $roomMap[$ext] = ['room' => $bestRoom, 'plan' => null];
+                $adminLow = trim((string) platform_setting('admin_alert_email', ''));
+                if ($adminLow !== '') {
+                    try {
+                        queue_email($adminLow, 'NEXUS: benzerlik eşiği altında oda kodu — öneri oluşturulmadı',
+                            '<p>Kanal webhook\'unda tanınmayan oda kodu eşiği aşamadı; öneri oluşturulmadı, veri ilk aktif oda tipine yazıldı.</p>'
+                            . '<p><b>Kod:</b> ' . htmlspecialchars($ext) . '<br><b>En iyi benzerlik:</b> %' . (int) $match['score'] . '<br><b>Yazılan oda tipi:</b> ' . htmlspecialchars((string) ($roomByName[$bestRoom] ?? ('#' . $bestRoom))) . '</p>'
+                            . '<p>Bağlantı #' . $connId . ' · Ürün #' . $propertyId . ' · Eşik: %' . (int) round($simThreshold * 100) . ' (kontrol merkezinden ayarlanır)</p>',
+                            'channel_low_score', (int) $connId);
+                    } catch (Throwable $e) {}
+                }
+                return $roomMap[$ext];
+            }
             $planId = null;
             $planHintTrim = trim((string) ($planHint ?? ''));
             if ($planHintTrim !== '') {
@@ -241,7 +258,7 @@ function channel_webhook_apply(array $log, array $payload): array
     $suggestedPlanCount = 0;
     // Dış fiyat planı kodu çözümü: boşsa oda eşleştirmesindeki plan / ilk aktif plan;
     // tanınmayan kod (ayar açıkken) isim benzerliğine göre onay bekleyen öneri oluşturur, satır yazılmaz.
-    $planResolve = function (string $ext) use (&$planMap, $plansById, $planSuggestSt, $connId, $propertyId, $autoMap, &$suggestedPlanCount, $supplierId, $bestPlanFor, $planNames, $blacklist): array {
+    $planResolve = function (string $ext) use (&$planMap, $plansById, $planSuggestSt, $connId, $propertyId, $autoMap, &$suggestedPlanCount, $supplierId, $bestPlanFor, $planNames, $blacklist, $simThreshold): array {
         if ($ext === '') {
             return ['skip' => false, 'plan' => null];
         }
@@ -260,6 +277,21 @@ function channel_webhook_apply(array $log, array $payload): array
         }
         if ($autoMap) {
             $match = $bestPlanFor($ext);
+            if ($match['score'] <= 0) {
+                // Eşik altı benzerlik — öneri oluşturulmaz; ilk aktif plan kullanılır (eski davranış).
+                $planMap[$ext] = -1; // bu yükte bir daha öneri/deneme yok
+                $adminLow = trim((string) platform_setting('admin_alert_email', ''));
+                if ($adminLow !== '') {
+                    try {
+                        queue_email($adminLow, 'NEXUS: benzerlik eşiği altında fiyat planı kodu — öneri oluşturulmadı',
+                            '<p>Kanal webhook\'unda tanınmayan fiyat planı kodu eşiği aşamadı; öneri oluşturulmadı, ilk aktif plan kullanıldı.</p>'
+                            . '<p><b>Kod:</b> ' . htmlspecialchars($ext) . '<br><b>En iyi benzerlik:</b> %' . (int) $match['score'] . '</p>'
+                            . '<p>Bağlantı #' . $connId . ' · Ürün #' . $propertyId . ' · Eşik: %' . (int) round($simThreshold * 100) . ' (kontrol merkezinden ayarlanır)</p>',
+                            'channel_low_score', (int) $connId);
+                    } catch (Throwable $e) {}
+                }
+                return ['skip' => false, 'plan' => null];
+            }
             $planSuggestSt->execute([$connId, $propertyId, $match['plan'], $ext, $match['score'] > 0 ? $match['score'] : null]);
             if ($supplierId > 0 && (int) $planSuggestSt->rowCount() === 1) {
                 // rowCount 1 = yeni INSERT (ilk kez); 2 = ON CONFLICT güncellemesi (tekrar) → bildirim yalnızca ilkinde.
