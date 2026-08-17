@@ -48,6 +48,20 @@ function listing_readiness(array $property): array
     $invSt->execute([$pid]);
     $inv = (int) $invSt->fetchColumn();
 
+    $isIcalType = in_array($property['property_type'] ?? '', ['villa', 'yacht'], true);
+    $icalActive = 0;
+    $icalEvents = 0;
+    if ($isIcalType) {
+        $icalSt = $pdo->prepare("SELECT COUNT(*) FROM ical_connections WHERE property_id=? AND status='active'");
+        $icalSt->execute([$pid]);
+        $icalActive = (int) $icalSt->fetchColumn();
+        $icalEvSt = $pdo->prepare("SELECT COUNT(*) FROM ical_events e JOIN ical_connections c ON c.id=e.ical_connection_id WHERE c.property_id=? AND e.starts_on >= current_date");
+        $icalEvSt->execute([$pid]);
+        $icalEvents = (int) $icalEvSt->fetchColumn();
+    }
+    $hasAvailability = $inv > 0 || ($isIcalType && $icalEvents > 0);
+    $invDetail = $inv > 0 ? $inv . ' gün' : ($isIcalType && $icalEvents > 0 ? $icalEvents . ' iCal bloğu' : ($isIcalType ? 'Takvim boş — Fiyat & kontenjan veya iCal içe aktarma ile doldurun' : 'Takvim boş — Fiyat & kontenjan sayfasından doldurun'));
+
     $details = json_decode((string) ($property['product_details'] ?? '{}'), true) ?: [];
     $description = trim((string) ($details['description'] ?? '')) !== '' || trim((string) ($details['short_description'] ?? '')) !== '';
     $location = trim((string) ($details['latitude'] ?? '')) !== '' && trim((string) ($details['longitude'] ?? '')) !== '';
@@ -55,16 +69,21 @@ function listing_readiness(array $property): array
     $items = [
         ['key' => 'rooms', 'label' => 'Aktif oda / birim tipi', 'ok' => $rooms > 0, 'detail' => $rooms > 0 ? $rooms . ' tip' : 'Oda tipi yok'],
         ['key' => 'rates', 'label' => 'Aktif fiyat planı', 'ok' => $rates > 0, 'detail' => $rates > 0 ? $rates . ' plan' : 'Fiyat planı yok'],
-        ['key' => 'inventory', 'label' => 'Gelecek tarihli fiyatlı takvim', 'ok' => $inv > 0, 'detail' => $inv > 0 ? $inv . ' gün' : 'Takvim boş — Fiyat & kontenjan sayfasından doldurun'],
+        ['key' => 'inventory', 'label' => 'Müsaitlik verisi', 'ok' => $hasAvailability, 'detail' => $invDetail],
         ['key' => 'media', 'label' => 'En az 1 görsel', 'ok' => $media > 0, 'detail' => $media > 0 ? $media . ' görsel' : 'Görsel yok'],
         ['key' => 'description', 'label' => 'Satış açıklaması', 'ok' => $description, 'detail' => $description ? 'Mevcut' : 'Açıklama yok'],
         ['key' => 'location', 'label' => 'Konum (enlem/boylam)', 'ok' => $location, 'detail' => $location ? 'Mevcut' : 'Konum girilmedi'],
-        ['key' => 'rules', 'label' => 'Satış / kontrat kuralı', 'ok' => $rules > 0, 'detail' => $rules > 0 ? $rules . ' kural' : 'Kural yok (opsiyonel)'],
     ];
 
-    // Skor yalnızca 6 çekirdek kalem üzerinden hesaplanır; satış kuralı opsiyoneldir
-    // ve paydaya girmez — böylece kuralsız ama yayına hazır ilan %100 gösterebilir.
-    $coreItems = array_values(array_filter($items, fn($i) => $i['key'] !== 'rules'));
+    if ($isIcalType) {
+        $items[] = ['key' => 'ical', 'label' => 'Aktif iCal bağlantısı', 'ok' => $icalActive > 0, 'detail' => $icalActive > 0 ? $icalActive . ' bağlantı' : 'Bağlantı yok (opsiyonel) — iCal takvimler sayfasından ekleyin'];
+    }
+    $items[] = ['key' => 'rules', 'label' => 'Satış / kontrat kuralı', 'ok' => $rules > 0, 'detail' => $rules > 0 ? $rules . ' kural' : 'Kural yok (opsiyonel)'];
+
+
+    // Skor yalnızca çekirdek kalemler üzerinden hesaplanır; satış kuralı ve iCal bağlantısı
+    // opsiyoneldir ve paydaya girmez — böylece kuralsız/iCal'sız ama yayına hazır ilan %100 gösterebilir.
+    $coreItems = array_values(array_filter($items, fn($i) => $i['key'] !== 'rules' && $i['key'] !== 'ical'));
     $coreOk = count(array_filter($coreItems, fn($i) => $i['ok']));
     return [
         'score' => (int) round($coreOk / count($coreItems) * 100),

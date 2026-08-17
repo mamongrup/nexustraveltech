@@ -186,3 +186,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
   uzunluk) POST tarafında yapılır. Villa/yat artık kurulumda birim tiplerini (tür bazlı özellik listesiyle)
   ve otomatik fiyat planını da oluşturur, oluşturma sonrası villa-detay sayfasına gider.
   Migration 041, mevcut veritabanındaki product_type_catalog villa/yat kayıtlarını bu şablonlarla günceller.
+- Hazırlık kontrolü villa/yat türlerine uyarlandı: "Müsaitlik verisi" kalemi NEXUS takvimindeki fiyatlı
+  gelecek günleri VEYA içe aktarılmış gelecek iCal bloklarını (ical_events) kabul eder; villa/yat'a özel
+  "Aktif iCal bağlantısı" kalemi eklenir (opsiyonel — skor paydasına girmez). iCal bağlantısı olmadan da
+  NEXUS takvimi doluysa ilan yayına alınabilir.
