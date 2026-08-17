@@ -159,7 +159,52 @@ function health_split_sql_top(string $block): array
     return $parts;
 }
 
-function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false, bool $yes = false, bool $orphans = false): array
+/**
+ * Bir tablonun CANLI şemasını PostgreSQL kataloglarından yeniden kurar:
+ * kolonlar (format_type ile tam tip, DEFAULT, identity, NOT NULL) + tüm kısıtlar
+ * (pg_get_constraintdef) + kısıta bağlı olmayan indeksler (pg_indexes).
+ * --repair --backup-schema ile düşürülecek BOŞ tabloların düşürmeden ÖNCE
+ * database/backups/schema-backup-*.sql dosyasına yazılması için kullanılır.
+ */
+function health_schema_dump_table(PDO $pdo, string $table): string
+{
+    $t = '"' . str_replace('"', '""', $table) . '"';
+    $sql = '-- Tablo: ' . $table . "\n";
+    $rows = $pdo->query("SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS ftype,
+            a.attnotnull, pg_get_expr(d.adbin, d.adrelid) AS defexpr, a.attidentity
+        FROM pg_attribute a
+        LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        WHERE a.attrelid = '" . $table . "'::regclass AND a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY a.attnum")->fetchAll();
+    $parts = [];
+    foreach ($rows as $c) {
+        $line = '    "' . str_replace('"', '""', (string) $c['attname']) . '" ' . $c['ftype'];
+        if (in_array((string) $c['attidentity'], ['a', 'd'], true)) {
+            $line .= ' GENERATED ' . ((string) $c['attidentity'] === 'a' ? 'ALWAYS' : 'BY DEFAULT') . ' AS IDENTITY';
+        } elseif ($c['defexpr'] !== null && (string) $c['defexpr'] !== '') {
+            $line .= ' DEFAULT ' . $c['defexpr'];
+        }
+        if ($c['attnotnull']) $line .= ' NOT NULL';
+        $parts[] = $line;
+    }
+    $cons = $pdo->query("SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = '" . $table . "'::regclass ORDER BY conname")->fetchAll();
+    foreach ($cons as $c) {
+        $parts[] = '    CONSTRAINT "' . str_replace('"', '""', (string) $c['conname']) . '" ' . $c['def'];
+    }
+    $idxs = $pdo->query("SELECT i.indexname, i.indexdef FROM pg_indexes i
+        WHERE i.schemaname = 'public' AND i.tablename = '" . $table . "'
+          AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexname::regclass AND c.conrelid = i.tablename::regclass)
+        ORDER BY i.indexname")->fetchAll();
+    $indexSql = '';
+    foreach ($idxs as $i) {
+        $indexSql .= $i['indexdef'] . ";\n";
+    }
+    $sql .= 'CREATE TABLE ' . $t . " (\n" . implode(",\n", $parts) . "\n);\n";
+    if ($indexSql !== '') $sql .= "\n" . $indexSql;
+    return $sql;
+}
+
+function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false, bool $yes = false, bool $orphans = false, bool $backupSchema = false): array
 {
     $pdo = db();
     $errors = [];
@@ -551,6 +596,8 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $dryRunDropped = 0;
         $skippedNonEmpty = [];
         $rebuiltTables = []; // gerçekten düşürülen tablolar — onarım sonrası doğrulama (3b) bunları kontrol eder
+        $backupFile = null; // --backup-schema: düşürülecek tabloların canlı şeması bu dosyaya yazılır
+        $backedUp = [];
         foreach ($repairMap as $table => $spec) {
             [$expected, $migs] = $spec;
             $expectedCols = is_array($expected) ? $expected : [$expected];
@@ -587,7 +634,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             }
             if ($dryRun) {
                 $dryRunDropped++;
-                $out .= "→ [dry-run] " . $table . " yabancı şemalı ve boş — DÜŞÜRÜLECEK; " . implode(', ', $migs) . " yeniden uygulanacak\n";
+                $out .= "→ [dry-run] " . $table . " yabancı şemalı ve boş — DÜŞÜRÜLECEK; " . implode(', ', $migs) . " yeniden uygulanacak" . ($backupSchema ? ' (--backup-schema: düşürmeden önce canlı şema yedeklenecek)' : '') . "\n";
                 continue;
             }
             // Gerçek modda onay — otomasyon (cron) --yes ister; etkileşimli terminal yoksa ve
@@ -605,13 +652,36 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                     continue;
                 }
             }
+            // --backup-schema: düşürmeden ÖNCE canlı şemayı yedek dosyasına yaz.
+            // Yedek, düşürme başarısız olsa bile kalır (güvenli yön). Yalnızca gerçek
+            // düşürme anında yazılır; --dry-run hiçbir dosya oluşturmaz.
+            if ($backupSchema) {
+                if ($backupFile === null) {
+                    $backupDir = dirname(__DIR__) . '/database/backups';
+                    if (!is_dir($backupDir)) @mkdir($backupDir, 0775, true);
+                    $backupFile = $backupDir . '/schema-backup-' . gmdate('Ymd-His') . '.sql';
+                    @file_put_contents($backupFile, "-- NEXUS health-check --repair şema yedeği\n"
+                        . '-- Zaman: ' . gmdate('c') . "\n"
+                        . "-- Mod: --repair --backup-schema\n\n", FILE_APPEND);
+                }
+                $dump = '-- Düşürülecek: ' . $table . ' (eksik kolon: ' . implode(', ', $missingCols) . ')' . "\n"
+                    . '-- Zincir: ' . implode(', ', $migs) . "\n";
+                try {
+                    $dump .= health_schema_dump_table($pdo, $table) . "\n";
+                } catch (Throwable $e) {
+                    $dump .= '-- (canlı şema çözümlenemedi: ' . $e->getMessage() . ')' . "\n";
+                }
+                @file_put_contents($backupFile, $dump, FILE_APPEND);
+                $out .= "→ " . $table . " şeması yedeklendi → " . $backupFile . "\n";
+                $backedUp[] = $table;
+            }
             try {
                 $pdo->exec('DROP TABLE IF EXISTS "' . $table . '" CASCADE');
                 $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . implode(', ', $migs) . " zinciriyle yeniden kurulacak\n";
                 $dropped++;
                 $rebuiltTables[$table] = ['cols' => $expectedCols, 'migs' => $migs]; // 3b doğrulaması + denetimi için kaydet
                 // Onarım denetimi: ne zaman, hangi tablo, hangi migration zinciri yeniden kurulacak.
-                audit_log('health.repair_drop', 'schema', null, ['table' => $table, 'migrations' => $migs, 'missing_columns' => $missingCols, 'note' => 'yabancı şema düşürüldü; migration zinciri tabloyu yeniden kuracak'], 'health-check');
+                audit_log('health.repair_drop', 'schema', null, ['table' => $table, 'migrations' => $migs, 'missing_columns' => $missingCols, 'backup' => $backupFile !== null ? basename((string) $backupFile) : null, 'note' => 'yabancı şema düşürüldü; migration zinciri tabloyu yeniden kuracak'], 'health-check');
             } catch (Throwable $e) {
                 $out .= "✗ " . $table . " düşürülemedi: " . $e->getMessage() . "\n";
                 $errors[] = $table . ' onarılamadı: ' . $e->getMessage();
@@ -672,6 +742,11 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             try {
                 audit_log('health.repair_stale_confirm', 'schema', null, ['confirmed' => rtrim($staleConfirmNote, ';'), 'ran_at' => gmdate('c'), 'note' => 'hedefi dolmuş onay bekleyen öneriler otomatik confirmed yapıldı'], 'health-check');
             } catch (Throwable $e) {}
+        }
+        if ($backupSchema && $backupFile !== null) {
+            $out .= "✓ Şema yedeği: " . $backupFile . " (" . count($backedUp) . " tablo: " . implode(', ', $backedUp) . ")\n";
+        } elseif ($backupSchema) {
+            $out .= "· --backup-schema etkin ama düşürülecek tablo yok — yedek dosyası oluşturulmadı.\n";
         }
         $out .= $dryRun
             ? ($dryRunDropped === 0 && $skippedNonEmpty === []

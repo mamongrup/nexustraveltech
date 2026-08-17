@@ -12,6 +12,10 @@ declare(strict_types=1);
 //     otomatik yeniler (64 hex, benzersiz); --dry-run ile yalnızca önizleme
 //   /opt/plesk/php/8.5/bin/php scripts/health-check.php --orphans  → yetim/uyumsuz eşleştirmeleri sayı yerine
 //     satır satır ayrıntılı gösterir (ID + dış kod + sorun türü) — oda/plan/ürün eşleştirmeleri
+//   /opt/plesk/php/8.5/bin/php scripts/health-check.php --repair --backup-schema --yes
+//     → Düşürülecek BOŞ tabloların CANLI şemasını (kolonlar + kısıtlar + indeksler) düşürmeden
+//     ÖNCE database/backups/schema-backup-*.sql dosyasına yazar. --dry-run ile birlikte
+//     kullanılırsa yedek yazılmaz (hiçbir şey düşürülmez). Yedek yolu çıktıda ve denetimde görünür.
 //
 // Bölümler: 1) tablolar   2) kritik kolonlar   2b) kanal token doğrulama   3) migration durumu   4) ortam.
 // Herhangi bir sorun varsa çıkış kodu 1. Mantık, günlük zamanlayıcı göreviyle
@@ -24,7 +28,8 @@ $repair = in_array('--repair', $argv ?? [], true);
 $fix = in_array('--fix', $argv ?? [], true);
 $yes = in_array('--yes', $argv ?? [], true);
 $orphans = in_array('--orphans', $argv ?? [], true);
-$result = health_check_run($dryRun, $repair, $fix, $yes, $orphans);
+$backupSchema = in_array('--backup-schema', $argv ?? [], true);
+$result = health_check_run($dryRun, $repair, $fix, $yes, $orphans, $backupSchema);
 
 echo $result['output'];
 exit($result['ok'] ? 0 : 1);

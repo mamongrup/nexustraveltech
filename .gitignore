@@ -21,3 +21,6 @@ Thumbs.db
 
 # Local tool state
 .freebuff/
+
+# Schema backups from health-check --repair --backup-schema
+database/backups/
