@@ -161,21 +161,49 @@ function listing_readiness(array $property): array
     $items[] = ['key' => 'rules', 'label' => 'Satış / kontrat kuralı', 'ok' => $rules > 0, 'detail' => $rules > 0 ? $rules . ' kural' : 'Kural yok (opsiyonel)'];
 
 
-    // Skor yalnızca çekirdek kalemler üzerinden hesaplanır; satış kuralı opsiyoneldir ve paydaya girmez.
-    // Villa/yat için iCal bağlantısı çekirdektedir (en az bir aktif içe/dışa aktarma zorunlu);
-    // tür bazlı kalemler (pool / home_port / crew) de çekirdektedir.
+    // Ağırlıklı skor: görsel/konum gibi kritik kalemler daha yüksek puan taşır.
+    // Base ağırlıklar tür bazında normalize edilerek toplam tam 100'e çekilir;
+    // satış kuralı opsiyoneldir ve paydaya girmez.
+    $baseWeights = [
+        'rooms' => 3, 'rates' => 3, 'inventory' => 3,
+        'media' => 4, 'description' => 2, 'location' => 3,   // görsel + konum en ağır
+        'channel' => 2, 'pool' => 2, 'home_port' => 2, 'crew' => 1, 'ical' => 2,
+    ];
     $coreItems = array_values(array_filter($items, fn($i) => $i['key'] !== 'rules'));
     $coreTotal = count($coreItems);
-    // Her kalemin skora katkısı: 100 / çekirdek kalem sayısı (rules opsiyonel, katılmaz).
-    $weight = $coreTotal > 0 ? (int) round(100 / $coreTotal) : 0;
+    $totalBase = 0;
+    foreach ($coreItems as $ci) $totalBase += $baseWeights[$ci['key']] ?? 2;
+    // Her kalemin ağırlığı: 100 * base / toplam; kalan puanlar en büyük kesirli kısma dağıtılır.
+    $wFloor = [];
+    $wFrac = [];
+    $floorSum = 0;
+    foreach ($coreItems as $ci) {
+        $k = $ci['key'];
+        $v = $totalBase > 0 ? 100 * ($baseWeights[$k] ?? 2) / $totalBase : 0;
+        $wFloor[$k] = (int) floor($v);
+        $wFrac[$k] = $v - $wFloor[$k];
+        $floorSum += $wFloor[$k];
+    }
+    $rem = 100 - $floorSum;
+    if ($rem > 0) {
+        arsort($wFrac); // PHP 8.0+ kararlı — eşit kesirlerde ekleme sırası korunur
+        $n = 0;
+        foreach (array_keys($wFrac) as $k) {
+            if ($n >= $rem) break;
+            $wFloor[$k]++;
+            $n++;
+        }
+    }
     $coreOk = 0;
+    $scoreSum = 0;
     foreach ($items as &$it) {
-        $it['weight'] = ($it['key'] === 'rules') ? 0 : $weight;
-        if ($it['key'] !== 'rules' && !empty($it['ok'])) $coreOk++;
+        if ($it['key'] === 'rules') { $it['weight'] = 0; continue; }
+        $it['weight'] = $wFloor[$it['key']] ?? 0;
+        if (!empty($it['ok'])) { $coreOk++; $scoreSum += $it['weight']; }
     }
     unset($it);
     return [
-        'score' => $coreTotal > 0 ? (int) round($coreOk / $coreTotal * 100) : 0,
+        'score' => $coreTotal > 0 ? min(100, $scoreSum) : 0,
         'ready' => $coreOk === $coreTotal,
         // Skor kartı özeti: tamamlanan ve kalan çekirdek kalem sayıları.
         // Kalanların tamamı bitince skor her zaman 100 olur (tüm çekirdekler ✓).
