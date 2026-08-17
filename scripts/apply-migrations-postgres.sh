@@ -36,7 +36,11 @@ for f in database/migrations/*.sql; do
     echo "· atlandı (kayıtlı): $base"
     continue
   fi
-  if sudo -u postgres psql -d "$APP_DB_NAME" -v ON_ERROR_STOP=1 -q -f "$f" >/dev/null 2>&1; then
+  # @APP_DB_USER@ yer tutucusunu secrets'tan okunan app kullanıcısıyla değiştir
+  # (GRANT + ALTER ... OWNER satırları — sahiplikten bağımsız çalışma).
+  MIG_TMP=$(mktemp)
+  sed "s/@APP_DB_USER@/$APP_DB_USER/g" "$f" > "$MIG_TMP"
+  if sudo -u postgres psql -d "$APP_DB_NAME" -v ON_ERROR_STOP=1 -q -f "$MIG_TMP" >/dev/null 2>&1; then
     OK=$((OK+1))
     echo "✓ $base"
     if [ -n "$GIT_HASH" ]; then COMMIT_VAL="'$GIT_HASH'"; else COMMIT_VAL='NULL'; fi
@@ -45,6 +49,7 @@ for f in database/migrations/*.sql; do
     FAIL=$((FAIL+1)); FAILED_FILES="$FAILED_FILES $base"
     echo "✗ $base — hata (atlandı, sonrakiyle devam; tam hata için: sudo -u postgres psql -d $APP_DB_NAME -v ON_ERROR_STOP=1 -f database/migrations/$base)"
   fi
+  rm -f "$MIG_TMP"
 done
 echo "Uygulanan: $OK · Başarısız: $FAIL${FAILED_FILES:+ → $FAILED_FILES}"
 

@@ -32,3 +32,14 @@ CREATE TABLE IF NOT EXISTS admin_alerts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_admin_alerts_open ON admin_alerts(is_read, created_at DESC);
+
+-- ============================================================
+-- Sahiplikten bağımsız çalışma (GRANT + ALTER OWNER):
+-- Migration ister postgres ister app kullanıcısıyla koşsun, dokunulan tablolar
+-- app DB kullanıcısına devredilir. @APP_DB_USER@ yer tutucusu çalıştırıcı
+-- tarafından secrets.php deki db_user ile değiştirilir (config/health.php ve
+-- scripts/apply-migrations-postgres.sh); elle psql -f ile koşarsanız önce
+-- sed "s/@APP_DB_USER@/<kullanici>/g" ile değiştirin.
+GRANT ALL PRIVILEGES ON TABLE supplier_verifications, admin_alerts TO @APP_DB_USER@;
+ALTER TABLE supplier_verifications OWNER TO @APP_DB_USER@;
+ALTER TABLE admin_alerts OWNER TO @APP_DB_USER@;

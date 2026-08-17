@@ -8,3 +8,20 @@ CREATE TABLE IF NOT EXISTS channel_sync_jobs (id BIGINT GENERATED ALWAYS AS IDEN
 CREATE TABLE IF NOT EXISTS supplier_settlements (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,supplier_id BIGINT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,booking_id BIGINT REFERENCES supplier_bookings(id) ON DELETE SET NULL,transaction_type VARCHAR(30) NOT NULL,status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','paid','failed','refunded')),gross_amount NUMERIC(12,2) NOT NULL,commission_amount NUMERIC(12,2) NOT NULL DEFAULT 0,net_amount NUMERIC(12,2) NOT NULL,currency CHAR(3) NOT NULL DEFAULT 'EUR',due_date DATE,paid_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS idx_channel_sync_jobs_status ON channel_sync_jobs(status,created_at);
 CREATE INDEX IF NOT EXISTS idx_settlements_supplier_status ON supplier_settlements(supplier_id,status,due_date);
+
+-- ============================================================
+-- Sahiplikten bağımsız çalışma (GRANT + ALTER OWNER):
+-- Migration ister postgres ister app kullanıcısıyla koşsun, dokunulan tablolar
+-- app DB kullanıcısına devredilir. @APP_DB_USER@ yer tutucusu çalıştırıcı
+-- tarafından secrets.php deki db_user ile değiştirilir (config/health.php ve
+-- scripts/apply-migrations-postgres.sh); elle psql -f ile koşarsanız önce
+-- sed "s/@APP_DB_USER@/<kullanici>/g" ile değiştirin.
+GRANT ALL PRIVILEGES ON TABLE agencies, agency_users, agency_api_keys, agency_customers, agency_quotes, channel_connections, channel_sync_jobs, supplier_settlements TO @APP_DB_USER@;
+ALTER TABLE agencies OWNER TO @APP_DB_USER@;
+ALTER TABLE agency_users OWNER TO @APP_DB_USER@;
+ALTER TABLE agency_api_keys OWNER TO @APP_DB_USER@;
+ALTER TABLE agency_customers OWNER TO @APP_DB_USER@;
+ALTER TABLE agency_quotes OWNER TO @APP_DB_USER@;
+ALTER TABLE channel_connections OWNER TO @APP_DB_USER@;
+ALTER TABLE channel_sync_jobs OWNER TO @APP_DB_USER@;
+ALTER TABLE supplier_settlements OWNER TO @APP_DB_USER@;

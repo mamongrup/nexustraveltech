@@ -19,3 +19,14 @@ CREATE TABLE IF NOT EXISTS product_verification_requirements (
   sort_order SMALLINT NOT NULL DEFAULT 100,
   UNIQUE(product_type_code,requirement_code)
 );
+
+-- ============================================================
+-- Sahiplikten bağımsız çalışma (GRANT + ALTER OWNER):
+-- Migration ister postgres ister app kullanıcısıyla koşsun, dokunulan tablolar
+-- app DB kullanıcısına devredilir. @APP_DB_USER@ yer tutucusu çalıştırıcı
+-- tarafından secrets.php deki db_user ile değiştirilir (config/health.php ve
+-- scripts/apply-migrations-postgres.sh); elle psql -f ile koşarsanız önce
+-- sed "s/@APP_DB_USER@/<kullanici>/g" ile değiştirin.
+GRANT ALL PRIVILEGES ON TABLE product_type_catalog, product_verification_requirements TO @APP_DB_USER@;
+ALTER TABLE product_type_catalog OWNER TO @APP_DB_USER@;
+ALTER TABLE product_verification_requirements OWNER TO @APP_DB_USER@;

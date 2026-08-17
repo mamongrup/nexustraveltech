@@ -5,3 +5,18 @@ CREATE TABLE IF NOT EXISTS sms_packages (id BIGINT GENERATED ALWAYS AS IDENTITY 
 CREATE TABLE IF NOT EXISTS sms_entitlements (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,account_type VARCHAR(16) NOT NULL CHECK(account_type IN ('supplier','agency')),account_id BIGINT NOT NULL,is_enabled BOOLEAN NOT NULL DEFAULT false,credits_remaining INTEGER NOT NULL DEFAULT 0,updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(account_type,account_id));
 CREATE TABLE IF NOT EXISTS sms_outbox (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,account_type VARCHAR(16) NOT NULL,account_id BIGINT NOT NULL,phone VARCHAR(40) NOT NULL,message TEXT NOT NULL,related_type VARCHAR(40),related_id BIGINT,status VARCHAR(16) NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','sent','failed','skipped')),provider_message_id VARCHAR(120),error_message TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),sent_at TIMESTAMPTZ);
 CREATE INDEX IF NOT EXISTS idx_sms_outbox_status ON sms_outbox(status,created_at);
+
+-- ============================================================
+-- Sahiplikten bağımsız çalışma (GRANT + ALTER OWNER):
+-- Migration ister postgres ister app kullanıcısıyla koşsun, dokunulan tablolar
+-- app DB kullanıcısına devredilir. @APP_DB_USER@ yer tutucusu çalıştırıcı
+-- tarafından secrets.php deki db_user ile değiştirilir (config/health.php ve
+-- scripts/apply-migrations-postgres.sh); elle psql -f ile koşarsanız önce
+-- sed "s/@APP_DB_USER@/<kullanici>/g" ile değiştirin.
+GRANT ALL PRIVILEGES ON TABLE supplier_discounts, agency_discount_requests, agency_special_rates, sms_packages, sms_entitlements, sms_outbox TO @APP_DB_USER@;
+ALTER TABLE supplier_discounts OWNER TO @APP_DB_USER@;
+ALTER TABLE agency_discount_requests OWNER TO @APP_DB_USER@;
+ALTER TABLE agency_special_rates OWNER TO @APP_DB_USER@;
+ALTER TABLE sms_packages OWNER TO @APP_DB_USER@;
+ALTER TABLE sms_entitlements OWNER TO @APP_DB_USER@;
+ALTER TABLE sms_outbox OWNER TO @APP_DB_USER@;

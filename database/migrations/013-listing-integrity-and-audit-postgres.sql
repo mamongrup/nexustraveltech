@@ -28,3 +28,16 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type,entity_id,created_at DESC);
+
+-- ============================================================
+-- Sahiplikten bağımsız çalışma (GRANT + ALTER OWNER):
+-- Migration ister postgres ister app kullanıcısıyla koşsun, dokunulan tablolar
+-- app DB kullanıcısına devredilir. @APP_DB_USER@ yer tutucusu çalıştırıcı
+-- tarafından secrets.php deki db_user ile değiştirilir (config/health.php ve
+-- scripts/apply-migrations-postgres.sh); elle psql -f ile koşarsanız önce
+-- sed "s/@APP_DB_USER@/<kullanici>/g" ile değiştirin.
+GRANT ALL PRIVILEGES ON TABLE duplicate_listing_signals, audit_logs, properties, property_media TO @APP_DB_USER@;
+ALTER TABLE duplicate_listing_signals OWNER TO @APP_DB_USER@;
+ALTER TABLE audit_logs OWNER TO @APP_DB_USER@;
+ALTER TABLE properties OWNER TO @APP_DB_USER@;
+ALTER TABLE property_media OWNER TO @APP_DB_USER@;

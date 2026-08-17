@@ -20,3 +20,14 @@ CREATE TABLE IF NOT EXISTS property_content_translations (
   UNIQUE(property_id, entity_type, entity_id, locale, field_key)
 );
 CREATE INDEX IF NOT EXISTS idx_content_translation_lookup ON property_content_translations(property_id, entity_type, entity_id, locale);
+
+-- ============================================================
+-- Sahiplikten bağımsız çalışma (GRANT + ALTER OWNER):
+-- Migration ister postgres ister app kullanıcısıyla koşsun, dokunulan tablolar
+-- app DB kullanıcısına devredilir. @APP_DB_USER@ yer tutucusu çalıştırıcı
+-- tarafından secrets.php deki db_user ile değiştirilir (config/health.php ve
+-- scripts/apply-migrations-postgres.sh); elle psql -f ile koşarsanız önce
+-- sed "s/@APP_DB_USER@/<kullanici>/g" ile değiştirin.
+GRANT ALL PRIVILEGES ON TABLE property_content_translations, property_media TO @APP_DB_USER@;
+ALTER TABLE property_content_translations OWNER TO @APP_DB_USER@;
+ALTER TABLE property_media OWNER TO @APP_DB_USER@;

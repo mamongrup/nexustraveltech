@@ -964,6 +964,9 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             continue;
         }
         $sql = (string) file_get_contents($file);
+        // Sahiplikten bağımsız çalışma: migration'lardaki @APP_DB_USER@ yer tutucusu
+        // secrets.php'deki db_user ile değiştirilir (GRANT + ALTER ... OWNER satırları).
+        $sql = str_replace('@APP_DB_USER@', (string) (db_config()['db_user'] ?? 'nexus_app'), $sql);
         try {
             $pdo->beginTransaction();
             $pdo->exec($sql);

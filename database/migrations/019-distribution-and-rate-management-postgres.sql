@@ -26,3 +26,17 @@ CREATE TABLE IF NOT EXISTS rate_rules (
  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,supplier_id BIGINT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,property_id BIGINT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,rate_plan_id BIGINT REFERENCES rate_plans(id) ON DELETE SET NULL,name VARCHAR(190) NOT NULL,rule_type VARCHAR(20) NOT NULL CHECK(rule_type IN ('percent','fixed','derived','promo_code','free_night')),value NUMERIC(12,2) NOT NULL DEFAULT 0,currency CHAR(3),booking_start DATE,booking_end DATE,stay_start DATE,stay_end DATE,min_advance_days SMALLINT NOT NULL DEFAULT 0,markets JSONB NOT NULL DEFAULT '[]'::jsonb,nationalities JSONB NOT NULL DEFAULT '[]'::jsonb,channels JSONB NOT NULL DEFAULT '[]'::jsonb,occupancy_rules JSONB NOT NULL DEFAULT '{}'::jsonb,promo_code VARCHAR(60),priority SMALLINT NOT NULL DEFAULT 100,stackable BOOLEAN NOT NULL DEFAULT false,status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','inactive')),created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_rate_rules_property_dates ON rate_rules(property_id,status,stay_start,stay_end);
+
+-- ============================================================
+-- Sahiplikten bağımsız çalışma (GRANT + ALTER OWNER):
+-- Migration ister postgres ister app kullanıcısıyla koşsun, dokunulan tablolar
+-- app DB kullanıcısına devredilir. @APP_DB_USER@ yer tutucusu çalıştırıcı
+-- tarafından secrets.php deki db_user ile değiştirilir (config/health.php ve
+-- scripts/apply-migrations-postgres.sh); elle psql -f ile koşarsanız önce
+-- sed "s/@APP_DB_USER@/<kullanici>/g" ile değiştirin.
+GRANT ALL PRIVILEGES ON TABLE channel_property_mappings, channel_sync_logs, rate_rules, channel_connections, inventory_calendar TO @APP_DB_USER@;
+ALTER TABLE channel_property_mappings OWNER TO @APP_DB_USER@;
+ALTER TABLE channel_sync_logs OWNER TO @APP_DB_USER@;
+ALTER TABLE rate_rules OWNER TO @APP_DB_USER@;
+ALTER TABLE channel_connections OWNER TO @APP_DB_USER@;
+ALTER TABLE inventory_calendar OWNER TO @APP_DB_USER@;
