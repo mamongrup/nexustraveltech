@@ -38,6 +38,71 @@ function feature_trash_purge_approved(array $featureIds, PDO $pdo): array
 }
 
 /**
+ * Çöp kutusundaki bir özelliği geri yükler: katalog satırı + ilan bölümleri + denetim kaydı.
+ * Özellik artık çöp kutusunda değilse hata mesajı döner.
+ *
+ * @return array{ok: bool, message: string, label: string, affected_count: int, restored_sections: int}
+ */
+function feature_restore(int $featureId, ?PDO $pdo = null, string $source = 'panel'): array
+{
+    $pdo = $pdo ?? db();
+    $bkQ = $pdo->prepare('SELECT * FROM feature_delete_backups WHERE feature_id=? ORDER BY id DESC LIMIT 1');
+    $bkQ->execute([$featureId]);
+    $bk = $bkQ->fetch();
+    if (!$bk) {
+        return ['ok' => false, 'message' => 'Geri alınacak kayıt bulunamadı.', 'label' => '', 'affected_count' => 0, 'restored_sections' => 0];
+    }
+    $label = (string) $bk['label'];
+    // 1) Katalog satırını geri getir (aynı id korunur, sıralama/durum geri gelir).
+    $up = $pdo->prepare('UPDATE property_feature_catalog SET deleted_at=NULL, group_label=?, label=?, sort_order=?, is_active=? WHERE id=?');
+    $up->execute([$bk['group_label'] ?? '', $label, (int) ($bk['sort_order'] ?? 100), (bool) ($bk['is_active'] ?? true), $featureId]);
+    if ($up->rowCount() === 0) {
+        $chk = $pdo->prepare('SELECT deleted_at FROM property_feature_catalog WHERE id=?');
+        $chk->execute([$featureId]);
+        $cur = $chk->fetch();
+        if (!$cur || $cur['deleted_at'] === null) {
+            return ['ok' => false, 'message' => 'Özellik artık çöp kutusunda değil (geri yüklenmiş veya kalıcı silinmiş).', 'label' => $label, 'affected_count' => 0, 'restored_sections' => 0];
+        }
+    }
+    // Bekleyen "son şans" onay kaydını temizle (özellik çöp kutusundan çıktı).
+    $pdo->prepare('DELETE FROM pending_trash_purges WHERE feature_id=?')->execute([$featureId]);
+    // 2) İlanlara bölüm bazlı geri ekle (zaten varsa dokunma).
+    $props = json_decode((string) ($bk['affected_properties'] ?? '[]'), true) ?: [];
+    $restored = 0;
+    $restoreSp = $pdo->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{service_pricing}', COALESCE(product_details -> 'service_pricing', '{}'::jsonb) || jsonb_build_object(?, ?), true) WHERE id=? AND NOT jsonb_exists(COALESCE(product_details -> 'service_pricing', '{}'::jsonb), ?)");
+    $restoreSec = [
+        'amenities' => $pdo->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{amenities}', COALESCE(product_details -> 'amenities', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'amenities', '[]'::jsonb) @> ?::jsonb)"),
+        'activities' => $pdo->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{activities}', COALESCE(product_details -> 'activities', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'activities', '[]'::jsonb) @> ?::jsonb)"),
+        'events' => $pdo->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{events}', COALESCE(product_details -> 'events', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'events', '[]'::jsonb) @> ?::jsonb)"),
+    ];
+    foreach ($props as $pr) {
+        $sections = is_array($pr['sections'] ?? null) ? $pr['sections'] : [];
+        $pid = (int) ($pr['id'] ?? 0);
+        $price = (string) ($pr['price'] ?? '');
+        foreach ($sections as $sec) {
+            if ($sec === 'service_pricing') {
+                $restoreSp->execute([$label, $price, $pid, $label]);
+                $restored++;
+            } elseif (isset($restoreSec[$sec])) {
+                $restoreSec[$sec]->execute([json_encode([$label]), $pid, json_encode([$label])]);
+                $restored++;
+            }
+        }
+    }
+    if (function_exists('audit_log')) {
+        audit_log('feature.restore', 'feature_catalog', $featureId, [
+            'code' => $bk['code'] ?? '',
+            'label' => $label,
+            'affected_count' => count($props),
+            'affected_listing_ids' => array_map(fn($pr) => (int) ($pr['id'] ?? 0), $props),
+            'restored_sections' => $restored,
+            'source' => $source,
+        ]);
+    }
+    return ['ok' => true, 'message' => 'Özellik geri yüklendi' . ($props ? ' ve ' . count($props) . ' ilana tekrar eklendi.' : '.'), 'label' => $label, 'affected_count' => count($props), 'restored_sections' => $restored];
+}
+
+/**
  * Varsayılan villa/yat özellik listeleri — tablo yoksa veya boşsa kullanılır.
  *
  * @return array<string, array<int, string>>|array<int, string>
