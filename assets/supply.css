@@ -154,3 +154,11 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .room-unmatched h3{margin:0 0 6px;font-size:13px;color:#10211f}
 .room-unmatched-codes{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .room-unmatched-chip{background:#eef1ea;border:1px solid #d5dccf;border-radius:20px;padding:3px 10px;font-size:11px;color:#3d4a46;font-family:"DM Mono",monospace}
+
+/* --- oda eslestirme satiri tek tikla dogrulama --- */
+.room-verify-btn{border:1px solid #b7c4bd;background:#fff;border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;color:#10211f;white-space:nowrap}
+.room-verify-btn:hover{background:#eef1ea}
+.room-map-wrap{margin:8px 0}
+.room-map-wrap .room-verify-result{margin-left:230px}
+.room-verify-result{margin:2px 0 10px;font-size:11px;line-height:1.5;color:#3d4a46;background:#eef1ea;border-radius:6px;padding:6px 10px}
+.room-verify-result.err{background:#fde8e2;color:#8e2410}
