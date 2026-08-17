@@ -67,7 +67,11 @@ try {
     }
     // Migration durumu — schema_migrations takibi (health-check ile aynı; burada uygulanmaz, yalnızca raporlanır).
     $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())");
-    $appliedSet=array_flip($pdo->query('SELECT file FROM schema_migrations')->fetchAll(PDO::FETCH_COLUMN));
+    $hasCommitCol=(bool)$pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='schema_migrations' AND column_name='commit_hash'")->fetchColumn();
+    if(!$hasCommitCol)$pdo->exec('ALTER TABLE schema_migrations ADD COLUMN commit_hash CHAR(40)');
+    $appliedRows=$pdo->query('SELECT file, commit_hash FROM schema_migrations')->fetchAll();
+    $appliedMap=[];
+    foreach($appliedRows as $ar)$appliedMap[$ar['file']]=(string)($ar['commit_hash']??'');
     $migrationFiles=glob(__DIR__.'/../database/migrations/*-postgres.sql');
     sort($migrationFiles);
     $legacyFiles=glob(__DIR__.'/../database/migrations/[0-9][0-9][0-9]-*.sql');
@@ -76,7 +80,7 @@ try {
     $pendingMigs=[];
     foreach($migrationFiles as $file){
         $base=basename($file);
-        if(isset($appliedSet[$base])){echo '  ✓ '.$base.PHP_EOL;}
+        if(isset($appliedMap[$base])){echo '  ✓ '.$base.($appliedMap[$base]!==''?' @ '.substr($appliedMap[$base],0,7):'').PHP_EOL;}
         else{$pendingMigs[]=$base;echo '  ⏳ '.$base.' (bekliyor — scripts/health-check.php uygular)'.PHP_EOL;}
     }
     if($pendingMigs)echo '  NOT: '.count($pendingMigs).' migration bekliyor: '.implode(', ',$pendingMigs).PHP_EOL;

@@ -87,7 +87,30 @@ function health_check_run(bool $dryRun = false): array
 
     // --- 3) Migration durumu ---
     $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())");
-    $appliedSet = array_flip($pdo->query('SELECT file FROM schema_migrations')->fetchAll(PDO::FETCH_COLUMN));
+    // commit_hash kolonu (git commit birlestirmesi) — eski kopyalarda eksikse ekle.
+    $hasCommitCol = (bool) $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='schema_migrations' AND column_name='commit_hash'")->fetchColumn();
+    if (!$hasCommitCol) {
+        $pdo->exec('ALTER TABLE schema_migrations ADD COLUMN commit_hash CHAR(40)');
+    }
+    // Güncel commit hash'i — git HEAD dosyasından (alt süreç yok, güvenilir).
+    $commitNow = '';
+    $headFile = dirname(__DIR__) . '/.git/HEAD';
+    if (is_readable($headFile)) {
+        $head = trim((string) file_get_contents($headFile));
+        if (str_starts_with($head, 'ref: ')) {
+            $refPath = dirname(__DIR__) . '/.git/' . substr($head, 5);
+            if (is_readable($refPath)) {
+                $commitNow = trim((string) file_get_contents($refPath));
+            }
+        } elseif (preg_match('/^[a-f0-9]{40}$/', $head)) {
+            $commitNow = $head;
+        }
+    }
+    $appliedRows = $pdo->query('SELECT file, commit_hash FROM schema_migrations')->fetchAll();
+    $appliedMap = [];
+    foreach ($appliedRows as $ar) {
+        $appliedMap[$ar['file']] = (string) ($ar['commit_hash'] ?? '');
+    }
 
     $migrationFiles = glob(__DIR__ . '/../database/migrations/*-postgres.sql');
     sort($migrationFiles);
@@ -99,8 +122,8 @@ function health_check_run(bool $dryRun = false): array
     $failedMigs = [];
     foreach ($migrationFiles as $file) {
         $base = basename($file);
-        if (isset($appliedSet[$base])) {
-            $out .= '✓ ' . $base . "\n";
+        if (isset($appliedMap[$base])) {
+            $out .= '✓ ' . $base . (($appliedMap[$base] !== '') ? ' @ ' . substr($appliedMap[$base], 0, 7) : '') . "\n";
             continue;
         }
         if ($dryRun) {
@@ -113,8 +136,8 @@ function health_check_run(bool $dryRun = false): array
             $pdo->beginTransaction();
             $pdo->exec($sql);
             $pdo->commit();
-            $pdo->prepare('INSERT INTO schema_migrations(file) VALUES(?)')->execute([$base]);
-            $out .= '→ ' . $base . " uygulandı\n";
+            $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
+            $out .= '→ ' . $base . ' uygulandı' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : ' (commit hash bulunamadı)') . "\n";
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             $out .= '✗ ' . $base . ' — ' . $e->getMessage() . "\n";
