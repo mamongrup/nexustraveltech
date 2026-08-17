@@ -242,3 +242,15 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 
 /* ── Öneri satırı: test sonrası onay vurgusu ── */
 .room-approve-ready{border-color:#2e7d4f!important;background:#e8f5ec!important;color:#1e5a37!important;box-shadow:0 0 0 2px rgba(46,125,79,.15)}
+
+/* ── Bölüm 3: toplu test butonu + özet rapor ── */
+.room-bulk-test-btn{margin:0 0 10px 12px;border:1px solid #b9c4bd;background:#fff;border-radius:10px;padding:5px 14px;font:inherit;font-size:13px;cursor:pointer;color:#24503a;font-weight:600}
+.room-bulk-test-btn:hover{background:#e6f0e9}
+.room-bulk-test-btn:disabled{opacity:.6;cursor:wait}
+.room-bulk-test-result{margin:10px 0 14px;border:1px solid #c9d3cc;border-radius:8px;background:#fbfdfb;padding:12px;font-size:13px}
+.room-bulk-summary{margin-bottom:8px;color:#3c4a44}
+.rbt-ok{color:#1e5a37;font-weight:600}
+.rbt-err{color:#8e2410;font-weight:600}
+.room-bulk-table{border-collapse:collapse;width:100%;font-size:12px}
+.room-bulk-table th,.room-bulk-table td{padding:6px 10px;border:1px solid #e1e5de;text-align:left;vertical-align:top}
+.room-bulk-table th{background:#eef2ee;color:#3c4a44}
