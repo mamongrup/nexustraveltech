@@ -296,3 +296,5 @@ AYLIK SOHBET RAPORU (E-POSTA)
   alinabilirlik suresi (feature_trash_ttl_days, varsayilan 30 gun) dolan silinmis
   ozellikleri yedekleriyle birlikte kalici olarak siler; feature.trash_purge denetim
   kaydina yazilir, admin_alert_email tanimliysa yoneticiye bilgi epostasi gider.
+- Ozellik silme onay ekrani: etki listesi tedarikci bazinda gruplanir (sirket adi +
+  ilan sayisi + ilanlar) — hangi tedarikcinin kac ilani etkilendigi tek bakista gorulur.
