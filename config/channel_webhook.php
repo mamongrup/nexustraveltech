@@ -45,9 +45,9 @@ function channel_webhook_apply(array $log, array $payload): array
     // Tanınmayan dış oda kodu: onay bekleyen eşleştirme önerisi oluştur (admin -> Kontrol merkezi; onay dağıtım merkezi bölüm 3).
     // Ayar kapalıysa eski güvenli varsayılan korunur: ilk aktif oda tipine yazılır (öneri oluşturulmaz).
     $autoMap = (bool) platform_setting('channel_webhook_auto_map', true);
-    $suggestSt = $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, external_room_id, status, suggested_at, suggestion_count, suggestion_score)
-        VALUES(?,?,?,?,'suggested',now(),1,?)
-        ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET status='suggested', suggested_at=now(), suggestion_count=channel_room_mappings.suggestion_count+1, room_type_id=EXCLUDED.room_type_id, property_id=EXCLUDED.property_id, suggestion_score=EXCLUDED.suggestion_score");
+    $suggestSt = $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status, suggested_at, suggestion_count, suggestion_score)
+        VALUES(?,?,?,?,?,'suggested',now(),1,?)
+        ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET status='suggested', suggested_at=now(), suggestion_count=channel_room_mappings.suggestion_count+1, room_type_id=EXCLUDED.room_type_id, property_id=EXCLUDED.property_id, rate_plan_id=EXCLUDED.rate_plan_id, suggestion_score=EXCLUDED.suggestion_score");
     // Tanınmayan dış fiyat planı kodu: oda eşleştirmesiyle aynı onay akışı — status='suggested' satır,
     // dağıtım merkezi bölüm 3'ten onaylanır/reddedilir; onaylanana kadar o koda ait satır yazılmaz.
     $planSuggestSt = $pdo->prepare("INSERT INTO channel_rate_plan_mappings(channel_connection_id, property_id, rate_plan_id, external_rate_plan_id, status, suggested_at, suggestion_count, suggestion_score)
@@ -175,19 +175,38 @@ function channel_webhook_apply(array $log, array $payload): array
     $supplierSt = $pdo->prepare('SELECT supplier_id FROM properties WHERE id=?');
     $supplierSt->execute([$propertyId]);
     $supplierId = (int) ($supplierSt->fetchColumn() ?: 0);
-    $roomResolve = function (string $ext) use ($roomMap, $fallbackRoom, $suggestSt, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $bestRoomFor, $roomByName): array {
+    $roomResolve = function (string $ext, ?string $planHint = null) use ($roomMap, $fallbackRoom, $suggestSt, $planSuggestSt, $planMap, $bestPlanFor, $planNames, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $bestRoomFor, $roomByName): array {
         if (isset($roomMap[$ext])) {
             return $roomMap[$ext];
         }
         // Tanınmayan kod: ilk aktif oda tipine yazmak yerine isim benzerliğine göre EN İYİ
-        // eşleşen oda tipine onay bekleyen öneri oluştur.
+        // eşleşen oda tipine onay bekleyen öneri oluştur. Kanal plan ipucu (external_rate_plan_id)
+        // varsa ilk aktif plan yerine ona göre plan önerisi de yapılır — onayda plan hazır gelir.
         if ($autoMap && $ext !== '') {
             $match = $bestRoomFor($ext);
-            $suggestSt->execute([$connId, $propertyId, $match['room'], $ext, $match['score'] > 0 ? $match['score'] : null]);
+            $planId = null;
+            $planHintTrim = trim((string) ($planHint ?? ''));
+            if ($planHintTrim !== '') {
+                if (array_key_exists($planHintTrim, $planMap)) {
+                    $planId = $planMap[$planHintTrim]; // onaylı plan eşleşmesi — doğrudan kullan
+                } else {
+                    $planMatch = $bestPlanFor($planHintTrim);
+                    $planId = (int) $planMatch['plan'];
+                    // Plan eşleşmesi de öneri olarak kaydedilir — dağıtım merkezi bölüm 3'te
+                    // "onay bekleyen fiyat planı" listesinde görünür, onaylanana kadar yazılmaz.
+                    $planSuggestSt->execute([$connId, $propertyId, $planId, $planHintTrim, $planMatch['score'] > 0 ? $planMatch['score'] : null]);
+                    if ($supplierId > 0 && (int) $planSuggestSt->rowCount() === 1) {
+                        notify_supplier_users($supplierId, 'channel_plan_mapping_suggestion',
+                            'Kanal webhook\'undan tanınmayan fiyat planı kodu geldi: "' . $planHintTrim . '" → "' . ($planNames[$planId] ?? ('#' . $planId)) . '" için eşleştirme önerisi oluşturuldu (oda önerisiyle birlikte). Veri onaylanana kadar yazılmadı.',
+                            '/nexustraveltech/tedarikci/dagitim-merkezi');
+                    }
+                }
+            }
+            $suggestSt->execute([$connId, $propertyId, $match['room'], $planId, $ext, $match['score'] > 0 ? $match['score'] : null]);
             if ($supplierId > 0 && (int) $suggestSt->rowCount() === 1) {
                 // rowCount 1 = yeni INSERT (ilk kez); 2 = ON CONFLICT güncellemesi (tekrar) → bildirim yalnızca ilkinde.
                 notify_supplier_users($supplierId, 'channel_mapping_suggestion',
-                    'Kanal webhook\'undan tanınmayan oda kodu geldi: "' . $ext . '" → "' . ($roomByName[$match['room']] ?? ('#' . $match['room'])) . '" için eşleştirme önerisi oluşturuldu' . ($match['score'] > 0 ? ' (benzerlik %' . $match['score'] . ')' : '') . '. Veri onaylanana kadar yazılmadı.',
+                    'Kanal webhook\'undan tanınmayan oda kodu geldi: "' . $ext . '" → "' . ($roomByName[$match['room']] ?? ('#' . $match['room'])) . '" için eşleştirme önerisi oluşturuldu' . ($match['score'] > 0 ? ' (benzerlik %' . $match['score'] . ')' : '') . ($planId ? ' · plan: ' . ($planNames[$planId] ?? ('#' . $planId)) : '') . '. Veri onaylanana kadar yazılmadı.',
                     '/nexustraveltech/tedarikci/dagitim-merkezi');
             }
             $roomMap[$ext] = ['room' => 0, 'plan' => null]; // bu yükte bir daha deneme
@@ -268,7 +287,7 @@ function channel_webhook_apply(array $log, array $payload): array
             continue;
         }
 
-        $roomRes = $roomResolve((string) ($entry['external_room_id'] ?? ''));
+        $roomRes = $roomResolve((string) ($entry['external_room_id'] ?? ''), (string) ($entry['external_rate_plan_id'] ?? ''));
         $roomId = $roomRes['room'];
         if ($roomId <= 0) {
             continue; // onay bekleyen öneri — veri yazılmadı
