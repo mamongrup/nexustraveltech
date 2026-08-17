@@ -235,3 +235,5 @@ AYLIK SOHBET RAPORU (E-POSTA)
   (kırmızı), pasif bağlantı durumlarını tek tabloda; sorun yoksa e-posta gitmez. Haftada bir kez
   (platform ayarı ical_health_digest_week = ISO yıl-hafta) idempotent.
 - Tesisler kartındaki sarı uyarı rozetleri tıklanabilir: iCal uyarısına tıklayınca iCal takvimler sayfası açılır.
+- iCal URL kopyalama satırlarında görünen etiket kısaltılır (api/ical?token=XXXX…xxxx); tam URL hover
+  ipucunda, kopyalama verisi değişmez.
