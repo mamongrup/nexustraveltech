@@ -113,6 +113,14 @@ function readiness_tooltips(): array
             'ar' => 'قواعد البيع',
             'fr' => 'Règles de vente',
         ],
+        'channel' => [
+            'tr' => 'Dağıtım merkezi — kanal bağlantısı',
+            'en' => 'Distribution center — channel connection',
+            'de' => 'Vertriebszentrum — Kanalverbindung',
+            'ru' => 'Центр дистрибуции — подключение канала',
+            'ar' => 'مركز التوزيع — اتصال القناة',
+            'fr' => 'Centre de distribution — connexion de canal',
+        ],
     ];
     $anchors = [
         'rooms' => 'sec-04',

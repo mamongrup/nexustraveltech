@@ -132,6 +132,27 @@ function listing_readiness(array $property): array
                             : $icalActive . ' bağlantı · son senkron güncel'))),
         ];
     }
+    // Kanal dağıtımı: bu ürüne eşleştirilmiş bir kanal bağlantısı pasifse (error/paused/
+    // draft/disabled) kırmızı kalem — skoru düşürür. Hiç kanal bağlantısı yoksa nötr (✓,
+    // opsiyonel); pasif bir bağlantı varsa Doldur → dağıtım merkezi #channel-retry-<id>
+    // adresine gider (iCal #sync deseniyle aynı odaklama).
+    $badChannels = [];
+    $channelCount = 0;
+    $channelSt = $pdo->prepare("SELECT c.id, c.status, c.display_name FROM channel_property_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE m.property_id=? ORDER BY c.id");
+    $channelSt->execute([$pid]);
+    foreach ($channelSt->fetchAll() as $ch) {
+        $channelCount++;
+        if ((string) ($ch['status'] ?? '') !== 'active') $badChannels[] = $ch;
+    }
+    $items[] = [
+        'key' => 'channel',
+        'label' => 'Kanal bağlantısı aktif',
+        'ok' => $badChannels === [],
+        'first_bad_id' => $badChannels !== [] ? (int) $badChannels[0]['id'] : 0,
+        'detail' => $badChannels !== []
+            ? count($badChannels) . ' pasif kanal: ' . implode(', ', array_map(fn($b) => (string) $b['display_name'] . ' (' . (string) $b['status'] . ')', $badChannels))
+            : ($channelCount > 0 ? $channelCount . ' kanal aktif' : 'Kanal bağlantısı kurulmamış (opsiyonel)'),
+    ];
     $items[] = ['key' => 'rules', 'label' => 'Satış / kontrat kuralı', 'ok' => $rules > 0, 'detail' => $rules > 0 ? $rules . ' kural' : 'Kural yok (opsiyonel)'];
 
 
