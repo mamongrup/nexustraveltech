@@ -17,6 +17,14 @@ try {
     }
 
     $pdo = db();
+    // Tedarikçinin "son N işlem" penceresi (dağıtım merkezindeki seen_codes_window ayarı; varsayılan 30, 5-500).
+    $seenWindow = 30;
+    try {
+        $spq = $pdo->prepare('SELECT settings FROM suppliers WHERE id=?');
+        $spq->execute([(int) $user['supplier_id']]);
+        $sPrefs = json_decode((string) ($spq->fetchColumn() ?: '{}'), true);
+        if (is_array($sPrefs)) $seenWindow = max(5, min(500, (int) ($sPrefs['seen_codes_window'] ?? 30)));
+    } catch (Throwable $e) {}
     $check = $pdo->prepare('SELECT id FROM channel_connections WHERE id=? AND supplier_id=?');
     $check->execute([$connId, (int) $user['supplier_id']]);
     if (!$check->fetch()) {
@@ -59,7 +67,8 @@ try {
     $resp = json_decode((string) ($row['response_payload'] ?? '{}'), true);
     $resp = is_array($resp) ? $resp : [];
 
-    // Uygulanan/atlanan satır özeti: kodun geçtiği son 30 pull işlemindeki satır sayıları.
+    // Uygulanan/atlanan satır özeti: kodun geçtiği son N pull işlemindeki satır sayıları
+    // (N = tedarikçinin seen_codes_window ayarı; varsayılan 30).
     // Kod onaylı bir eşleşmeye sahipse başarılı işlemlerdeki satırlar "uygulandı";
     // başarısız işlemlerdeki ve eşlenmemiş/öneri durumundaki satırlar "atlandı".
     $codeMapped = false;
@@ -70,9 +79,9 @@ try {
         "SELECT id, status, request_payload FROM channel_sync_logs
          WHERE channel_connection_id=? AND property_id=? AND direction='pull'
            AND request_payload->'entries' @> ?::jsonb
-         ORDER BY id DESC LIMIT 30"
+         ORDER BY id DESC LIMIT ?"
     );
-    $sumQ->execute([$connId, $propId, $needle]);
+    $sumQ->execute([$connId, $propId, $needle, $seenWindow]);
     $appliedRows = 0;
     $skippedRows = 0;
     $logsSeen = 0;
