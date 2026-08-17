@@ -110,6 +110,28 @@ if ($adminName !== '') {
     $params[] = '%' . $adminName . '%';
 }
 $sql .= ' ORDER BY id DESC';
+// İşlem türüne göre okunabilir Türkçe açıklama (CSV'nin 'Açıklama' sütunu için).
+$describeAction = function (array $r): string {
+    $details = json_decode((string) ($r['details'] ?? ''), true);
+    if (!is_array($details)) $details = [];
+    $label = (string) ($details['label'] ?? '');
+    $n = (int) ($details['count'] ?? $details['affected_count'] ?? 0);
+    switch ((string) $r['action']) {
+        case 'feature.add': return 'Özellik eklendi' . ($label !== '' ? ': ' . $label : '');
+        case 'feature.delete': return 'Özellik silindi' . ($n > 0 ? ' — ' . $n . ' ilan' : '');
+        case 'feature.restore': return 'Özellik geri yüklendi' . ($n > 0 ? ' — ' . $n . ' ilana eklendi' : '');
+        case 'feature.toggle': return 'Özellik durumu değişti' . ($label !== '' ? ': ' . $label : '') . (isset($details['is_active']) ? ' (' . ($details['is_active'] ? 'aktif' : 'pasif') . ')' : '');
+        case 'feature.move': return 'Özellik sıralaması değişti' . ($label !== '' ? ': ' . $label : '');
+        case 'feature.bulk_delete': return 'Toplu silme' . ($n > 0 ? ' — ' . $n . ' özellik' : '') . (($details['affected_count'] ?? 0) > 0 ? ', ' . (int) $details['affected_count'] . ' ilan' : '');
+        case 'feature.bulk_activate': return 'Toplu aktifleştirme' . ($n > 0 ? ' — ' . $n . ' özellik' : '') . (($details['skipped_unchanged'] ?? 0) > 0 ? ' (' . (int) $details['skipped_unchanged'] . ' atlandı)' : '');
+        case 'feature.bulk_deactivate': return 'Toplu pasifleştirme' . ($n > 0 ? ' — ' . $n . ' özellik' : '') . (($details['skipped_unchanged'] ?? 0) > 0 ? ' (' . (int) $details['skipped_unchanged'] . ' atlandı)' : '');
+        case 'feature.trash_purge': return 'Çöp kutusu temizliği' . ($n > 0 ? ' — ' . $n . ' özellik' : '');
+        case 'scheduler.toggle': return 'Zamanlayıcı durumu değişti';
+        case 'scheduler.edit': return 'Zamanlayıcı düzenlendi';
+        case 'scheduler.run': return 'Zamanlayıcı elle çalıştırıldı' . (isset($details['status']) ? ' (' . (string) $details['status'] . ')' : '');
+        default: return (string) $r['action'] . ($label !== '' ? ': ' . $label : '');
+    }
+};
 // CSV dışa aktarma — aynı filtrelerle (limit yok).
 $wantCsv = (string) ($_GET['export'] ?? '') === 'csv';
 if ($wantCsv) {
@@ -117,7 +139,7 @@ if ($wantCsv) {
     header('Content-Disposition: attachment; filename="denetim-kayitlari.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF"); // BOM — Excel'de Türkçe karakterler
-    fputcsv($out, ['Zaman', 'Yönetici', 'İşlem', 'Nesne', 'Nesne ID', 'Detay (JSON)', 'IP']);
+    fputcsv($out, ['Zaman', 'Yönetici', 'İşlem', 'Açıklama', 'Nesne', 'Nesne ID', 'Detay (JSON)', 'IP']);
     $cq = db()->prepare($sql);
     $cq->execute($params);
     foreach ($cq->fetchAll() as $r) {
@@ -125,6 +147,7 @@ if ($wantCsv) {
             (string) $r['created_at'],
             (string) $r['admin_username'],
             (string) $r['action'],
+            $describeAction($r),
             (string) ($r['entity_type'] ?? ''),
             (string) ($r['entity_id'] ?? ''),
             (string) ($r['details'] ?? ''),
