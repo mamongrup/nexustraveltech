@@ -279,3 +279,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
   oda/birim -> #sec-04, aciklama -> #sec-02, konum/havuz/liman/murettebat -> #sec-01
   (tesisler karti + otel-detay/villa-detay hazirlik panelleri; sayfa acilirken ayni
   offset ile yumusak kaydirma).
+- Dagitim merkezine oda eslestirme arayuzu (bölüm 3): kanal + urun secilir, her
+  NEXUS oda/birim tipi icin dis oda kodu tek formda girilir, tek tikla kaydedilir;
+  bos satir eslesmeyi kaldirir. channel_room_mappings (migration 045) artik
+  DB'den degil panelden yonetilir; webhook bildirimleri dogru oda tipine yazilir.

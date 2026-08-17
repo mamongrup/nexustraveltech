@@ -113,3 +113,8 @@
 .ical-help-box ol{margin:0;padding-left:18px;display:grid;gap:5px}
 .ical-help-box li{line-height:1.45}
 .ical-help-box b{color:#10211f}
+/* --- Oda eslestirme (dagitim merkezi) --- */
+.room-map-row{display:flex;align-items:center;gap:10px;margin:8px 0}
+.room-map-row label{min-width:220px;margin:0;font-weight:bold}
+.room-map-row label small{color:#6b7774;font-weight:normal}
+.room-map-row input{flex:1}
