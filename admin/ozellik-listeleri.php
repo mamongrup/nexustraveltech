@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $msg = 'Özellik geri yüklendi' . ($props ? ' ve ' . count($props) . ' ilana tekrar eklendi.' : '.');
       } elseif ($action === 'bulk') {
         $ids = array_values(array_unique(array_filter(array_map('intval', (array) ($_POST['ids'] ?? [])), fn($i) => $i > 0)));
-        $sub = ($_POST['sub'] ?? '') === 'deactivate' ? 'deactivate' : 'delete';
+        $sub = in_array($_POST['sub'] ?? '', ['deactivate', 'activate'], true) ? (string) $_POST['sub'] : 'delete';
         if (!$ids) throw new RuntimeException('En az bir özellik seçin.');
         if ($sub === 'delete' && empty($_POST['confirm'])) {
           // Adım 1: etki özeti (önce onay, sonra uygula).
@@ -153,9 +153,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $done = 0; $removed = 0; $errors = [];
           foreach ($ids as $fid) {
             try {
-              if ($sub === 'deactivate') {
-                db()->prepare('UPDATE property_feature_catalog SET is_active=false WHERE id=?')->execute([$fid]);
-                audit_log('feature.toggle', 'feature_catalog', $fid, ['is_active' => false, 'bulk' => true]);
+              if ($sub === 'deactivate' || $sub === 'activate') {
+                $newState = $sub === 'activate';
+                db()->prepare('UPDATE property_feature_catalog SET is_active=? WHERE id=?')->execute([$newState, $fid]);
+                audit_log('feature.toggle', 'feature_catalog', $fid, ['is_active' => $newState, 'bulk' => true]);
               } else {
                 $res = $deleteFeature($fid);
                 $removed += count($res['affected']);
@@ -163,14 +164,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               $done++;
             } catch (Throwable $e) { $errors[] = $e->getMessage(); }
           }
-          audit_log($sub === 'delete' ? 'feature.bulk_delete' : 'feature.bulk_deactivate', 'feature_catalog', null, [
+          audit_log($sub === 'delete' ? 'feature.bulk_delete' : ($sub === 'activate' ? 'feature.bulk_activate' : 'feature.bulk_deactivate'), 'feature_catalog', null, [
               'count' => $done,
               'feature_ids' => $ids,
               'affected_count' => $removed,
           ]);
           $msg = $sub === 'delete'
               ? "$done özellik silindi, $removed ilandan kaldırıldı. Çöp kutusundan geri alınabilir."
-              : "$done özellik pasifleştirildi.";
+              : ($sub === 'activate' ? "$done özellik aktifleştirildi." : "$done özellik pasifleştirildi.");
           if ($errors) $msg .= ' Hatalar: ' . implode('; ', $errors) . '.';
         }
       } elseif ($action === 'taxonomy_add') {
@@ -266,7 +267,7 @@ $trash = db()->query("SELECT f.id, f.code, f.group_label, f.label, f.deleted_at,
 <div class="c"><h2><?= htmlspecialchars($txTitle) ?> <small style="color:#6b7774;font-weight:normal">(<?= count($byTx[$txKey]) ?>)</small></h2><form class="r" method="post" style="margin-bottom:12px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="taxonomy_add"><input type="hidden" name="taxonomy_type" value="<?= htmlspecialchars($txKey) ?>"><input name="name" placeholder="Yeni seçenek adı" maxlength="120" required style="flex:1"><input name="sort_order" type="number" value="100" min="0" title="Sıra" style="width:80px"><button>+ Ekle</button></form><?php foreach (($byTx[$txKey] ?? []) as $tx): ?><span class="chip <?= $tx['is_active'] ? '' : 'off' ?>"><?= htmlspecialchars($tx['name']) ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="taxonomy_toggle"><input type="hidden" name="id" value="<?= (int) $tx['id'] ?>"><button class="mini" title="Aktif/pasif"><?= $tx['is_active'] ? 'Pasifleştir' : 'Aktifleştir' ?></button></form></span><?php endforeach; ?><?php if (!$byTx[$txKey]): ?><p style="color:#6b7774">Liste boş.</p><?php endif; ?></div>
 <?php endforeach; ?></div>
 <h2 style="margin:26px 0 4px;border-top:1px solid #e2e6df;padding-top:20px">Özellik katalogları</h2>
-<div id="bulkBar" style="display:none;position:sticky;top:0;z-index:5;background:#10211f;color:#fff;padding:10px 14px;border-radius:8px;margin:14px 0;align-items:center;gap:12px;flex-wrap:wrap"><b id="bulkCount">0</b> özellik seçildi<button type="button" class="mini" style="background:#e6f8c7;color:#10211f;font-weight:bold" onclick="bulkGo('deactivate')">Pasifleştir</button><button type="button" class="mini" style="background:#b0301a;color:#fff;font-weight:bold" onclick="bulkGo('delete')">Sil</button><button type="button" class="mini" style="background:#33424a;color:#fff" onclick="clearBulk()">Seçimi temizle</button></div>
+<div id="bulkBar" style="display:none;position:sticky;top:0;z-index:5;background:#10211f;color:#fff;padding:10px 14px;border-radius:8px;margin:14px 0;align-items:center;gap:12px;flex-wrap:wrap"><b id="bulkCount">0</b> özellik seçildi<button type="button" class="mini" style="background:#d9f0b4;color:#10211f;font-weight:bold" onclick="bulkGo('activate')">Aktifleştir</button><button type="button" class="mini" style="background:#e6f8c7;color:#10211f;font-weight:bold" onclick="bulkGo('deactivate')">Pasifleştir</button><button type="button" class="mini" style="background:#b0301a;color:#fff;font-weight:bold" onclick="bulkGo('delete')">Sil</button><button type="button" class="mini" style="background:#33424a;color:#fff" onclick="clearBulk()">Seçimi temizle</button></div>
 <form id="bulkForm" method="post" style="display:none"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="bulk"><input type="hidden" name="sub" id="bulkSub" value="delete"></form>
 <div class="two"><?php foreach ($sectionTitles as $code => $title): $isHotelCat = in_array($code, ['amenity', 'activity', 'event'], true); $grouped = []; foreach (($byCode[$code] ?? []) as $item) $grouped[$item['group_label'] ?: 'Genel'][] = $item; ?>
 <div class="c"><h2><?= $title ?> <small style="color:#6b7774;font-weight:normal">(<?= count($byCode[$code]) ?>)</small></h2><label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#6b7774;margin:0 0 6px"><input type="checkbox" class="selall" data-code="<?= htmlspecialchars($code) ?>"> Tümünü seç</label><?php if (!$byCode[$code]): ?><p style="color:#6b7774">Liste boş — yukarıdan ekleyin.</p><?php endif; ?>
