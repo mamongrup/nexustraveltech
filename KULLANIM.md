@@ -59,7 +59,19 @@ cd /var/www/vhosts/nexustraveltech.com/httpdocs
 
 # Platform doğrulama (tablo/kolon kontrolü)
 /opt/plesk/php/8.5/bin/php scripts/verify-platform.php
+
+# TEK KOMUTLA TÜM MODÜLLERİN OTOMATİK TESTİ (salt okunur)
+/opt/plesk/php/8.5/bin/php scripts/auto-test.php
+# Her kontrolü göster:  --verbose
+# Gerçek webhook uçtan uca (cURL POST + uygulama + doğrulama):  --e2e
+# E2E test satırlarını silme:  --e2e --keep
 ```
+
+`auto-test.php` modülleri: veritabani (51 tablo + kritik kolonlar) · migration (bekleyen
+dosyalar) · zamanlayici (görev kayıtları + advisory kilit) · kanal-webhook (bağlantı,
+token biçimi, eşleştirmeler, yetim) · kur · ical · eposta (kuyruk + son test durumu) ·
+e2e-webhook. Her kontrol OK/WARN/FAIL üretir; sonunda modül özeti ve çıkış kodu
+(0 = temiz, 1 = hata var).
 
 `--repair` neleri düzeltir:
 - Yanlış/eski şemalı tabloları (ör. hibrit `channel_room_mappings`) migration zincirinden yeniden kurar
