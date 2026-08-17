@@ -55,6 +55,24 @@ $channelRows = $pdo->query("
     ORDER BY s.company_name
 ")->fetchAll();
 
+// --- 3) Onay bekleyen eşleştirme önerileri (oda + fiyat planı) — tedarikçi bazında ---
+$pendingRows = $pdo->query("
+    SELECT s.company_name,
+      (SELECT COUNT(*) FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id=s.id AND m.status='suggested') room_sug,
+      (SELECT COUNT(*) FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id WHERE c2.supplier_id=s.id AND p.status='suggested') plan_sug
+    FROM suppliers s
+    WHERE EXISTS (SELECT 1 FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id=s.id AND m.status='suggested')
+       OR EXISTS (SELECT 1 FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id WHERE c2.supplier_id=s.id AND p.status='suggested')
+    ORDER BY s.company_name
+")->fetchAll();
+$pendingRoom = 0;
+$pendingPlan = 0;
+foreach ($pendingRows as $pr) {
+    $pendingRoom += (int) $pr['room_sug'];
+    $pendingPlan += (int) $pr['plan_sug'];
+}
+$pendingTotal = $pendingRoom + $pendingPlan;
+
 $problems = [];
 
 // iCal satırları: yalnızca sorunlu olanları topla.
@@ -98,7 +116,7 @@ foreach ($channelRows as $r) {
     }
 }
 
-if ($problems === []) {
+if ($problems === [] && $pendingTotal === 0) {
     save_platform_setting('distribution_health_week', $week);
     echo "Sorunlu dağıtım kaydı yok — özet gönderilmedi. (" . count($icalRows) . " villa/yat, " . count($channelRows) . " otel sahibi tedarikçi)\n";
     exit(0);
@@ -127,6 +145,18 @@ foreach ($problems as $p) {
         . '</tr>';
 }
 
+// Onay bekleyen öneri satırı: özet e-postasında tedarikçi bazında listelenir.
+$pendingHtml = '';
+if ($pendingTotal > 0) {
+    $pendingHtml .= '<div style="margin-top:14px;padding:10px 14px;background:#fff8e6;border:1px solid #ead9a8;border-radius:8px">'
+        . '<h3 style="margin:0 0 4px;font-size:13px;color:#8a6100">⏳ Onay bekleyen eşleştirme önerileri: <b>' . $pendingTotal . '</b> (' . $pendingRoom . ' oda + ' . $pendingPlan . ' fiyat planı)</h3>';
+    foreach ($pendingRows as $pr) {
+        $prt = (int) $pr['room_sug'] + (int) $pr['plan_sug'];
+        $pendingHtml .= '<p style="margin:3px 0;font-size:12px;color:#64716d">' . htmlspecialchars((string) $pr['company_name']) . ' — <b>' . $prt . '</b> öneri (' . (int) $pr['room_sug'] . ' oda + ' . (int) $pr['plan_sug'] . ' plan)</p>';
+    }
+    $pendingHtml .= '<p style="margin:6px 0 0;font-size:11px;color:#8a6100">Öneriler tedarikçi panellerinde Dağıtım & kanal merkezi → bölüm 3\'te onaylanır; onaylanana kadar webhook verisi yazılmaz.</p></div>';
+}
+
 // Konum bazlı kırılım: sorunlu iCal ilanlarını şehir/limana göre grupla (en çok sorun üstte).
 $locGroups = [];
 foreach ($problems as $p) {
@@ -152,6 +182,7 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . $bodyRows
     . '</table>'
     . $locHtml
+    . $pendingHtml
     . '<p style="margin:14px 0 0;font-size:12px;color:#64716d">Gerçek zamanlı uyarılar (15 dk) tedarikçi panellerine ayrıca gider. Kırmızı durumlar için ilgili tedarikçiyle iletişime geçin veya iCal takvimler / Dağıtım & kanal merkezi sayfalarını denetleyin.</p>'
     . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/tedarikci-onaylari" style="color:#0d7a4a">Tedarikçi yönetimi →</a></p>'
     . '</div>';
@@ -169,7 +200,7 @@ if ($locGroups) {
     }
 }
 $pdf = pdf_build('<h2>Dağıtım sağlığı haftalık özeti — ' . date('d.m.Y') . '</h2>'
-    . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . '</p>'
+    . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . ($pendingTotal > 0 ? '. Onay bekleyen öneri: ' . $pendingTotal . ' (' . $pendingRoom . ' oda + ' . $pendingPlan . ' plan)' : '') . '</p>'
     . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:10px">'
     . '<tr style="background:#f2f4ef"><th align="left">İlan / Tedarikçi</th><th align="left">Tip</th><th align="left">Durum</th><th align="left">Son senkron</th></tr>'
     . $pdfRows
@@ -180,6 +211,7 @@ if ($pdf !== null) {
     $attBase64 = base64_encode($pdf);
 }
 
-queue_email($to, 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')', $body, 'distribution_health_digest', (int) str_replace('-', '', $week), $attName, $attBase64);
+$subject = 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')' . ($pendingTotal > 0 ? ' · ⏳ ' . $pendingTotal . ' öneri' : '');
+queue_email($to, $subject, $body, 'distribution_health_digest', (int) str_replace('-', '', $week), $attName, $attBase64);
 save_platform_setting('distribution_health_week', $week);
-echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
+echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($pendingTotal > 0 ? ", ⏳ {$pendingTotal} onay bekleyen öneri" : '') . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
