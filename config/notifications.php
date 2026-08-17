@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/platform_settings.php';
+require_once __DIR__ . '/mailer.php';
 
 /**
  * Bir panele bildirim ekler (best-effort; iş akışını asla bozmaz).
@@ -33,6 +35,30 @@ function notify_supplier_users(int $supplierId, string $type, string $message, ?
         $q->execute([$supplierId]);
         foreach ($q->fetchAll() as $row) {
             notify_user('supplier', (int) $row['id'], $type, $message, $link);
+        }
+    } catch (Throwable $e) {
+        // Best-effort.
+    }
+}
+
+/**
+ * Tedarikçiye panel bildirimi gönderir; kontrol merkezindeki supplier_notify_email
+ * ayarı açıksa aynı mesaj tedarikçi kullanıcılarının e-postalarına da kuyruklanır.
+ * Best-effort — e-posta altyapısı/ayar hatası bildirimi asla bozmaz.
+ */
+function notify_supplier_users_with_email(int $supplierId, string $type, string $message, ?string $link = null, ?string $subject = null): void
+{
+    notify_supplier_users($supplierId, $type, $message, $link);
+    try {
+        if (!(bool) platform_setting('supplier_notify_email', false)) return;
+        $q = db()->prepare('SELECT id, full_name, email FROM supplier_users WHERE supplier_id=? AND email<>?');
+        $q->execute([$supplierId, '']);
+        $linkAbs = $link !== null ? 'https://nexustraveltech.com' . $link : 'https://nexustraveltech.com/tedarikci';
+        $subj = $subject !== null ? $subject : 'NEXUS bildirimi — ' . mb_substr(strip_tags($message), 0, 60);
+        $body = '<p>Merhaba,</p><p>' . nl2br(htmlspecialchars($message)) . '</p>'
+            . '<p><a href="' . htmlspecialchars($linkAbs) . '">Panele git →</a></p><p>NEXUS TravelTech</p>';
+        foreach ($q->fetchAll() as $row) {
+            queue_email((string) $row['email'], $subj, $body, 'supplier_notify', (int) $row['id']);
         }
     } catch (Throwable $e) {
         // Best-effort.
