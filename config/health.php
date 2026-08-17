@@ -14,6 +14,71 @@ require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/platform_settings.php';
 require_once __DIR__ . '/audit.php';
 
+/**
+ * Yetim eşleştirme temizliği — üç tabloda silinmiş oda tipi/plan/kanala işaret eden
+ * satırları tarar ve (dryRun değilse) siler. --repair modu, onay sayfası
+ * (admin/approve-orphan-cleanup.php) ve günlük görev aynı fonksiyonu kullanır.
+ *
+ * @return array{removed:int, codes:array<string,list<string>>, out:string, errors:list<string>}
+ */
+function health_orphan_cleanup(PDO $pdo, bool $dryRun = false): array
+{
+    $out = '';
+    $errors = [];
+    $removed = 0;
+    $codes = [];
+    $specs = [
+        'channel_room_mappings' => [
+            'label' => 'oda eşleştirmesi',
+            'join' => 'LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id',
+            'where' => 'm.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))',
+            'cols' => 'm.id, m.external_room_id AS code, m.status',
+        ],
+        'channel_rate_plan_mappings' => [
+            'label' => 'fiyat planı eşleştirmesi',
+            'join' => 'LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
+            'where' => '(m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL',
+            'cols' => 'm.id, m.external_rate_plan_id AS code, m.status',
+        ],
+        'channel_property_mappings' => [
+            'label' => 'ürün eşleştirmesi',
+            'join' => 'LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
+            'where' => 'p.id IS NULL OR c.id IS NULL',
+            'cols' => 'm.id, m.external_property_id AS code, m.status',
+        ],
+    ];
+    foreach ($specs as $table => $spec) {
+        $tbl = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='" . $table . "'")->fetchColumn();
+        if (!$tbl) continue;
+        try {
+            $orphanSql = 'SELECT ' . $spec['cols'] . ' FROM ' . $table . ' m ' . $spec['join'] . ' WHERE ' . $spec['where'];
+            $orphans = $pdo->query($orphanSql)->fetchAll();
+            if ($orphans) {
+                if ($dryRun) {
+                    $out .= '→ [dry-run] ' . count($orphans) . ' yetim ' . $spec['label'] . ' SILİNECEK (örnek: ' . htmlspecialchars((string) $orphans[0]['code']) . ')' . "\n";
+                } else {
+                    $del = $pdo->prepare('DELETE FROM ' . $table . ' WHERE id=?');
+                    $removedCodes = [];
+                    foreach ($orphans as $o) {
+                        $del->execute([(int) $o['id']]);
+                        $removed++;
+                        $removedCodes[] = (string) $o['code'];
+                        $out .= '→ yetim ' . $spec['label'] . ' #' . (int) $o['id'] . ' (' . htmlspecialchars((string) $o['code']) . ', status=' . htmlspecialchars((string) ($o['status'] ?? '')) . ') silindi' . "\n";
+                    }
+                    $out .= 'Özet: ' . $removed . ' yetim ' . $spec['label'] . ' temizlendi.' . "\n";
+                    $codes[$table] = $removedCodes;
+                }
+            } else {
+                $out .= '✓ Yetim ' . $spec['label'] . ' yok.' . "\n";
+            }
+        } catch (Throwable $e) {
+            $out .= '✗ Yetim ' . $spec['label'] . ' taraması yapılamadı: ' . $e->getMessage() . "\n";
+            $errors[] = 'yetim ' . $spec['label'] . ' temizliği başarısız: ' . $e->getMessage();
+        }
+    }
+    return ['removed' => $removed, 'codes' => $codes, 'out' => $out, 'errors' => $errors];
+}
+
 function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false, bool $yes = false, bool $orphans = false): array
 {
     $pdo = db();
@@ -457,76 +522,20 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 $errors[] = $table . ' onarılamadı: ' . $e->getMessage();
             }
         }
-        // Yetim eşleştirmeleri temizle — yalnızca gerçekten başka ürüne/var olmayan kayda işaret
-        // eden satırlar (room tipi/kanal/plan silinmiş veya başka ürüne ait). Üç tablo taranır:
-        // oda eşleştirmeleri, fiyat planı eşleştirmeleri ve ürün eşleştirmeleri.
-        $orphanCleanupNote = '';
-        $orphanCleanupCodes = [];
-        $orphanSpecs = [
-            'channel_room_mappings' => [
-                'label' => 'oda eşleştirmesi',
-                'join' => 'LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id',
-                'where' => 'm.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))',
-                'cols' => 'm.id, m.external_room_id AS code, m.status',
-                'issue' => "CASE WHEN rt.id IS NULL THEN 'oda tipi yok' WHEN c.id IS NULL THEN 'kanal yok' WHEN rt.property_id<>m.property_id THEN 'oda tipi başka ürüne ait' WHEN m.rate_plan_id IS NOT NULL AND rp.id IS NULL THEN 'fiyat planı yok' WHEN m.rate_plan_id IS NOT NULL AND rp.property_id<>m.property_id THEN 'fiyat planı başka ürüne ait' ELSE 'bilinmiyor' END AS issue",
-            ],
-            'channel_rate_plan_mappings' => [
-                'label' => 'fiyat planı eşleştirmesi',
-                'join' => 'LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
-                'where' => '(m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL',
-                'cols' => 'm.id, m.external_rate_plan_id AS code, m.status',
-                'issue' => "CASE WHEN c.id IS NULL THEN 'kanal yok' WHEN m.rate_plan_id IS NOT NULL AND rp.id IS NULL THEN 'fiyat planı yok' WHEN m.rate_plan_id IS NOT NULL AND rp.property_id<>m.property_id THEN 'fiyat planı başka ürüne ait' ELSE 'bilinmiyor' END AS issue",
-            ],
-            'channel_property_mappings' => [
-                'label' => 'ürün eşleştirmesi',
-                'join' => 'LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
-                'where' => 'p.id IS NULL OR c.id IS NULL',
-                'cols' => 'm.id, m.external_property_id AS code, m.status',
-                'issue' => "CASE WHEN p.id IS NULL THEN 'ürün yok' WHEN c.id IS NULL THEN 'kanal yok' ELSE 'bilinmiyor' END AS issue",
-            ],
-        ];
-        foreach ($orphanSpecs as $orphanTable => $spec) {
-            if (in_array($orphanTable, $missingTables, true)) continue;
-            try {
-                $orphanSql = 'SELECT ' . $spec['cols'] . ', ' . $spec['issue'] . ' FROM ' . $orphanTable . ' m ' . $spec['join'] . ' WHERE ' . $spec['where'];
-                $orphans = $pdo->query($orphanSql)->fetchAll();
-                if ($orphans) {
-                    if ($dryRun) {
-                        $out .= '→ [dry-run] ' . count($orphans) . ' yetim ' . $spec['label'] . ' SILİNECEK (örnek: ' . htmlspecialchars((string) $orphans[0]['code']) . ')' . "\n";
-                        if ($orphans) {
-                            $out .= '  — Ayrıntı (ID · dış kod · durum · sorun):' . "\n";
-                            foreach ($orphans as $o) {
-                                $out .= '    #' . (int) $o['id'] . ' · ' . htmlspecialchars((string) $o['code']) . ' · ' . htmlspecialchars((string) ($o['status'] ?? '')) . ' · ' . htmlspecialchars((string) $o['issue']) . "\n";
-                            }
-                        }
-                    } else {
-                        $del = $pdo->prepare('DELETE FROM ' . $orphanTable . ' WHERE id=?');
-                        $removed = 0;
-                        $removedCodes = [];
-                        foreach ($orphans as $o) {
-                            $del->execute([(int) $o['id']]);
-                            $removed++;
-                            $removedCodes[] = (string) $o['code'];
-                            $out .= '→ yetim ' . $spec['label'] . ' #' . (int) $o['id'] . ' (' . htmlspecialchars((string) $o['code']) . ', status=' . htmlspecialchars((string) ($o['status'] ?? '')) . ') silindi' . "\n";
-                        }
-                        $out .= 'Özet: ' . $removed . ' yetim ' . $spec['label'] . ' temizlendi.' . "\n";
-                        $orphanCleanupNote .= $orphanTable . ':' . $removed . ';';
-                        $orphanCleanupCodes[$orphanTable] = $removedCodes;
-                    }
-                } else {
-                    $out .= '✓ Yetim ' . $spec['label'] . ' yok.' . "\n";
-                }
-            } catch (Throwable $e) {
-                $out .= '✗ Yetim ' . $spec['label'] . ' taraması yapılamadı: ' . $e->getMessage() . "\n";
-                $errors[] = 'yetim ' . $spec['label'] . ' temizliği başarısız: ' . $e->getMessage();
-            }
+        // Yetim eşleştirmeleri temizle — paylaşılan health_orphan_cleanup() (aynı mantık
+        // onay sayfası admin/approve-orphan-cleanup.php ve günlük görevde de kullanılır).
+        // --orphans ile dry-run'da satır satır ayrıntı gösterilir.
+        $orphanRes = health_orphan_cleanup($pdo, $dryRun);
+        $out .= $orphanRes['out'];
+        foreach ($orphanRes['errors'] as $oe) {
+            $errors[] = $oe;
         }
-        if ($orphanCleanupNote !== '' && !$dryRun) {
+        if ($orphanRes['removed'] > 0 && !$dryRun) {
             try {
                 audit_log('health.repair_orphan_cleanup', 'schema', null, [
-                    'removed' => rtrim($orphanCleanupNote, ';'),
-                    'codes' => $orphanCleanupCodes ?? [],
-                    'total' => array_sum(array_map('count', $orphanCleanupCodes ?? [])),
+                    'removed' => implode(';', array_map(fn($t) => $t . ':' . count($orphanRes['codes'][$t] ?? []), array_keys($orphanRes['codes']))),
+                    'codes' => $orphanRes['codes'],
+                    'total' => $orphanRes['removed'],
                     'ran_at' => gmdate('c'),
                     'note' => 'silinmiş oda tipi/plan/kanala işaret eden yetim eşleştirmeler temizlendi',
                 ], 'health-check');

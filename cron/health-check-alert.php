@@ -157,6 +157,33 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
             . '<tr><th style="text-align:left;padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Dosya</th><th style="text-align:left;padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Uygulanma</th><th style="text-align:left;padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Commit</th></tr>'
             . $rowsM . '</table>';
     }
+    // Yetim eşleştirme temizleme bağlantısı — yalnızca temizlenecek yetim varsa üretilir.
+    // Token platform ayarında 3 gün saklanır; admin/approve-orphan-cleanup.php iki adımlı
+    // onayla (önce özet, sonra POST) health_orphan_cleanup() ile satırları siler.
+    $orphanBlock = '';
+    try {
+        $orphanCount = 0;
+        try {
+            $oc = db()->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE m.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))")->fetchColumn();
+            $orphanCount += (int) ($oc ?: 0);
+        } catch (Throwable $e) {}
+        try {
+            $oc2 = db()->query("SELECT COUNT(*) FROM channel_rate_plan_mappings m LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL")->fetchColumn();
+            $orphanCount += (int) ($oc2 ?: 0);
+        } catch (Throwable $e) {}
+        try {
+            $oc3 = db()->query("SELECT COUNT(*) FROM channel_property_mappings m LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE p.id IS NULL OR c.id IS NULL")->fetchColumn();
+            $orphanCount += (int) ($oc3 ?: 0);
+        } catch (Throwable $e) {}
+        if ($orphanCount > 0) {
+            $approveToken = bin2hex(random_bytes(32));
+            save_platform_setting('orphan_cleanup_approve', ['token' => $approveToken, 'expires_at' => date('Y-m-d H:i:s', time() + 3 * 86400)]);
+            $approveLink = 'https://nexustraveltech.com/admin/approve-orphan-cleanup.php?token=' . $approveToken;
+            $orphanBlock = '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;margin-top:14px"><a href="' . $approveLink . '" style="color:#8a6100;font-weight:bold;font-size:15px;text-decoration:none">🧹 ' . $orphanCount . ' yetim eşleştirmeyi temizle →</a><br><span style="color:#6b7774;font-size:12px">Silinmiş oda tipi / fiyat planı / kanal / ürüne işaret eden satırlar; onay sayfası önce listeyi gösterir, tek tıkla temizler (3 gün geçerli, tek kullanımlık).</span></p>';
+        }
+    } catch (Throwable $e) {
+        $orphanBlock = '';
+    }
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
         . ($result['errors'] !== []
             ? '<h2 style="margin:0 0 6px">⚠ Platform sağlık kontrolü: ' . count($result['errors']) . ' sorun</h2>'
@@ -168,6 +195,7 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
             . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Sorun</th></tr>'
             . $rowsHtml . $extra
             . '</table>' : '')
+        . $orphanBlock
         . $migBlock
         . $runsBlock
         . $opsBlock
