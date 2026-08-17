@@ -59,6 +59,39 @@ try {
     $resp = json_decode((string) ($row['response_payload'] ?? '{}'), true);
     $resp = is_array($resp) ? $resp : [];
 
+    // Uygulanan/atlanan satır özeti: kodun geçtiği son 30 pull işlemindeki satır sayıları.
+    // Kod onaylı bir eşleşmeye sahipse başarılı işlemlerdeki satırlar "uygulandı";
+    // başarısız işlemlerdeki ve eşlenmemiş/öneri durumundaki satırlar "atlandı".
+    $codeMapped = false;
+    $mm = $pdo->prepare("SELECT 1 FROM channel_room_mappings WHERE channel_connection_id=? AND external_room_id=? AND status='confirmed'");
+    $mm->execute([$connId, $code]);
+    $codeMapped = (bool) $mm->fetchColumn();
+    $sumQ = $pdo->prepare(
+        "SELECT id, status, request_payload FROM channel_sync_logs
+         WHERE channel_connection_id=? AND property_id=? AND direction='pull'
+           AND request_payload->'entries' @> ?::jsonb
+         ORDER BY id DESC LIMIT 30"
+    );
+    $sumQ->execute([$connId, $propId, $needle]);
+    $appliedRows = 0;
+    $skippedRows = 0;
+    $logsSeen = 0;
+    foreach ($sumQ->fetchAll() as $sl) {
+        $pl = json_decode((string) $sl['request_payload'], true);
+        if (!is_array($pl) || !is_array($pl['entries'] ?? null)) continue;
+        $rowsInLog = 0;
+        foreach ($pl['entries'] as $en) {
+            if (is_array($en) && (string) ($en['external_room_id'] ?? '') === $code) $rowsInLog++;
+        }
+        if ($rowsInLog === 0) continue;
+        $logsSeen++;
+        if ($sl['status'] === 'success' && $codeMapped) {
+            $appliedRows += $rowsInLog;
+        } else {
+            $skippedRows += $rowsInLog;
+        }
+    }
+
     echo json_encode([
         'ok' => true,
         'found' => true,
@@ -72,6 +105,11 @@ try {
             'applied' => (int) ($resp['applied'] ?? 0),
         ],
         'entry' => $entry,
+        'summary' => [
+            'logs_seen' => $logsSeen,
+            'applied_rows' => $appliedRows,
+            'skipped_rows' => $skippedRows,
+        ],
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     echo json_encode(['ok' => false, 'message' => 'Doğrulama sırasında hata: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
