@@ -124,3 +124,9 @@
 /* --- iCal senkron odak flaşı (#sync hedefi) --- */
 button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:icalSyncFlash 2.2s ease}
 @keyframes icalSyncFlash{0%{box-shadow:0 0 0 0 rgba(201,143,10,.55)}70%{box-shadow:0 0 0 14px rgba(201,143,10,0)}100%{box-shadow:0 0 0 0 rgba(201,143,10,0)}}
+
+/* --- tesis-ekle kurulum adımı çapaları (#sec-01/#sec-02) --- */
+.setup-steps li.step-link a{color:inherit;text-decoration:none;cursor:pointer}
+.setup-steps li.step-link a:hover{color:#5f9008;text-decoration:underline}
+.setup-steps li.step-later{opacity:.55}
+.setup-sec{scroll-margin-top:110px}
