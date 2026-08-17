@@ -107,12 +107,16 @@ function listing_readiness(array $property): array
             $icalStale = !$icalSyncOld30 && $icalTs > 0 && $icalTs < time() - 7 * 86400;
         }
         $icalExportUrls = [];
+        $icalFirstConnId = 0; // ilk aktif İÇE aktarma bağlantısı — #sync-<id> odaklaması için
         if ($isIcalType) {
             $urlSt = $pdo->prepare("SELECT access_token FROM ical_connections WHERE property_id=? AND status='active' AND direction='export'");
             $urlSt->execute([$pid]);
             foreach ($urlSt->fetchAll(PDO::FETCH_COLUMN) as $icalToken) {
                 $icalExportUrls[] = 'https://nexustraveltech.com/api/ical?token=' . urlencode((string) $icalToken);
             }
+            $connSt = $pdo->prepare("SELECT id FROM ical_connections WHERE property_id=? AND status='active' AND direction='import' ORDER BY id LIMIT 1");
+            $connSt->execute([$pid]);
+            $icalFirstConnId = (int) $connSt->fetchColumn();
         }
         $items[] = [
             'key' => 'ical',
@@ -120,6 +124,7 @@ function listing_readiness(array $property): array
             'ok' => $icalActive > 0 && !$icalSyncOld30,
             'warn' => $icalActive > 0 && !$icalSyncOld30 && $icalStale,
             'age_days' => $icalAgeDays,
+            'first_conn_id' => $icalFirstConnId,
             'urls' => $icalExportUrls,
             'detail' => $icalActive === 0
                 ? 'Bağlantı yok — iCal takvimler sayfasından en az bir aktif içe/dışa aktarma ekleyin'
