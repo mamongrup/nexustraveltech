@@ -56,6 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 scheduler_seed_defaults();
 scheduler_tick(); // sayfa açılışında da nabız — cron olmadan bile ilerleme sağlar
 $jobs = scheduler_jobs();
+// Sağlık kontrolü için belirgin tek tık tetikleyici — görev satırındaki "Şimdi çalıştır" ile aynı `run` akışını kullanır.
+$hcJob = null;
+foreach ($jobs as $j) if (($j['code'] ?? '') === 'nexus-health-check') { $hcJob = $j; break; }
 $token = scheduler_tick_token();
 $tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' . $token;
 ?>
@@ -74,6 +77,8 @@ $tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' .
 <p class="muted">Sistem cron'ları yerine panel yönetimli görevler. Tek nabız noktası vadesi gelen görevleri çalıştırır — 8 satır cron yerine <b>1 satır</b> yeterli.</p>
 <?php if ($msg): ?><p class="ok"><?= htmlspecialchars($msg) ?></p><?php endif; ?>
 <?php if ($err): ?><p class="er"><?= htmlspecialchars($err) ?></p><?php endif; ?>
+
+<?php if ($hcJob): ?><section class="c" style="border:2px solid #0d7a4a"><h2>🩺 Sağlık kontrolü</h2><p class="muted">Bekleyen migration'ları uygular, tablo/kolon/ortam/kilit durumunu denetler ve sorunları raporlar. Buton görevi anında çalıştırır; sonuç yukarıda ve görev geçmişinde görünür.</p><form method="post"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="<?= (int) $hcJob['id'] ?>"><button style="padding:10px 20px;background:#0d7a4a;font-size:14px">▶ Sağlık kontrolünü şimdi çalıştır</button> <span class="muted">son çalışma: <?= !empty($hcJob['last_run_at']) ? htmlspecialchars((string) $hcJob['last_run_at']) . ' · <b>' . htmlspecialchars((string) ($hcJob['last_status'] ?? '—')) . '</b>' : '—' ?></span></form><?php if (!empty($hcJob['last_output'])): ?><details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:#0d7a4a">Son çıktıyı göster</summary><pre style="background:#f2f4ef;padding:8px;font-size:12px;white-space:pre-wrap"><?= htmlspecialchars((string) $hcJob['last_output']) ?></pre></details><?php endif; ?></section><?php endif; ?>
 
 <section class="c"><h2>Nabız kurulumu (ikisinden biri)</h2>
 <p><b>A) Sistem cron / Plesk Scheduled Tasks (komut):</b></p>
