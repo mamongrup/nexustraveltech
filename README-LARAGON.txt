@@ -311,3 +311,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - verify-platform'a oda eslestirme durumu denetimi: channel_room_mappings kolon
   kontrolune ek olarak yetim/uyumsuz eslestirme taramasi (oda tipi veya kanal yok,
   oda tipi baska urune ait) — sorun varsa dogrulama HATA ile cikar.
+- Tesisler kartinda "Tum kalemler" listesi varsayilan acik ayari
+  (readiness_all_auto_open, varsayilan kapali + esik readiness_all_auto_open_threshold=70):
+  ayar acikken hazirlik skoru esigin altinda olan ilanlarin listesi sayfa
+  acilirken genisletilmis gelir; buton durumu (▴) ile tutarli.
