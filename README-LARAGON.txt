@@ -260,3 +260,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Tesisler kartindaki kirmizi eksik kalemler tiklanabilir: rooms/media/description/location/pool/liman/murettebat -> ilan duzenleyici, rates/inventory -> fiyat-kontenjan, ical -> iCal takvimler, rules -> satis-kurallari
 - ical-takvimler sayfasindaki disa aktarma URL alani artik kisa etiket (api/ical?token=XXXX...xxxx) + Kopyala butonuyla gosterilir; tam URL hover ve panoda
 - otel-detay sayfasinda "Entegrasyon" paneli: tedarikcinin kanal webhook adresleri kisa etiket + Kopyala ile gosterilir (dagitim merkezindeki desen)
+- Token gizleme modu ortadan: kisa etiketler artik son 4 karakter yerine token'in ortasindaki 4 karakteri gosterir (api/ical?token=XXXXXXXXXX...XXXX...)

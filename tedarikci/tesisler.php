@@ -118,7 +118,7 @@ supply_start('Tesisler & ürünler', $active_module);
     </div>
     <?php if ($icalUrls): ?>
     <div id="ical-card-<?= (int) $item['id'] ?>" class="ical-card-box" hidden>
-        <?php foreach ($icalUrls as $icalUrl): $icalQ = (string) parse_url($icalUrl, PHP_URL_QUERY); $icalShort = 'api/ical?' . mb_substr($icalQ, 0, 10) . '…' . mb_substr($icalQ, -4); ?>
+        <?php foreach ($icalUrls as $icalUrl): $icalQ = (string) parse_url($icalUrl, PHP_URL_QUERY); $icalShort = 'api/ical?' . mb_substr($icalQ, 0, 10) . '…' . mb_substr($icalQ, 30, 4) . '…'; ?>
         <span class="ical-copy-row"><code title="<?= htmlspecialchars($icalUrl) ?>"><?= htmlspecialchars($icalShort) ?></code><button type="button" class="ical-copy-btn" data-copy="<?= htmlspecialchars($icalUrl) ?>">Kopyala</button></span>
         <?php endforeach; ?>
     </div>
