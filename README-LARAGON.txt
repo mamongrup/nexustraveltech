@@ -221,3 +221,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
   JSONB alanlarından temizler).
 - Katalogda elle sıralama: admin/ozellik-listeleri'nde her özellik chip'inde ↑/↓ butonları; taşıma aynı
   kod + grup içinde komşuyla sort_order takas eder ve grubu 10'luk adımlara yeniden numaralar.
+- Zamanlayıcı görevi nexus-channel-inactive-alerts (varsayılan: 15 dakikada bir): yayındaki oteli olan ve
+  en az bir channel_connections bağlantısı tanımlı ama hiçbiri aktif olmayan tedarikçilere panel bildirimi
+  (dağıtım merkezine bağlantılı) ve admin_alert_email'e e-posta (tedarikçi, kanallar, son senkron, son
+  hatalar) gönderir. Aynı tedarikçi için 24 saatte bir kez (notifications tipi channel_inactive_{id}).
