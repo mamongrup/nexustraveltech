@@ -474,6 +474,22 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $out .= "⚠ email_outbox okunamadı: " . $e->getMessage() . "\n";
         $warnCount++;
     }
+    try {
+        $failWebhook = (int) $pdo->query("SELECT COUNT(*) FROM channel_sync_logs WHERE direction='pull' AND status='failed' AND created_at >= now() - interval '24 hours'")->fetchColumn();
+        $out .= ($failWebhook > 10 ? '⚠ ' : '✓ ') . "Başarısız webhook yükü (son 24 saat): " . $failWebhook . ($failWebhook > 10 ? ' — yüksek başarısızlık oranı, cron/process-channel-webhooks.php + retry-channel-webhooks.php denetleyin' : '') . "\n";
+        if ($failWebhook > 10) $warnCount++;
+    } catch (Throwable $e) {
+        $out .= "⚠ channel_sync_logs okunamadı: " . $e->getMessage() . "\n";
+        $warnCount++;
+    }
+    try {
+        $failIcal = (int) $pdo->query("SELECT COUNT(*) FROM ical_sync_logs WHERE status='failed' AND created_at >= now() - interval '24 hours'")->fetchColumn();
+        $out .= ($failIcal > 3 ? '⚠ ' : '✓ ') . "iCal senkron hata (son 24 saat): " . $failIcal . ($failIcal > 3 ? ' — tekrarlayan hatalar olabilir, cron/sync-ical-calendars.php + alert-ical-repeat.php denetleyin' : '') . "\n";
+        if ($failIcal > 3) $warnCount++;
+    } catch (Throwable $e) {
+        $out .= "⚠ ical_sync_logs okunamadı: " . $e->getMessage() . "\n";
+        $warnCount++;
+    }
     $out .= $warnCount === 0 ? "✓ Operasyonel uyarı yok.\n" : "⚠ " . $warnCount . " operasyonel uyarı (kritik değil — sağlık durumunu bozmaz).\n";
 
     // --- 5) Ortam ---
