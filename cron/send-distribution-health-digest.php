@@ -73,6 +73,24 @@ foreach ($pendingRows as $pr) {
 }
 $pendingTotal = $pendingRoom + $pendingPlan;
 
+// --- 4) Planı eksik eşleştirmeler: plan silindi (rate_plan_id NULL) veya pasifleştirildi.
+// Webhook bu eşleştirmeleri ilk aktif plana yazar; birden çok aktif planı olan üründe
+// yanlış plana yazma riski doğar. NULL durum yalnızca birden çok aktif plan varken uyarılır.
+$planMissingRows = $pdo->query("
+    SELECT m.id, m.external_room_id, m.room_type_id, m.property_id, m.rate_plan_id,
+           c.display_name AS conn_name, rt.name AS room_name, rp.name AS plan_name, rp.status AS plan_status
+    FROM channel_room_mappings m
+    JOIN channel_connections c ON c.id=m.channel_connection_id
+    LEFT JOIN room_types rt ON rt.id=m.room_type_id
+    LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id
+    WHERE m.status='confirmed'
+      AND (
+        (m.rate_plan_id IS NOT NULL AND rp.status<>'active')
+        OR (m.rate_plan_id IS NULL AND (SELECT COUNT(*) FROM rate_plans ap WHERE ap.property_id=m.property_id AND ap.status='active') > 1)
+      )
+    ORDER BY c.display_name, m.external_room_id
+")->fetchAll();
+
 $problems = [];
 
 // iCal satırları: yalnızca sorunlu olanları topla.
@@ -116,7 +134,7 @@ foreach ($channelRows as $r) {
     }
 }
 
-if ($problems === [] && $pendingTotal === 0) {
+if ($problems === [] && $pendingTotal === 0 && $planMissingRows === []) {
     save_platform_setting('distribution_health_week', $week);
     echo "Sorunlu dağıtım kaydı yok — özet gönderilmedi. (" . count($icalRows) . " villa/yat, " . count($channelRows) . " otel sahibi tedarikçi)\n";
     exit(0);
@@ -157,6 +175,26 @@ if ($pendingTotal > 0) {
     $pendingHtml .= '<p style="margin:6px 0 0;font-size:11px;color:#8a6100">Öneriler tedarikçi panellerinde Dağıtım & kanal merkezi → bölüm 3\'te onaylanır; onaylanana kadar webhook verisi yazılmaz.</p></div>';
 }
 
+// Planı eksik eşleştirmeler bölümü — e-posta gövdesine eklenir.
+$planHtml = '';
+if ($planMissingRows) {
+    $planHtml .= '<div style="margin-top:14px;padding:10px 14px;background:#fdecea;border:1px solid #f0c4bc;border-radius:8px">'
+        . '<h3 style="margin:0 0 4px;font-size:13px;color:#b0301a">⚠ Planı eksik eşleştirmeler: <b>' . count($planMissingRows) . '</b></h3>'
+        . '<p style="margin:3px 0;font-size:12px;color:#64716d">Planı silinen veya pasifleştirilen eşleştirmeler webhook verisini <b>ilk aktif plana</b> yazar — yanlış plana yazma riski. Dağıtım & kanal merkezi → bölüm 3, her eşleştirmeye plan atayın.</p>';
+    $byConn = [];
+    foreach ($planMissingRows as $pm) {
+        $reason = $pm['rate_plan_id'] !== null
+            ? 'plan pasif: ' . (string) ($pm['plan_name'] ?? '')
+            : 'plan seçilmemiş (silinmiş olabilir)';
+        $byConn[(string) $pm['conn_name']][] = (string) $pm['external_room_id'] . ' → ' . (string) ($pm['room_name'] ?? ('#' . (int) $pm['room_type_id'])) . ' · ' . $reason;
+    }
+    foreach ($byConn as $conn => $items) {
+        $planHtml .= '<p style="margin:5px 0;font-size:12px"><b>' . htmlspecialchars((string) $conn) . '</b> — ' . count($items) . ' eşleştirme<br>'
+            . '<span style="color:#8a6d00">' . htmlspecialchars(implode(' · ', array_slice($items, 0, 4))) . (count($items) > 4 ? ' … +' . (count($items) - 4) . ' daha' : '') . '</span></p>';
+    }
+    $planHtml .= '</div>';
+}
+
 // Konum bazlı kırılım: sorunlu iCal ilanlarını şehir/limana göre grupla (en çok sorun üstte).
 $locGroups = [];
 foreach ($problems as $p) {
@@ -183,6 +221,7 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '</table>'
     . $locHtml
     . $pendingHtml
+    . $planHtml
     . '<p style="margin:14px 0 0;font-size:12px;color:#64716d">Gerçek zamanlı uyarılar (15 dk) tedarikçi panellerine ayrıca gider. Kırmızı durumlar için ilgili tedarikçiyle iletişime geçin veya iCal takvimler / Dağıtım & kanal merkezi sayfalarını denetleyin.</p>'
     . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/tedarikci-onaylari" style="color:#0d7a4a">Tedarikçi yönetimi →</a></p>'
     . '</div>';
@@ -200,7 +239,7 @@ if ($locGroups) {
     }
 }
 $pdf = pdf_build('<h2>Dağıtım sağlığı haftalık özeti — ' . date('d.m.Y') . '</h2>'
-    . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . ($pendingTotal > 0 ? '. Onay bekleyen öneri: ' . $pendingTotal . ' (' . $pendingRoom . ' oda + ' . $pendingPlan . ' plan)' : '') . '</p>'
+    . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . ($pendingTotal > 0 ? '. Onay bekleyen öneri: ' . $pendingTotal . ' (' . $pendingRoom . ' oda + ' . $pendingPlan . ' plan)' : '') . ($planMissingRows ? '. Planı eksik eşleştirme: ' . count($planMissingRows) : '') . '</p>'
     . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:10px">'
     . '<tr style="background:#f2f4ef"><th align="left">İlan / Tedarikçi</th><th align="left">Tip</th><th align="left">Durum</th><th align="left">Son senkron</th></tr>'
     . $pdfRows
@@ -211,7 +250,7 @@ if ($pdf !== null) {
     $attBase64 = base64_encode($pdf);
 }
 
-$subject = 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')' . ($pendingTotal > 0 ? ' · ⏳ ' . $pendingTotal . ' öneri' : '');
+$subject = 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')' . ($pendingTotal > 0 ? ' · ⏳ ' . $pendingTotal . ' öneri' : '') . ($planMissingRows ? ' · ⚠ ' . count($planMissingRows) . ' planı eksik' : '');
 queue_email($to, $subject, $body, 'distribution_health_digest', (int) str_replace('-', '', $week), $attName, $attBase64);
 save_platform_setting('distribution_health_week', $week);
-echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($pendingTotal > 0 ? ", ⏳ {$pendingTotal} onay bekleyen öneri" : '') . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
+echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($pendingTotal > 0 ? ", ⏳ {$pendingTotal} onay bekleyen öneri" : '') . ($planMissingRows ? ', ⚠ ' . count($planMissingRows) . ' planı eksik eşleştirme' : '') . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
