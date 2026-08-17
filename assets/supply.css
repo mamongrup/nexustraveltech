@@ -78,3 +78,9 @@
 .readiness-warn a.readiness-warn-link:hover{text-decoration:underline}
 .ical-card-box{grid-column:1/-1;margin-top:4px}
 .ical-card-box:not([hidden]){display:grid;gap:6px}
+/* --- Kanal webhook URL kutusu (dağıtım merkezi) --- */
+.conn-block{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:#fff}
+.conn-block p{margin:0 0 6px}
+.conn-hint{font-size:11px;color:var(--muted);margin-top:6px!important}
+.ical-url-box{display:flex;align-items:center;gap:8px;max-width:640px}
+.ical-url-label{flex:1;font-size:11px;font-family:ui-monospace,Consolas,monospace;background:#f2f4ef;border:1px solid var(--line);border-radius:4px;padding:4px 7px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
