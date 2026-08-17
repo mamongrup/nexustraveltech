@@ -32,7 +32,9 @@ $pdo = db();
 
 // --- 1) iCal sağlığı: yayındaki villa/yat ilanları ---
 $icalRows = $pdo->query("
-    SELECT p.id, p.name, p.property_type, p.supplier_id, s.company_name,
+    SELECT p.id, p.name, p.property_type, p.supplier_id, p.city,
+      COALESCE(NULLIF(p.product_details ->> 'home_port', ''), p.city, 'Bilinmeyen konum') AS location,
+      s.company_name,
       (SELECT COUNT(*) FROM ical_connections c WHERE c.property_id=p.id) total_con,
       (SELECT COUNT(*) FROM ical_connections c WHERE c.property_id=p.id AND c.status='active') active_con,
       (SELECT MAX(c.last_sync_at) FROM ical_connections c WHERE c.property_id=p.id AND c.status='active') last_sync_at
@@ -63,16 +65,17 @@ foreach ($icalRows as $r) {
     $ageDays = $lastSync > 0 ? (int) floor((time() - $lastSync) / 86400) : null;
     $typeLabel = $r['property_type'] === 'yacht' ? 'Yat' : 'Villa';
 
+    $loc = trim((string) ($r['location'] ?? '')) !== '' ? trim((string) $r['location']) : 'Bilinmeyen konum';
     if ($total > 0 && $active === 0) {
-        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'status' => 'Pasif bağlantı', 'age' => null, 'cls' => '#b0301a'];
+        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'location' => $loc, 'status' => 'Pasif bağlantı', 'age' => null, 'cls' => '#b0301a'];
     } elseif ($total === 0) {
-        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'status' => 'Bağlantı yok', 'age' => null, 'cls' => '#b0301a'];
+        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'location' => $loc, 'status' => 'Bağlantı yok', 'age' => null, 'cls' => '#b0301a'];
     } elseif ($lastSync === 0) {
-        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'status' => 'Kırmızı · hiç senkron yok', 'age' => null, 'cls' => '#b0301a'];
+        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'location' => $loc, 'status' => 'Kırmızı · hiç senkron yok', 'age' => null, 'cls' => '#b0301a'];
     } elseif ($ageDays >= 30) {
-        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'status' => "Kırmızı · {$ageDays} gün", 'age' => $ageDays, 'cls' => '#b0301a'];
+        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'location' => $loc, 'status' => "Kırmızı · {$ageDays} gün", 'age' => $ageDays, 'cls' => '#b0301a'];
     } elseif ($ageDays >= 7) {
-        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'status' => "Sarı · {$ageDays} gün", 'age' => $ageDays, 'cls' => '#8a6100'];
+        $problems[] = ['cat' => 'iCal', 'name' => $r['name'] . ' (' . $typeLabel . ')', 'company' => $r['company_name'], 'location' => $loc, 'status' => "Sarı · {$ageDays} gün", 'age' => $ageDays, 'cls' => '#8a6100'];
     }
 }
 
@@ -124,6 +127,23 @@ foreach ($problems as $p) {
         . '</tr>';
 }
 
+// Konum bazlı kırılım: sorunlu iCal ilanlarını şehir/limana göre grupla (en çok sorun üstte).
+$locGroups = [];
+foreach ($problems as $p) {
+    if ($p['cat'] !== 'iCal') continue;
+    $loc = $p['location'] ?? 'Bilinmeyen konum';
+    $locGroups[$loc][] = $p;
+}
+uksort($locGroups, fn($a, $b) => count($b) - count($a));
+$locHtml = '';
+if ($locGroups) {
+    $locHtml .= '<h3 style="font-size:13px;margin:18px 0 6px;color:#10211f">📍 Konum bazlı kırılım</h3>';
+    foreach ($locGroups as $loc => $locItems) {
+        $locHtml .= '<p style="margin:4px 0;font-size:12px"><b>' . htmlspecialchars((string) $loc) . '</b> — ' . count($locItems) . ' sorunlu ilan<br>'
+            . '<span style="color:#64716d">' . implode(' · ', array_map(fn($i) => htmlspecialchars((string) $i['name']) . ' (' . htmlspecialchars((string) $i['status']) . ')', array_slice($locItems, 0, 5))) . ($locItems > 5 ? ' … +' . (count($locItems) - 5) . ' daha' : '') . '</span></p>';
+    }
+}
+
 $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '<h2 style="margin:0 0 6px">📡 Dağıtım sağlığı · haftalık özet</h2>'
     . '<p style="color:#64716d;margin:0 0 10px">Bu hafta <b>' . count($problems) . '</b> sorun tespit edildi — iCal <b style="color:#b0301a">' . $icalCount . '</b> · Kanal <b style="color:#b0301a">' . $channelCount . '</b>. (7+ gün eski senkron sarı, 30+ gün veya pasif bağlantı kırmızı.)</p>'
@@ -131,6 +151,7 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '<tr><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">İlan / Tedarikçi</th><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Tip</th><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Durum</th><th style="text-align:left;padding:7px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Son senkron</th></tr>'
     . $bodyRows
     . '</table>'
+    . $locHtml
     . '<p style="margin:14px 0 0;font-size:12px;color:#64716d">Gerçek zamanlı uyarılar (15 dk) tedarikçi panellerine ayrıca gider. Kırmızı durumlar için ilgili tedarikçiyle iletişime geçin veya iCal takvimler / Dağıtım & kanal merkezi sayfalarını denetleyin.</p>'
     . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/tedarikci-onaylari" style="color:#0d7a4a">Tedarikçi yönetimi →</a></p>'
     . '</div>';
@@ -138,12 +159,22 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
 // PDF eki (TCPDF kuruluysa): e-posta gövdesiyle aynı tablonun yazdırılabilir hali.
 $attName = null;
 $attBase64 = null;
+$pdfLoc = '';
+if ($locGroups) {
+    $pdfLoc = '<h3>Konum bazlı kırılım</h3>';
+    foreach ($locGroups as $loc => $locItems) {
+        $pdfLoc .= '<p><b>' . htmlspecialchars((string) $loc) . '</b> — ' . count($locItems) . ' sorunlu ilan: '
+            . htmlspecialchars(implode('; ', array_map(fn($i) => $i['name'] . ' (' . $i['status'] . ')', array_slice($locItems, 0, 8))))
+            . (count($locItems) > 8 ? ' … +' . (count($locItems) - 8) . ' daha' : '') . '</p>';
+    }
+}
 $pdf = pdf_build('<h2>Dağıtım sağlığı haftalık özeti — ' . date('d.m.Y') . '</h2>'
     . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . '</p>'
     . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:10px">'
     . '<tr style="background:#f2f4ef"><th align="left">İlan / Tedarikçi</th><th align="left">Tip</th><th align="left">Durum</th><th align="left">Son senkron</th></tr>'
     . $pdfRows
-    . '</table>');
+    . '</table>'
+    . $pdfLoc);
 if ($pdf !== null) {
     $attName = 'dagitim-sagligi-' . date('Y-m-d') . '.pdf';
     $attBase64 = base64_encode($pdf);
