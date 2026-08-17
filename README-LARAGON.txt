@@ -283,3 +283,8 @@ AYLIK SOHBET RAPORU (E-POSTA)
   NEXUS oda/birim tipi icin dis oda kodu tek formda girilir, tek tikla kaydedilir;
   bos satir eslesmeyi kaldirir. channel_room_mappings (migration 045) artik
   DB'den degil panelden yonetilir; webhook bildirimleri dogru oda tipine yazilir.
+- Webhook fiyat para birimi: admin -> Kontrol merkezi -> "Webhook fiyat varsayılan
+  para birimi" (channel_webhook_default_currency, varsayilan EUR). Gelen fiyatin
+  birimi entry.currency -> yuk.currency -> ayar varsayilani sirayla belirlenir;
+  fiyat plani biriminden farkliysa fx_rates uzerinden (tarih bazli, TRY capraz
+  dahil) cevrilir. Kur yoksa satir yazilmaz, fx_rate_missing hatasi loga duser.

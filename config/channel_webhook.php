@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/fx.php';
+require_once __DIR__ . '/platform_settings.php';
 
 /**
  * Kanal webhook yükünü NEXUS takvimi/fiyatlarına uygular.
@@ -16,7 +18,8 @@ require_once __DIR__ . '/database.php';
  *       "external_room_id": "kanal-oda-kodu",   // opsiyonel — boşsa ilanın ilk aktif oda tipi
  *       "date": "2026-09-01",                    // zorunlu
  *       "price": 185.50,                          // rates: gece fiyatı (opsiyonel)
- *       "currency": "EUR",                        // opsiyonel (uygulanmaz, yalnızca doğrulanır)
+ *       "currency": "EUR",                        // opsiyonel — fiyatın geldiği birim; yoksa yük/ayar varsayılanı kullanılır
+ *                                                 //   ve takvimin fiyat planı birimine fx_rates üzerinden çevrilir
  *       "allotment": 5,                           // availability: kontenjan (opsiyonel)
  *       "stop_sale": false,                       // restrictions (opsiyonel)
  *       "min_stay": 2,                            // restrictions (opsiyonel)
@@ -34,6 +37,11 @@ function channel_webhook_apply(array $log, array $payload): array
     $propertyId = (int) ($log['property_id'] ?? 0);
     $scope = (string) ($payload['scope'] ?? ($log['scope'] ?? 'content'));
     $errors = [];
+    // Fiyatların varsayılan geldiği birim (admin -> Kontrol merkezi; kanal currency göndermezse kullanılır).
+    $defaultCurrency = strtoupper((string) platform_setting('channel_webhook_default_currency', 'EUR'));
+    if (!preg_match('/^[A-Z]{3}$/', $defaultCurrency)) $defaultCurrency = 'EUR';
+    $payloadCurrency = strtoupper((string) ($payload['currency'] ?? ''));
+    if (!preg_match('/^[A-Z]{3}$/', $payloadCurrency)) $payloadCurrency = '';
 
     if ($propertyId <= 0) {
         return ['ok' => false, 'message' => 'İlan eşleştirmesi yok — external_property_id, channel_property_mappings içinde tanımlı değil.', 'applied' => 0, 'errors' => ['property_not_mapped']];
@@ -49,12 +57,14 @@ function channel_webhook_apply(array $log, array $payload): array
     if (!$roomList) {
         return ['ok' => false, 'message' => 'İlanda aktif oda/birim tipi yok — senkronize edilecek hedef yok.', 'applied' => 0, 'errors' => ['no_rooms']];
     }
-    $plans = $pdo->prepare("SELECT id, name FROM rate_plans WHERE property_id=? AND status='active' ORDER BY id LIMIT 1");
+    $plans = $pdo->prepare("SELECT id, name, currency FROM rate_plans WHERE property_id=? AND status='active' ORDER BY id LIMIT 1");
     $plans->execute([$propertyId]);
     $plan = $plans->fetch();
     if (!$plan) {
         return ['ok' => false, 'message' => 'İlanda aktif fiyat planı yok — fiyat/kontenjan yazılamaz.', 'applied' => 0, 'errors' => ['no_rate_plan']];
     }
+    $targetCurrency = strtoupper((string) ($plan['currency'] ?? 'EUR'));
+    if (!preg_match('/^[A-Z]{3}$/', $targetCurrency)) $targetCurrency = 'EUR';
 
     // Oda eşleştirmeleri (kanal dış kodu -> NEXUS room_type).
     $mapSt = $pdo->prepare('SELECT room_type_id, external_room_id FROM channel_room_mappings WHERE channel_connection_id=? AND property_id=?');
@@ -140,7 +150,21 @@ function channel_webhook_apply(array $log, array $payload): array
                 $base['allotment'] = max(0, (int) $entry['allotment']);
             }
             if ($scope === 'rates' && array_key_exists('price', $entry)) {
-                $base['base_price'] = max(0, (float) str_replace(',', '.', (string) $entry['price']));
+                $rawPrice = max(0, (float) str_replace(',', '.', (string) $entry['price']));
+                // Fiyatın geldiği birim: entry -> yük -> ayar varsayılanı.
+                $inCur = strtoupper((string) ($entry['currency'] ?? ($payloadCurrency !== '' ? $payloadCurrency : $defaultCurrency)));
+                if (!preg_match('/^[A-Z]{3}$/', $inCur)) $inCur = $defaultCurrency;
+                if ($inCur !== $targetCurrency) {
+                    // Takvimin fiyat planı birimine çevir; kur yoksa bu satırı yazma (yanlış birimde fiyat girilmesin).
+                    $rate = fx_rate($inCur, $targetCurrency, $date);
+                    if ($rate <= 0) {
+                        $errors[] = 'fx_rate_missing:' . $inCur . '->' . $targetCurrency . ':' . $date;
+                        continue;
+                    }
+                    $base['base_price'] = fx_convert_amount($rawPrice, $inCur, $targetCurrency, $rate);
+                } else {
+                    $base['base_price'] = $rawPrice;
+                }
             }
         }
         if ($scope === 'restrictions') {
