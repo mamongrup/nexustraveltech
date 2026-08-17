@@ -303,3 +303,8 @@ AYLIK SOHBET RAPORU (E-POSTA)
   *-postgres.sql dosyalarinin uygulandigini takip eder; uygulanmamis olanlari
   idempotent uygular (002-008 legacy MySQL dosyalari atlanir). --dry-run ile
   yalnizca durum gosterilir; sorun varsa cikis kodu 1.
+- Webhook otomatik oda eslestirme (channel_webhook_auto_map, varsayilan acik):
+  taninmayan external_room_id gelince ilk aktif oda tipine kalici eslestirme
+  otomatik olusturulur (ON CONFLICT DO NOTHING, ayni yukte tekrar denenmez);
+  basari mesajina "+N yeni dis kod eslestirildi" eklenir. Kontrol merkezinden
+  kapatilabilir; eslesme panelden sonradan degistirilebilir.
