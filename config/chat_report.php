@@ -278,7 +278,7 @@ function panel_chat_weekly_data(string $role, int $actorId): array
 /**
  * Panel haftalık özetini e-posta gövdesine çevirir.
  */
-function panel_chat_weekly_html(array $d, string $panelLink, string $company = '', int $linkedCount = 0, string $linkedLabel = 'tesis', int $pendingRoom = 0, int $pendingPlan = 0): string
+function panel_chat_weekly_html(array $d, string $panelLink, string $company = '', int $linkedCount = 0, string $linkedLabel = 'tesis', int $pendingRoom = 0, int $pendingPlan = 0, int $weekRoomAppr = 0, int $weekRoomRej = 0, int $weekPlanAppr = 0, int $weekPlanRej = 0): string
 {
     $pendingTotal = $pendingRoom + $pendingPlan;
     $pendingHtml = '';
@@ -286,6 +286,18 @@ function panel_chat_weekly_html(array $d, string $panelLink, string $company = '
         $pendingHtml = '<div style="margin:14px 0 4px;padding:10px 14px;background:#fff8e6;border:1px solid #ead9a8;border-radius:8px">'
             . '<h3 style="margin:0 0 4px;font-size:13px;color:#8a6100">⏳ Onay bekleyen eşleştirme önerileri: <b>' . $pendingTotal . '</b> (' . $pendingRoom . ' oda + ' . $pendingPlan . ' fiyat planı)</h3>'
             . '<p style="margin:0;font-size:12px;color:#64716d">Webhook bildirimlerinden gelen dış oda/plan kodları öneri olarak bekliyor — onaylanana kadar veri yazılmaz. Onaylamak için Dağıtım & kanal merkezi → bölüm 3 (Oda eşleştirmesi) sayfasını açın.</p></div>';
+    }
+    // Son 7 gün eşleştirme işlemleri (onay/red) — denetim kayıtlarından.
+    $weekTotal = $weekRoomAppr + $weekRoomRej + $weekPlanAppr + $weekPlanRej;
+    $weekHtml = '';
+    if ($weekTotal > 0) {
+        $weekHtml = '<div style="margin:10px 0 4px;padding:9px 14px;background:#f0f7f4;border:1px solid #cfe4da;border-radius:8px;font-size:12px;color:#10211f">'
+            . '<b>🔄 Son 7 günde eşleştirme işlemleri:</b> '
+            . ($weekRoomAppr > 0 ? '✅ <b style="color:#0d7a4a">' . $weekRoomAppr . '</b> oda onayı · ' : '')
+            . ($weekPlanAppr > 0 ? '✅ <b style="color:#0d7a4a">' . $weekPlanAppr . '</b> plan onayı · ' : '')
+            . ($weekRoomRej > 0 ? '❌ <b style="color:#b0301a">' . $weekRoomRej . '</b> oda reddi · ' : '')
+            . ($weekPlanRej > 0 ? '❌ <b style="color:#b0301a">' . $weekPlanRej . '</b> plan reddi · ' : '')
+            . 'toplam <b>' . $weekTotal . '</b></div>';
     }
     $qRows = '';
     foreach ($d['topQuestions'] as $i => $row) {
@@ -327,6 +339,7 @@ function panel_chat_weekly_html(array $d, string $panelLink, string $company = '
         . ($qRows !== '' ? '<table style="border-collapse:collapse;width:100%;max-width:560px"><tr><th style="text-align:left;padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">En çok sorulanlar</th><th style="padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Sayı</th></tr>' . $qRows . '</table>' : '')
         . $topicsHtml
         . $pendingHtml
+        . $weekHtml
         . '<p style="margin-top:18px"><a href="' . htmlspecialchars($panelLink) . '" style="color:#0d7a4a">Aylık rapor sayfası →</a></p>'
         . '</div>';
 }

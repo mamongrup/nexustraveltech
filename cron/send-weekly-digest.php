@@ -167,12 +167,23 @@ $sendPanel = function (string $role, int $actorId, string $email, string $subjec
     // acentede iş yaptığı tedarikçilerin toplamı. Tablo/ilişki yoksa sessizce 0 kabul edilir.
     $pendingRoom = 0;
     $pendingPlan = 0;
+    $wRoomAppr = 0;
+    $wRoomRej = 0;
+    $wPlanAppr = 0;
+    $wPlanRej = 0;
     try {
         if ($role === 'supplier') {
             $pq = db()->prepare("SELECT
                 (SELECT COUNT(*) FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id=? AND m.status='suggested') room_sug,
                 (SELECT COUNT(*) FROM channel_rate_plan_mappings pm JOIN channel_connections c2 ON c2.id=pm.channel_connection_id WHERE c2.supplier_id=? AND pm.status='suggested') plan_sug");
             $pq->execute([$actorId, $actorId]);
+            $since7 = date('Y-m-d H:i:s', time() - 7 * 86400);
+            $wq = db()->prepare("SELECT
+                (SELECT COUNT(*) FROM admin_audit_logs a WHERE a.action='channel.room_mapping_approve' AND a.created_at >= ? AND a.entity_type='channel_room_mappings' AND a.entity_id IN (SELECT m.id FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id=?)) room_appr,
+                (SELECT COUNT(*) FROM admin_audit_logs a WHERE a.action='channel.room_mapping_reject' AND a.created_at >= ? AND a.entity_type='channel_room_mappings' AND a.entity_id IN (SELECT m.id FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id=?)) room_rej,
+                (SELECT COUNT(*) FROM admin_audit_logs a WHERE a.action='channel.plan_mapping_approve' AND a.created_at >= ? AND a.entity_type='channel_rate_plan_mappings' AND a.entity_id IN (SELECT p.id FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id WHERE c2.supplier_id=?)) plan_appr,
+                (SELECT COUNT(*) FROM admin_audit_logs a WHERE a.action='channel.plan_mapping_reject' AND a.created_at >= ? AND a.entity_type='channel_rate_plan_mappings' AND a.entity_id IN (SELECT p.id FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id WHERE c2.supplier_id=?)) plan_rej");
+            $wq->execute([$since7, $actorId, $since7, $actorId, $since7, $actorId, $since7, $actorId]);
         } else {
             $pq = db()->prepare("SELECT
                 (SELECT COUNT(*) FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id
@@ -186,15 +197,33 @@ $sendPanel = function (string $role, int $actorId, string $email, string $subjec
                      UNION SELECT p.supplier_id FROM properties p JOIN agency_discount_requests ad2 ON ad2.property_id=p.id WHERE ad2.agency_id=?
                    ) AND pm.status='suggested') plan_sug");
             $pq->execute([$actorId, $actorId, $actorId, $actorId]);
+            $since7 = date('Y-m-d H:i:s', time() - 7 * 86400);
+            $supIn = 'SELECT p.supplier_id FROM properties p JOIN agency_booking_requests ab ON ab.property_id=p.id WHERE ab.agency_id=?
+                     UNION SELECT p.supplier_id FROM properties p JOIN agency_discount_requests ad ON ad.property_id=p.id WHERE ad.agency_id=?';
+            $wq = db()->prepare("SELECT
+                (SELECT COUNT(*) FROM admin_audit_logs a WHERE a.action='channel.room_mapping_approve' AND a.created_at >= ? AND a.entity_type='channel_room_mappings' AND a.entity_id IN (SELECT m.id FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id IN ($supIn))) room_appr,
+                (SELECT COUNT(*) FROM admin_audit_logs a WHERE a.action='channel.room_mapping_reject' AND a.created_at >= ? AND a.entity_type='channel_room_mappings' AND a.entity_id IN (SELECT m.id FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id IN ($supIn))) room_rej,
+                (SELECT COUNT(*) FROM admin_audit_logs a WHERE a.action='channel.plan_mapping_approve' AND a.created_at >= ? AND a.entity_type='channel_rate_plan_mappings' AND a.entity_id IN (SELECT p.id FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id WHERE c2.supplier_id IN ($supIn))) plan_appr,
+                (SELECT COUNT(*) FROM admin_audit_logs a WHERE a.action='channel.plan_mapping_reject' AND a.created_at >= ? AND a.entity_type='channel_rate_plan_mappings' AND a.entity_id IN (SELECT p.id FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id WHERE c2.supplier_id IN ($supIn))) plan_rej");
+            $wq->execute([$since7, $actorId, $actorId, $since7, $actorId, $actorId, $since7, $actorId, $actorId, $since7, $actorId, $actorId]);
         }
         $pr = $pq->fetch();
         $pendingRoom = (int) ($pr['room_sug'] ?? 0);
         $pendingPlan = (int) ($pr['plan_sug'] ?? 0);
+        $wr = $wq->fetch();
+        $wRoomAppr = (int) ($wr['room_appr'] ?? 0);
+        $wRoomRej = (int) ($wr['room_rej'] ?? 0);
+        $wPlanAppr = (int) ($wr['plan_appr'] ?? 0);
+        $wPlanRej = (int) ($wr['plan_rej'] ?? 0);
     } catch (Throwable $e) {
         $pendingRoom = 0;
         $pendingPlan = 0;
+        $wRoomAppr = 0;
+        $wRoomRej = 0;
+        $wPlanAppr = 0;
+        $wPlanRej = 0;
     }
-    $body = panel_chat_weekly_html($d, $panelLink, $company, $linkedCount, 'tesis', $pendingRoom, $pendingPlan);
+    $body = panel_chat_weekly_html($d, $panelLink, $company, $linkedCount, 'tesis', $pendingRoom, $pendingPlan, $wRoomAppr, $wRoomRej, $wPlanAppr, $wPlanRej);
     queue_email($email, $subjectPrefix . ' — ' . $d['dateLabel'], $body, 'chat_weekly_panel', $key);
     echo 'Panel özeti kuyruğa eklendi: ' . $email . " ({$role}#{$actorId}, {$d['total']} mesaj).\n";
 };
