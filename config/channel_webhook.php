@@ -18,6 +18,9 @@ require_once __DIR__ . '/platform_settings.php';
  *       "external_room_id": "kanal-oda-kodu",   // opsiyonel — boşsa ilanın ilk aktif oda tipi;
  *                                                 //   tanınmayan kod varsa (ayar açıksa) onay bekleyen öneri oluşturulur,
  *                                                 //   satır yazılmaz (dağıtım merkezi bölüm 3'ten onaylanır)
+ *       "external_rate_plan_id": "kanal-plan-kodu", // opsiyonel — boşsa oda eşleştirmesindeki plan / ilk aktif plan;
+ *                                                 //   tanınmayan kod varsa (ayar açıksa) oda eşleştirmesiyle aynı onay akışı:
+ *                                                 //   onay bekleyen fiyat planı önerisi oluşturulur, satır yazılmaz
  *       "date": "2026-09-01",                    // zorunlu
  *       "price": 185.50,                          // rates: gece fiyatı (opsiyonel)
  *       "currency": "EUR",                        // opsiyonel — fiyatın geldiği birim; yoksa yük/ayar varsayılanı kullanılır
@@ -45,6 +48,11 @@ function channel_webhook_apply(array $log, array $payload): array
     $suggestSt = $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, external_room_id, status, suggested_at, suggestion_count, suggestion_score)
         VALUES(?,?,?,?,'suggested',now(),1,?)
         ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET status='suggested', suggested_at=now(), suggestion_count=channel_room_mappings.suggestion_count+1, room_type_id=EXCLUDED.room_type_id, property_id=EXCLUDED.property_id, suggestion_score=EXCLUDED.suggestion_score");
+    // Tanınmayan dış fiyat planı kodu: oda eşleştirmesiyle aynı onay akışı — status='suggested' satır,
+    // dağıtım merkezi bölüm 3'ten onaylanır/reddedilir; onaylanana kadar o koda ait satır yazılmaz.
+    $planSuggestSt = $pdo->prepare("INSERT INTO channel_rate_plan_mappings(channel_connection_id, property_id, rate_plan_id, external_rate_plan_id, status, suggested_at, suggestion_count, suggestion_score)
+        VALUES(?,?,?,?,'suggested',now(),1,?)
+        ON CONFLICT(channel_connection_id, external_rate_plan_id) DO UPDATE SET status='suggested', suggested_at=now(), suggestion_count=channel_rate_plan_mappings.suggestion_count+1, rate_plan_id=EXCLUDED.rate_plan_id, property_id=EXCLUDED.property_id, suggestion_score=EXCLUDED.suggestion_score");
     // Fiyatların varsayılan geldiği birim (admin -> Kontrol merkezi; kanal currency göndermezse kullanılır).
     $defaultCurrency = strtoupper((string) platform_setting('channel_webhook_default_currency', 'EUR'));
     if (!preg_match('/^[A-Z]{3}$/', $defaultCurrency)) $defaultCurrency = 'EUR';
@@ -87,6 +95,13 @@ function channel_webhook_apply(array $log, array $payload): array
             'room' => (int) $m['room_type_id'],
             'plan' => $m['rate_plan_id'] !== null ? (int) $m['rate_plan_id'] : null,
         ];
+    }
+    // Fiyat planı eşleştirmeleri (kanal dış fiyat planı kodu -> NEXUS rate_plan; yalnızca onaylılar).
+    $planMapSt = $pdo->prepare("SELECT rate_plan_id, external_rate_plan_id FROM channel_rate_plan_mappings WHERE channel_connection_id=? AND property_id=? AND status='confirmed' AND rate_plan_id IS NOT NULL");
+    $planMapSt->execute([$connId, $propertyId]);
+    $planMap = [];
+    foreach ($planMapSt->fetchAll() as $pm) {
+        $planMap[(string) $pm['external_rate_plan_id']] = (int) $pm['rate_plan_id'];
     }
     // İsim benzerliği: dış kod ile oda tipi adını karşılaştırır (Türkçe normalizasyon + token/bigram).
     $nameSim = function (string $a, string $b): float {
@@ -138,6 +153,21 @@ function channel_webhook_apply(array $log, array $payload): array
         $bestScore = $score >= 0.45 ? $score : 0.0;
         return ['room' => $pick, 'score' => (int) round($bestScore * 100)];
     };
+    // En iyi fiyat planı eşleşmesi: skoru en yüksek aktif plan (eşik 0.45).
+    $planNames = [];
+    foreach ($planRows as $pl) {
+        $planNames[(int) $pl['id']] = (string) $pl['name'];
+    }
+    $bestPlanFor = function (string $ext) use ($planRows, $nameSim): array {
+        $pick = (int) $planRows[0]['id'];
+        $score = 0.0;
+        foreach ($planRows as $pl) {
+            $s = $nameSim($ext, (string) $pl['name']);
+            if ($s > $score) { $score = $s; $pick = (int) $pl['id']; }
+        }
+        $use = $score >= 0.45 ? $score : 0.0;
+        return ['plan' => $pick, 'score' => (int) round($use * 100)];
+    };
     $suggestedCount = 0;
     // Tedarikçi bildirimi: öneri İLK kez oluştuğunda hangi kodun hangi oda tipine önerildiği panel bildirimi olarak gider.
     // Tekrar gelen aynı kod yalnızca suggestion_count artırır; bildirim tekrarlanmaz (spam yok).
@@ -166,6 +196,36 @@ function channel_webhook_apply(array $log, array $payload): array
         }
         // Ayar kapalı: eski davranış — ilk aktif oda tipine yaz (kalıcı eşleştirme oluşturulmaz).
         return ['room' => $fallbackRoom, 'plan' => null];
+    };
+    $suggestedPlanCount = 0;
+    // Dış fiyat planı kodu çözümü: boşsa oda eşleştirmesindeki plan / ilk aktif plan;
+    // tanınmayan kod (ayar açıkken) isim benzerliğine göre onay bekleyen öneri oluşturur, satır yazılmaz.
+    $planResolve = function (string $ext) use (&$planMap, $plansById, $planSuggestSt, $connId, $propertyId, $autoMap, &$suggestedPlanCount, $supplierId, $bestPlanFor, $planNames): array {
+        if ($ext === '') {
+            return ['skip' => false, 'plan' => null];
+        }
+        if (array_key_exists($ext, $planMap)) {
+            $pid = $planMap[$ext];
+            if ($pid < 0) {
+                return ['skip' => true, 'plan' => null]; // bu yükte aynı kod tekrar denendi
+            }
+            return ['skip' => false, 'plan' => isset($plansById[$pid]) ? $plansById[$pid] : null];
+        }
+        if ($autoMap) {
+            $match = $bestPlanFor($ext);
+            $planSuggestSt->execute([$connId, $propertyId, $match['plan'], $ext, $match['score'] > 0 ? $match['score'] : null]);
+            if ($supplierId > 0 && (int) $planSuggestSt->rowCount() === 1) {
+                // rowCount 1 = yeni INSERT (ilk kez); 2 = ON CONFLICT güncellemesi (tekrar) → bildirim yalnızca ilkinde.
+                notify_supplier_users($supplierId, 'channel_plan_mapping_suggestion',
+                    'Kanal webhook\'undan tanınmayan fiyat planı kodu geldi: "' . $ext . '" → "' . ($planNames[$match['plan']] ?? ('#' . $match['plan'])) . '" için eşleştirme önerisi oluşturuldu' . ($match['score'] > 0 ? ' (benzerlik %' . $match['score'] . ')' : '') . '. Veri onaylanana kadar yazılmadı.',
+                    '/nexustraveltech/tedarikci/dagitim-merkezi');
+            }
+            $planMap[$ext] = -1; // bu yükte bir daha öneri/deneme yok
+            $suggestedPlanCount++;
+            return ['skip' => true, 'plan' => null];
+        }
+        // Ayar kapalı: eski davranış — oda eşleştirmesindeki plan / ilk aktif plan kullanılır.
+        return ['skip' => false, 'plan' => null];
     };
 
     $entries = $payload['entries'] ?? null;
@@ -213,8 +273,14 @@ function channel_webhook_apply(array $log, array $payload): array
         if ($roomId <= 0) {
             continue; // onay bekleyen öneri — veri yazılmadı
         }
+        // Dış fiyat planı kodu (opsiyonel): kanal dış plan kodu -> NEXUS plan.
+        // Tanınmayan kod, oda eşleştirmesiyle aynı onay akışına tabidir — öneri oluşturulur, satır yazılmaz.
+        $planRes = $planResolve(trim((string) ($entry['external_rate_plan_id'] ?? '')));
+        if ($planRes['skip']) {
+            continue; // onay bekleyen fiyat planı önerisi — veri yazılmadı
+        }
         // Eşleştirmede belirtilen fiyat planı kullanılır; yoksa ilk aktif plan.
-        $entryPlan = $roomRes['plan'] !== null && isset($plansById[$roomRes['plan']]) ? $plansById[$roomRes['plan']] : $fallbackPlan;
+        $entryPlan = $planRes['plan'] ?? ($roomRes['plan'] !== null && isset($plansById[$roomRes['plan']]) ? $plansById[$roomRes['plan']] : $fallbackPlan);
         $entryPlanId = (int) $entryPlan['id'];
 
         if ($scope === 'reservations') {
@@ -295,9 +361,15 @@ function channel_webhook_apply(array $log, array $payload): array
         $applied++;
     }
 
-    if ($applied === 0 && $suggestedCount === 0) {
+    if ($applied === 0 && $suggestedCount === 0 && $suggestedPlanCount === 0) {
         return ['ok' => false, 'message' => 'Hiçbir satır uygulanamadı. ' . implode('; ', array_slice($errors, 0, 5)), 'applied' => 0, 'errors' => $errors, 'fx_audit' => array_values($fxAudit)];
     }
-    $suggestNote = $suggestedCount > 0 ? ' (+' . $suggestedCount . ' tanınmayan kod onay bekleyen öneri olarak kaydedildi — webhook satırı yazılmadı)' : '';
-    return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount, 'fx_audit' => array_values($fxAudit)];
+    $suggestNote = '';
+    if ($suggestedCount > 0) {
+        $suggestNote .= ' (+' . $suggestedCount . ' tanınmayan oda kodu onay bekleyen öneri olarak kaydedildi — webhook satırı yazılmadı)';
+    }
+    if ($suggestedPlanCount > 0) {
+        $suggestNote .= ' (+' . $suggestedPlanCount . ' tanınmayan fiyat planı kodu onay bekleyen öneri olarak kaydedildi — webhook satırı yazılmadı)';
+    }
+    return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount, 'suggested_plans' => $suggestedPlanCount, 'fx_audit' => array_values($fxAudit)];
 }
