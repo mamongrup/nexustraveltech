@@ -19,14 +19,24 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
     $out = '';
 
     // --repair: bilinen yabancı/hatalı şemalı tabloları otomatik tespit edip, BOŞSA düşürür;
-    // ardından migration bölümü `CREATE TABLE IF NOT EXISTS` ile yeniden kurar.
+    // ardından migration bölümü tabloyu TAM migration zinciriyle yeniden kurar.
     // DOLU tablolara asla dokunulmaz (raporlanır, elle müdahale gerekir).
+    // Tablo yanlış şemadaysa beklenen kolon yoktur -> boşsa düşürülür, migration'lar
+    // (schema_migrations'ta kayıtlı olsalar bile) zorla yeniden uygulanır.
     $repairMap = [
-        // tablo => [beklenen kolon, onarımı yapan migration]
-        'channel_room_mappings' => ['channel_connection_id', '045-channel-room-mappings-postgres.sql'],
+        // tablo => [beklenen kolon, tam migration zinciri]
+        'channel_room_mappings' => [
+            'channel_connection_id',
+            ['045-channel-room-mappings-postgres.sql', '047-room-mapping-suggestions-postgres.sql', '049-room-plan-mapping-postgres.sql', '052-suggestion-score-postgres.sql'],
+        ],
+        'channel_property_mappings' => [
+            'external_property_id',
+            ['019-distribution-and-rate-management-postgres.sql'],
+        ],
     ];
+    $reapplyMigrations = []; // onarım sonrası zorla yeniden uygulanacak migration dosyaları
 
-    $requiredTables = ['suppliers','supplier_users','properties','supplier_bookings','inventory_calendar','channel_connections','ical_connections','ical_events','physical_rooms','booking_folios','folio_transactions','payment_records','payment_allocations','hotel_invoices','night_audit_runs','hotel_staff','hotel_roles','loyalty_tiers','guest_loyalty_accounts','revenue_recommendations','guest_service_requests','login_throttle','guest_reviews','agency_booking_requests','email_outbox','webhook_subscriptions','webhook_deliveries','error_logs','admin_audit_logs','payment_links','fx_rates','booking_groups','notifications','agencies','agency_users','email_templates','admin_2fa','scheduled_jobs','public_chat_messages','blocked_ips','panel_chat_messages','scheduled_job_runs','property_feature_catalog','channel_room_mappings','feature_delete_backups','channel_sync_logs','ical_sync_logs','pending_trash_purges'];
+    $requiredTables = ['suppliers','supplier_users','properties','supplier_bookings','inventory_calendar','channel_connections','channel_property_mappings','ical_connections','ical_events','physical_rooms','booking_folios','folio_transactions','payment_records','payment_allocations','hotel_invoices','night_audit_runs','hotel_staff','hotel_roles','loyalty_tiers','guest_loyalty_accounts','revenue_recommendations','guest_service_requests','login_throttle','guest_reviews','agency_booking_requests','email_outbox','webhook_subscriptions','webhook_deliveries','error_logs','admin_audit_logs','payment_links','fx_rates','booking_groups','notifications','agencies','agency_users','email_templates','admin_2fa','scheduled_jobs','public_chat_messages','blocked_ips','panel_chat_messages','scheduled_job_runs','property_feature_catalog','channel_room_mappings','feature_delete_backups','channel_sync_logs','ical_sync_logs','pending_trash_purges'];
 
     $requiredColumns = [
         'supplier_bookings'=>['rate_plan_id','booking_status','checked_in_at','checked_out_at','early_arrival','late_departure','deposit_amount','deposit_status','no_show_at','cancelled_at','cancellation_reason'],
@@ -56,6 +66,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
         'property_feature_catalog'=>['deleted_at'],
         'feature_delete_backups'=>['feature_id','code','label','affected_properties'],
         'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id','rate_plan_id','status','suggested_at','suggestion_count','suggestion_score'],
+        'channel_property_mappings'=>['channel_connection_id','property_id','external_property_id','status'],
         'channel_sync_logs'=>['channel_connection_id','property_id','direction','scope','status','request_payload','response_payload','error_message','fx_audit'],
         'ical_sync_logs'=>['ical_connection_id','property_id','status','error_message','error_hash'],
         'pending_trash_purges'=>['feature_id','token','expires_at','approved_at'],
@@ -115,7 +126,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
         $out .= "\n=== 2b) ONARIM MODU ===\n";
         $dropped = 0;
         $skippedNonEmpty = [];
-        foreach ($repairMap as $table => [$expectedCol, $mig]) {
+        foreach ($repairMap as $table => [$expectedCol, $migs]) {
             $exists = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='" . $table . "'")->fetchColumn();
             if (!$exists) {
                 $out .= "· " . $table . " yok — atlanıyor (migration kurar)\n";
@@ -134,8 +145,11 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
             }
             try {
                 $pdo->exec('DROP TABLE IF EXISTS \"' . $table . '\" CASCADE');
-                $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . $mig . " ile yeniden kurulacak\n";
+                $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . implode(', ', $migs) . " zinciriyle yeniden kurulacak\n";
                 $dropped++;
+                foreach ($migs as $mig) {
+                    $reapplyMigrations[$mig] = true; // schema_migrations'ta kayıtlı olsa bile zorla yeniden uygula
+                }
             } catch (Throwable $e) {
                 $out .= "✗ " . $table . " düşürülemedi: " . $e->getMessage() . "\n";
                 $errors[] = $table . ' onarılamadı: ' . $e->getMessage();
@@ -206,12 +220,16 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
     $failedMigs = [];
     foreach ($migrationFiles as $file) {
         $base = basename($file);
-        if (isset($appliedMap[$base])) {
+        // Onarım modunda düşürülen tabloların migration'ları schema_migrations'ta kayıtlı olsa
+        // bile zorla yeniden uygulanır (CREATE TABLE IF NOT EXISTS tabloyu yeniden kurar;
+        // ALTER ... IF NOT EXISTS güvenlidir). Kayıt güncel commit hash'iyle güncellenir.
+        $forceReapply = !$dryRun && isset($reapplyMigrations[$base]);
+        if (!$forceReapply && isset($appliedMap[$base])) {
             $out .= '✓ ' . $base . (($appliedMap[$base] !== '') ? ' @ ' . substr($appliedMap[$base], 0, 7) : '') . "\n";
             continue;
         }
         if ($dryRun) {
-            $out .= '⏳ ' . $base . " (bekliyor)\n";
+            $out .= ($forceReapply ? '♻ ' : '⏳ ') . $base . ($forceReapply ? ' (onarım sonrası yeniden uygulanacak)' : ' (bekliyor)') . "\n";
             $pendingCount++;
             continue;
         }
@@ -220,8 +238,17 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
             $pdo->beginTransaction();
             $pdo->exec($sql);
             $pdo->commit();
-            $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
-            $out .= '→ ' . $base . ' uygulandı' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : ' (commit hash bulunamadı)') . "\n";
+            if ($forceReapply) {
+                $upd = $pdo->prepare('UPDATE schema_migrations SET applied_at=now(), commit_hash=? WHERE file=?');
+                $upd->execute([$commitNow !== '' ? $commitNow : null, $base]);
+                if ($upd->rowCount() === 0) {
+                    $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
+                }
+                $out .= '♻ ' . $base . ' yeniden uygulandı' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : '') . "\n";
+            } else {
+                $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
+                $out .= '→ ' . $base . ' uygulandı' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : ' (commit hash bulunamadı)') . "\n";
+            }
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             $out .= '✗ ' . $base . ' — ' . $e->getMessage() . "\n";

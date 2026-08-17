@@ -6,12 +6,11 @@ ALTER TABLE channel_connections ADD COLUMN IF NOT EXISTS last_sync_status VARCHA
 CREATE TABLE IF NOT EXISTS channel_property_mappings (
  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,channel_connection_id BIGINT NOT NULL REFERENCES channel_connections(id) ON DELETE CASCADE,property_id BIGINT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,external_property_id VARCHAR(120) NOT NULL,status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','inactive')),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(channel_connection_id,property_id),UNIQUE(channel_connection_id,external_property_id)
 );
-CREATE TABLE IF NOT EXISTS channel_room_mappings (
- id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,channel_property_mapping_id BIGINT NOT NULL REFERENCES channel_property_mappings(id) ON DELETE CASCADE,room_type_id BIGINT NOT NULL REFERENCES room_types(id) ON DELETE CASCADE,external_room_id VARCHAR(120) NOT NULL,inventory_mode VARCHAR(16) NOT NULL DEFAULT 'pooled' CHECK(inventory_mode IN ('pooled','allocated','virtual')),availability_formula JSONB NOT NULL DEFAULT '{}'::jsonb,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(channel_property_mapping_id,room_type_id),UNIQUE(channel_property_mapping_id,external_room_id)
-);
-CREATE TABLE IF NOT EXISTS channel_rate_plan_mappings (
- id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,channel_room_mapping_id BIGINT NOT NULL REFERENCES channel_room_mappings(id) ON DELETE CASCADE,rate_plan_id BIGINT NOT NULL REFERENCES rate_plans(id) ON DELETE CASCADE,external_rate_plan_id VARCHAR(120) NOT NULL,send_mode VARCHAR(16) NOT NULL DEFAULT 'direct' CHECK(send_mode IN ('direct','derived','readonly')),adjustment_type VARCHAR(12) NOT NULL DEFAULT 'none' CHECK(adjustment_type IN ('none','percent','fixed')),adjustment_value NUMERIC(12,2) NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(channel_room_mapping_id,rate_plan_id),UNIQUE(channel_room_mapping_id,external_rate_plan_id)
-);
+-- NOT: channel_room_mappings ve channel_rate_plan_mappings bu dosyada artık oluşturulmaz.
+-- channel_room_mappings'in güncel şeması 045 + 047 + 049 + 052 migration'larında tanımlıdır
+-- (kanal dış oda kodu -> NEXUS oda tipi + fiyat planı + öneri/onay akışı).
+-- channel_rate_plan_mappings uygulama tarafından kullanılmıyor; eski kopyalarda kalmışsa
+-- zararsızdır ve scripts/health-check.php --repair ile temizlenebilir.
 CREATE TABLE IF NOT EXISTS channel_sync_logs (
  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,channel_connection_id BIGINT NOT NULL REFERENCES channel_connections(id) ON DELETE CASCADE,property_id BIGINT REFERENCES properties(id) ON DELETE SET NULL,direction VARCHAR(8) NOT NULL CHECK(direction IN ('push','pull')),scope VARCHAR(20) NOT NULL CHECK(scope IN ('availability','rates','restrictions','reservations','content')),status VARCHAR(16) NOT NULL CHECK(status IN ('queued','running','success','failed','skipped')),request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,response_payload JSONB NOT NULL DEFAULT '{}'::jsonb,error_message TEXT,attempt_count SMALLINT NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),completed_at TIMESTAMPTZ
 );
