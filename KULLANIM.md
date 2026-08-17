@@ -264,6 +264,21 @@ bash scripts/apply-migrations-postgres.sh
 ```
 Betik migration'ları postgres olarak uygular, tüm public şema sahipliğini `nexus_app`'e devreder ve `schema_migrations`'a kaydeder.
 
+**Yalnızca sahiplik devri (tek seferlik, migration'sız alternatif):** betik yerine sadece sahipliği devretmek isterseniz — app kullanıcısını `config/secrets.php`'den okur, tüm tablo + sequence + şema sahipliğini ona geçirir:
+
+```bash
+cd /var/www/vhosts/nexustraveltech.com/httpdocs
+APP_USER=$(grep -oP "'db_user'\s*=>\s*'\K[^']+" config/secrets.php)
+echo "Hedef sahip: $APP_USER"
+sudo -u postgres psql -d nexus_traveltech -v app_user="$APP_USER" <<'SQL'
+SELECT format('ALTER TABLE public.%I OWNER TO %I', tablename, :'app_user')
+  FROM pg_tables WHERE schemaname='public' \gexec
+SELECT format('ALTER SEQUENCE public.%I OWNER TO %I', sequence_name, :'app_user')
+  FROM information_schema.sequences WHERE sequence_schema='public' \gexec
+ALTER SCHEMA public OWNER TO :"app_user";
+SQL
+```
+
 **Doğrulama:** Betik sonunda sahiplik satırında `nexus_app` en üstte; `verify-platform.php` temiz. Kalan `✗` varsa tam hata ile tekrar deneyin.
 
 ---
