@@ -62,9 +62,20 @@ try {
     // Oda eşleştirme durumu — channel_room_mappings tablosu varsa tutarlılık denetimi.
     if(!in_array('channel_room_mappings',$missing,true)){
         $mappingCount=(int)$pdo->query('SELECT COUNT(*) FROM channel_room_mappings')->fetchColumn();
-        $orphanMappings=(int)$pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id))")->fetchColumn();
-        if($orphanMappings>0)$errors[]="channel_room_mappings: {$orphanMappings} yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait).";
-        echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, '.$orphanMappings." uyumsuz.\n";
+        // Şema uyumluluğu: yabancı/eski şemalı tablo (örn. channel_property_mapping_id + inventory_mode
+        // ile elle/eski sürümde oluşturulmuş) sorguları patlatmasın — hedef durum raporlanır,
+        // onarım scripts/health-check.php --repair ile yapılır (boşsa otomatik, doluysa elle).
+        $rmCols=array_flip($pdo->query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='channel_room_mappings'")->fetchAll(PDO::FETCH_COLUMN));
+        $rmNeed=['channel_connection_id','property_id','external_room_id','room_type_id','status','rate_plan_id'];
+        $rmMissing=array_values(array_filter($rmNeed,fn($c)=>!isset($rmCols[$c])));
+        if($rmMissing){
+            $errors[]='channel_room_mappings yabancı/eski şemada — eksik kolonlar: '.implode(', ',$rmMissing).' (scripts/health-check.php --repair ile yeniden kurun; tablo boşsa otomatik, doluysa elle veri taşıma gerekir).';
+            echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, ŞEMA UYUMSUZ ('.implode(', ',$rmMissing).") eksik — scripts/health-check.php --repair gerekli\n";
+        } else {
+            $orphanMappings=(int)$pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))")->fetchColumn();
+            if($orphanMappings>0)$errors[]="channel_room_mappings: {$orphanMappings} yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait).";
+            echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, '.$orphanMappings." uyumsuz.\n";
+        }
     }
     // Yeni entegrasyon kolonları özeti — 047/048/049/052 migration'larının durumu tek satırda.
     // 047: channel_room_mappings.status/suggested_at/suggestion_count · 048: channel_sync_logs.fx_audit
