@@ -214,6 +214,23 @@ function listing_readiness(array $property): array
 }
 
 /**
+ * Kritik eksik şeridindeki atlama bağlantısı etiketi (tür bazlı, TR).
+ * Tesisler kartı ve otel/villa-detay panelleri ortak kullanır.
+ */
+function listing_missing_jump_label(string $key): string
+{
+    $labels = [
+        'media' => 'Görsellere git', 'rooms' => 'Oda tiplerine git',
+        'inventory' => 'Takvime git', 'rates' => 'Fiyat planına git',
+        'description' => 'Açıklamaya git', 'location' => 'Konuma git',
+        'pool' => 'Havuz bilgisine git', 'home_port' => 'Limana git',
+        'crew' => 'Mürettebata git', 'ical' => 'iCal sayfasına git',
+        'channel' => 'Dağıtım merkezine git', 'rules' => 'Satış kuralına git',
+    ];
+    return $labels[$key] ?? 'İlgili sayfaya git';
+}
+
+/**
  * İlk EKSİK çekirdek kalemin yerel düzenleyici bölümünü döndürür (örn. 'sec-05').
  * Öncelik sırası karşı karşıya ekranıyla aynı: location → description → media →
  * rooms → inventory → rates → villa/yat ekleri (pool/home_port/crew). Yalnızca
