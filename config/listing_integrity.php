@@ -177,6 +177,10 @@ function listing_readiness(array $property): array
     return [
         'score' => $coreTotal > 0 ? (int) round($coreOk / $coreTotal * 100) : 0,
         'ready' => $coreOk === $coreTotal,
+        // Skor kartı özeti: tamamlanan ve kalan çekirdek kalem sayıları.
+        // Kalanların tamamı bitince skor her zaman 100 olur (tüm çekirdekler ✓).
+        'ok_count' => $coreOk,
+        'missing_count' => $coreTotal - $coreOk,
         'items' => $items,
     ];
 }

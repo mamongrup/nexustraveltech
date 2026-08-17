@@ -128,6 +128,7 @@ supply_start('Karşı karşıya — hazırlık özeti', $active_module);
     <div class="kk-score">
       <div class="readiness-bar kk-bar"><i style="width:<?= (int) $rd['score'] ?>%"></i></div>
       <b><?= (int) $rd['score'] ?>/100</b>
+      <?php if ($rd['missing_count'] > 0): ?><small class="kk-scorecard"><?= (int) $rd['ok_count'] ?> kalem tamam — kalan <?= (int) $rd['missing_count'] ?> kalem tamamlanınca 100 olur.</small><?php endif; ?>
     </div>
     <?php if ($firstMiss !== null): ?>
       <div class="kk-actions">

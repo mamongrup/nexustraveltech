@@ -88,6 +88,7 @@ supply_start('Tesisler & ürünler', $active_module);
     <div><span>DURUM</span><b class="status <?= $statusClass ?>"><?= $statusLabel ?></b></div>
     <div class="readiness-block">
         <div class="readiness-head"><span>YAYIN HAZIRLIĞI</span><b><?= $readiness['score'] ?>/100</b></div>
+        <?php if ($readiness['missing_count'] > 0): ?><p class="readiness-scorecard"><?= (int) $readiness['ok_count'] ?> kalem tamam — kalan <?= (int) $readiness['missing_count'] ?> kalem tamamlanınca 100 olur.</p><?php endif; ?>
 <?php $__miss = array_filter($readiness['items'], fn($i) => !$i['ok']); if ($__miss): $__first = reset($__miss); ?>
         <button type="button" class="readiness-critical" data-target="readiness-all-<?= (int) $item['id'] ?>" title="Eksik kalemlerin tam listesini göster (açar/kapatır)">✗ <?= count($__miss) ?> eksik · en kritik: <?= htmlspecialchars($__first['label']) ?> →</button>
         <?php endif; ?>

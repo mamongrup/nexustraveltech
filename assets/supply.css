@@ -321,3 +321,10 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .btn-reset{background:#b26a00}.btn-reset:hover{background:#96600f}
 .btn-toggle{background:#1f4e6e}.btn-toggle:hover{background:#174a72}
 .btn-del{background:#b0301a}.btn-del:hover{background:#94260f}
+
+/* ── Hazırlık skor kartı özeti ("N kalem tamam — kalan M … 100 olur") ── */
+.readiness-scorecard{font-size:11.5px;color:#5a6b7b;margin:6px 0 2px;line-height:1.45}
+.readiness-scorecard b{color:#23303d;font-weight:700}
+.readiness-head + .readiness-scorecard{margin-top:-2px}
+.kk-scorecard{display:block;margin-top:6px;font-size:11.5px;color:#5a6b7b}
+.kk-scorecard b{color:#23303d;font-weight:700}
