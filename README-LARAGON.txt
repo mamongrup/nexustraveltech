@@ -193,3 +193,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Tür bazlı zorunlu hazırlık kalemleri: villa → "Havuz bilgisi" + iCal bağlantısı, yat → "Bağlama limanı"
   + "Mürettebat" + iCal bağlantısı. Bunlar çekirdek kalemlerdir (skor paydasına girer); villa 8,
   yat 9 çekirdek kalemle %100'e ulaşır.
+- Villa/yat özellik listeleri admin panelinden yönetilir (admin/ozellik-listeleri): özellik ekleme,
+  silme, aktif/pasifleştirme. config/feature_lists.php → property_feature_lists() katalogdan okur,
+  tablo yoksa/boşsa varsayılan listelere döner. Migration 042 (property_feature_catalog) mevcut
+  listeleri doldurur; villa-detay sayfası artık bu katalogu kullanır.
