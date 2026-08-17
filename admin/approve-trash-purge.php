@@ -4,6 +4,8 @@ declare(strict_types=1);
 // Çöp kutusu "son şans" onay sayfası — TTL dolan özelliğin kalıcı silinmesini tek tıkla
 // onaylar. E-posta bağlantısı tek kullanımlıktır (64 hex, 3 gün geçerli); onay, kalıcı
 // silmeyi anında uygular (feature_trash_purge_approved paylaşılan fonksiyon).
+// ?bulk_token=... ile e-postadaki "hepsini onayla" bağlantısı, o an bekleyen TÜM onayları
+// tek tıkla onaylar (platform ayarı trash_bulk_approve içinde 3 gün saklanan token).
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/platform_settings.php';
@@ -11,10 +13,45 @@ require_once __DIR__ . '/../config/feature_lists.php';
 require_once __DIR__ . '/../config/audit.php';
 
 $token = (string) ($_GET['token'] ?? '');
+$bulkToken = (string) ($_GET['bulk_token'] ?? '');
 $out = '';
 $ok = false;
 
-if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+if ($bulkToken !== '') {
+    if (!preg_match('/^[a-f0-9]{64}$/', $bulkToken)) {
+        http_response_code(404);
+        $out = 'Geçersiz bağlantı.';
+    } else {
+        $pdo = db();
+        $stored = (array) platform_setting('trash_bulk_approve', []);
+        $storedToken = (string) ($stored['token'] ?? '');
+        $expires = (string) ($stored['expires_at'] ?? '');
+        if ($storedToken === '' || !hash_equals($storedToken, $bulkToken)) {
+            $out = 'Bu toplu onay bağlantısı geçersiz veya zaten kullanıldı.';
+        } elseif ($expires === '' || strtotime($expires) < time()) {
+            $out = 'Bu toplu onay bağlantısının süresi doldu — yeni temizlik taraması e-postayı yeniden gönderecek.';
+        } else {
+            $pending = $pdo->query('SELECT p.feature_id, f.label FROM pending_trash_purges p JOIN property_feature_catalog f ON f.id=p.feature_id WHERE p.approved_at IS NULL AND p.expires_at > now()')->fetchAll();
+            if (!$pending) {
+                $out = 'Bekleyen onay yok (özellikler geri yüklenmiş veya tek tek onaylanmış olabilir).';
+            } else {
+                $ids = array_values(array_unique(array_map(fn($r) => (int) $r['feature_id'], $pending)));
+                $ttlDays = max(7, (int) platform_setting('feature_trash_ttl_days', 30));
+                $purged = feature_trash_purge_approved($ids, $pdo);
+                $pdo->prepare('DELETE FROM pending_trash_purges WHERE approved_at IS NULL')->execute();
+                save_platform_setting('trash_bulk_approve', []);
+                audit_log('feature.trash_purge', 'feature_catalog', null, [
+                    'count' => $purged['count'],
+                    'ttl_days' => $ttlDays,
+                    'labels' => $purged['names'],
+                    'bulk_approve' => true,
+                ]);
+                $out = '✓ ' . count($pending) . ' özellik toplu onaylandı ve kalıcı olarak silindi (' . $purged['count'] . ' kayıt). Bu noktadan sonra geri alınamaz.';
+                $ok = true;
+            }
+        }
+    }
+} elseif (!preg_match('/^[a-f0-9]{64}$/', $token)) {
     http_response_code(404);
     $out = 'Geçersiz bağlantı.';
 } else {

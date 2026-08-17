@@ -78,6 +78,11 @@ if ($approved) {
 
 $emailed = 0;
 if ($toRequest && $canNotify) {
+    // Toplu onay bağlantısı: tek tıkla tüm bekleyen özelliklerin kalıcı silinmesini onaylar.
+    // Token platform ayarında 3 günle saklanır; kullanıldığında temizlenir.
+    $bulkToken = bin2hex(random_bytes(32));
+    save_platform_setting('trash_bulk_approve', ['token' => $bulkToken, 'expires_at' => date('Y-m-d H:i:s', time() + 3 * 86400)]);
+    $bulkLink = 'https://nexustraveltech.com/admin/approve-trash-purge.php?bulk_token=' . $bulkToken;
     $rowsHtml = '';
     foreach ($toRequest as $r) {
         $fid = (int) $r['id'];
@@ -93,12 +98,13 @@ if ($toRequest && $canNotify) {
     }
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
         . '<h2 style="margin:0 0 6px">⏳ Son şans: ' . count($toRequest) . ' özellik kalıcı silinmek üzere</h2>'
-        . '<p>Kalıcı silme vadesi dolan aşağıdaki özellikler onaylanırsa silinir (geri alınamaz). Vade: özel tarih verilenler için o tarih, diğerleri için silinme + ' . $ttlDays . ' gün. Onaylamak istemiyorsanız bağlantıya tıklamayın — özellik çöp kutusunda kalır; bağlantı <b>3 gün</b> geçerlidir, süre dolunca bu e-posta yeniden istenir.</p>'
+        . '<p>Kalıcı silme vadesi dolan aşağıdaki özellikler onaylanırsa silinir (geri alınamaz). Vade: özel tarih verilenler için o tarih, diğerleri için silinme + ' . $ttlDays . ' gün. Onaylamak istemiyorsanız bağlantıya tıklamayın — özellik çöp kutusunda kalır; bağlantılar <b>3 gün</b> geçerlidir, süre dolunca bu e-posta yeniden istenir.</p>'
+        . '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px"><a href="' . $bulkLink . '" style="color:#8a6100;font-weight:bold;font-size:15px;text-decoration:none">✅ Hepsini onayla (' . count($toRequest) . ' özellik) →</a><br><span style="color:#6b7774;font-size:12px">Tek tıkla tüm bekleyen özelliklerin kalıcı silinmesini onaylar (3 gün geçerli, tek kullanımlık).</span></p>'
         . '<ul>' . $rowsHtml . '</ul>'
         . '<p><a href="https://nexustraveltech.com/admin/ozellik-listeleri" style="color:#b0301a">Katalog & sınıflandırma yönetimi →</a></p>'
         . '</div>';
     queue_email($adminEmail, 'Son şans: ' . count($toRequest) . ' özellik kalıcı silinmek üzere (onay gerekli)', $body, 'trash_purge_approval', count($toRequest));
-    echo 'Onay e-postası kuyruğa eklendi (' . $emailed . " bağlantı).\n";
+    echo 'Onay e-postası kuyruğa eklendi (' . $emailed . " bağlantı + 1 toplu onay).\n";
 }
 
 echo 'TTL dolan özellik: ' . count($stale) . ' · onaylı silinen: ' . $purged['count'] . ' · onay bekleyen: ' . $waiting . ' · onay istenen: ' . count($toRequest) . ".\n";
