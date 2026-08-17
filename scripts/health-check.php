@@ -42,7 +42,7 @@ $requiredColumns = [
     'scheduled_jobs'=>['code','command','schedule','enabled','last_status','last_fail_alert_at'],
     'property_feature_catalog'=>['deleted_at'],
     'feature_delete_backups'=>['feature_id','code','label','affected_properties'],
-    'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id'],
+    'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id','status','suggested_at','suggestion_count'],
 ];
 
 $pdo = db();

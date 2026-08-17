@@ -16,7 +16,8 @@ require_once __DIR__ . '/platform_settings.php';
  *   "entries": [
  *     {
  *       "external_room_id": "kanal-oda-kodu",   // opsiyonel — boşsa ilanın ilk aktif oda tipi;
- *                                                 //   tanınmayan kod varsa (ayar açıksa) ilk aktif oda tipine otomatik eşleştirilir
+ *                                                 //   tanınmayan kod varsa (ayar açıksa) onay bekleyen öneri oluşturulur,
+ *                                                 //   satır yazılmaz (dağıtım merkezi bölüm 3'ten onaylanır)
  *       "date": "2026-09-01",                    // zorunlu
  *       "price": 185.50,                          // rates: gece fiyatı (opsiyonel)
  *       "currency": "EUR",                        // opsiyonel — fiyatın geldiği birim; yoksa yük/ayar varsayılanı kullanılır
@@ -38,9 +39,12 @@ function channel_webhook_apply(array $log, array $payload): array
     $propertyId = (int) ($log['property_id'] ?? 0);
     $scope = (string) ($payload['scope'] ?? ($log['scope'] ?? 'content'));
     $errors = [];
-    // Tanınmayan dış oda kodu gelince ilk aktif oda tipiyle otomatik eşleştirme (admin -> Kontrol merkezi).
+    // Tanınmayan dış oda kodu: onay bekleyen eşleştirme önerisi oluştur (admin -> Kontrol merkezi; onay dağıtım merkezi bölüm 3).
+    // Ayar kapalıysa eski güvenli varsayılan korunur: ilk aktif oda tipine yazılır (öneri oluşturulmaz).
     $autoMap = (bool) platform_setting('channel_webhook_auto_map', true);
-    $autoMapSt = $pdo->prepare('INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, external_room_id) VALUES(?,?,?,?) ON CONFLICT(channel_connection_id, external_room_id) DO NOTHING');
+    $suggestSt = $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, external_room_id, status, suggested_at, suggestion_count)
+        VALUES(?,?,?,?,'suggested',now(),1)
+        ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET status='suggested', suggested_at=now(), suggestion_count=channel_room_mappings.suggestion_count+1, room_type_id=EXCLUDED.room_type_id, property_id=EXCLUDED.property_id");
     // Fiyatların varsayılan geldiği birim (admin -> Kontrol merkezi; kanal currency göndermezse kullanılır).
     $defaultCurrency = strtoupper((string) platform_setting('channel_webhook_default_currency', 'EUR'));
     if (!preg_match('/^[A-Z]{3}$/', $defaultCurrency)) $defaultCurrency = 'EUR';
@@ -78,17 +82,20 @@ function channel_webhook_apply(array $log, array $payload): array
         $roomMap[(string) $m['external_room_id']] = (int) $m['room_type_id'];
     }
     $fallbackRoom = (int) $roomList[0]['id'];
-    $autoMapped = 0;
-    $roomIdFor = function (string $ext) use ($roomMap, $fallbackRoom, $autoMapSt, $connId, $propertyId, &$autoMapped): int {
+    $suggestedCount = 0;
+    // 0 dönerse satır yazılmaz: öneri oluşturuldu, onay bekliyor.
+    $roomIdFor = function (string $ext) use ($roomMap, $fallbackRoom, $suggestSt, $connId, $propertyId, $autoMap, &$suggestedCount): int {
         if (isset($roomMap[$ext])) {
             return $roomMap[$ext];
         }
-        // Tanınmayan kod: ilk aktif oda tipine otomatik eşleştir ve kalıcı yaz.
+        // Tanınmayan kod: ilk aktif oda tipine yazmak yerine onay bekleyen öneri oluştur.
         if ($autoMap && $ext !== '') {
-            $autoMapSt->execute([$connId, $propertyId, $fallbackRoom, $ext]);
-            $roomMap[$ext] = $fallbackRoom;
-            $autoMapped++;
+            $suggestSt->execute([$connId, $propertyId, $fallbackRoom, $ext]);
+            $roomMap[$ext] = 0; // bu yükte bir daha deneme
+            $suggestedCount++;
+            return 0;
         }
+        // Ayar kapalı: eski davranış — ilk aktif oda tipine yaz (kalıcı eşleştirme oluşturulmaz).
         return $fallbackRoom;
     };
 
@@ -132,6 +139,9 @@ function channel_webhook_apply(array $log, array $payload): array
         }
 
         $roomId = $roomIdFor((string) ($entry['external_room_id'] ?? ''));
+        if ($roomId <= 0) {
+            continue; // onay bekleyen öneri — veri yazılmadı
+        }
 
         if ($scope === 'reservations') {
             $qty = max(1, (int) ($entry['qty'] ?? 1));
@@ -197,8 +207,9 @@ function channel_webhook_apply(array $log, array $payload): array
         $applied++;
     }
 
-    if ($applied === 0) {
+    if ($applied === 0 && $suggestedCount === 0) {
         return ['ok' => false, 'message' => 'Hiçbir satır uygulanamadı. ' . implode('; ', array_slice($errors, 0, 5)), 'applied' => 0, 'errors' => $errors];
     }
-    return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . ($autoMapped > 0 ? ' (+' . $autoMapped . ' yeni dış kod ilk aktif oda tipine otomatik eşleştirildi)' : '') . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $autoMapped];
+    $suggestNote = $suggestedCount > 0 ? ' (+' . $suggestedCount . ' tanınmayan kod onay bekleyen öneri olarak kaydedildi — webhook satırı yazılmadı)' : '';
+    return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount];
 }
