@@ -328,3 +328,20 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .readiness-head + .readiness-scorecard{margin-top:-2px}
 .kk-scorecard{display:block;margin-top:6px;font-size:11.5px;color:#5a6b7b}
 .kk-scorecard b{color:#23303d;font-weight:700}
+
+/* ── Yayına hazır: buton canlanır + skor 100'de yanıp söner (tek seferlik) ── */
+.publish-ready{animation:publishPulse 1.9s ease-out 1}
+@keyframes publishPulse{
+  0%{transform:scale(1);box-shadow:0 0 0 0 rgba(215,255,72,.55)}
+  28%{transform:scale(1.06);box-shadow:0 0 0 12px rgba(215,255,72,0);background:#24391f}
+  60%{transform:scale(1.02);box-shadow:0 0 20px 2px rgba(46,125,50,.5)}
+  100%{transform:scale(1);box-shadow:0 0 0 rgba(46,125,50,0)}
+}
+.publish-ready:hover{transform:scale(1.03);box-shadow:0 6px 18px rgba(46,125,50,.35)}
+.readiness-score-100{padding:2px 9px;border-radius:10px;animation:scoreFlash 2.4s ease-out 1}
+@keyframes scoreFlash{
+  0%{background:rgba(215,255,72,.95);color:#10211f;box-shadow:0 0 0 3px rgba(215,255,72,.4)}
+  35%{background:rgba(215,255,72,.7);color:#10211f}
+  70%{background:rgba(46,125,50,.22);color:#10211f}
+  100%{background:transparent;color:inherit;box-shadow:none}
+}
