@@ -139,10 +139,18 @@ function listing_readiness(array $property): array
     // Villa/yat için iCal bağlantısı çekirdektedir (en az bir aktif içe/dışa aktarma zorunlu);
     // tür bazlı kalemler (pool / home_port / crew) de çekirdektedir.
     $coreItems = array_values(array_filter($items, fn($i) => $i['key'] !== 'rules'));
-    $coreOk = count(array_filter($coreItems, fn($i) => $i['ok']));
+    $coreTotal = count($coreItems);
+    // Her kalemin skora katkısı: 100 / çekirdek kalem sayısı (rules opsiyonel, katılmaz).
+    $weight = $coreTotal > 0 ? (int) round(100 / $coreTotal) : 0;
+    $coreOk = 0;
+    foreach ($items as &$it) {
+        $it['weight'] = ($it['key'] === 'rules') ? 0 : $weight;
+        if ($it['key'] !== 'rules' && !empty($it['ok'])) $coreOk++;
+    }
+    unset($it);
     return [
-        'score' => (int) round($coreOk / count($coreItems) * 100),
-        'ready' => $coreOk === count($coreItems),
+        'score' => $coreTotal > 0 ? (int) round($coreOk / $coreTotal * 100) : 0,
+        'ready' => $coreOk === $coreTotal,
         'items' => $items,
     ];
 }
