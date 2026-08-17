@@ -6,6 +6,12 @@ return [
   'db_name' => 'nexus_traveltech',
   'db_user' => 'postgres',
   'db_pass' => 'CHANGE_ME',
+  // Opsiyonel — sahiplik devri için süper kullanıcı bilgileri. Tanımlıysa
+  // health-check --repair, app kullanıcısı tablo sahibi değilse önce sahipliği
+  // bu hesapla devreder, sonra migration'ları uygular. Boş bırakılırsa komut
+  // sahipliği elle devretmeniz için gerekli tek satırı çıktıda gösterir.
+  'db_admin_user' => '',
+  'db_admin_pass' => '',
   'admin_username' => 'admin',
   'admin_password' => 'CHANGE_ME',
   // Do not store API keys in this file. Generate a unique 32+ character value.

@@ -757,11 +757,101 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 ? "✓ Onarım gerektiren boş tablo yok.\n"
                 : "Özet: " . $dropped . " tablo düşürüldü" . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . "\n");
 
+        // --- 2d-1) Sahiplik devri — app kullanıcısı tablo sahibi değilse ÖNCE devret ---
+        // Migration'lar app kullanıcısıyla uygulanır; tablolar postgres sahibindeyse
+        // 'must be owner' hatası verir. Bu adım sahipliği devreder; yapılamazsa
+        // migration bölümü atlanır (uygulanmaya çalışılmaz) ve tek satır komut gösterilir.
+        $ownershipBlocked = false;
+        $ownershipTransferred = 0;
+        $curUser = '';
+        try {
+            $curUser = (string) $pdo->query('SELECT current_user')->fetchColumn();
+            $ownTables = $pdo->query("SELECT tablename, tableowner FROM pg_tables WHERE schemaname='public' AND tableowner <> current_user ORDER BY tablename")->fetchAll();
+            $ownSeqs = $pdo->query("SELECT sequencename, sequenceowner FROM pg_sequences WHERE schemaname='public' AND sequenceowner <> current_user ORDER BY sequencename")->fetchAll();
+            $ownViews = $pdo->query("SELECT viewname, viewowner FROM pg_views WHERE schemaname='public' AND viewowner <> current_user ORDER BY viewname")->fetchAll();
+            $mismatch = count($ownTables) + count($ownSeqs) + count($ownViews);
+            if ($mismatch === 0) {
+                $out .= "\n=== 2d-1) SAHİPLİK DEVRİ ===\n✓ Tüm public nesnelerin sahibi " . $curUser . ".\n";
+            } else {
+                $out .= "\n=== 2d-1) SAHİPLİK DEVRİ ===\n⚠ " . $mismatch . " nesnenin sahibi " . $curUser . " değil (" . count($ownTables) . " tablo, " . count($ownSeqs) . " dizi, " . count($ownViews) . " görünüm)\n";
+                if ($dryRun) {
+                    $out .= "→ [dry-run] Sahiplik devri YAPILMAZ — devredilecekler:\n";
+                    foreach ($ownTables as $o) $out .= '  tablo: ' . $o['tablename'] . ' (' . $o['tableowner'] . ")\n";
+                    foreach ($ownSeqs as $o) $out .= '  dizi: ' . $o['sequencename'] . ' (' . $o['sequenceowner'] . ")\n";
+                    foreach ($ownViews as $o) $out .= '  görünüm: ' . $o['viewname'] . ' (' . $o['viewowner'] . ")\n";
+                } else {
+                    // Devir girişimi: (A) mevcut bağlantı süper kullanıcıysa doğrudan;
+                    // (B) secrets'ta db_admin_user/db_admin_pass varsa o hesapla; ikisi de
+                    // yoksa engelle (migration'lar uygulanmaz, tek satır komut gösterilir).
+                    $transferPdo = null;
+                    $transferAs = '';
+                    $isSuper = (string) $pdo->query("SELECT current_setting('is_superuser')")->fetchColumn();
+                    if ($isSuper === 'on') {
+                        $transferPdo = $pdo;
+                        $transferAs = $curUser . ' (süper kullanıcı)';
+                    } else {
+                        $cfg = db_config();
+                        $au = trim((string) ($cfg['db_admin_user'] ?? ''));
+                        if ($au !== '') {
+                            try {
+                                $dsn = 'pgsql:host=' . $cfg['db_host'] . ';port=' . $cfg['db_port'] . ';dbname=' . $cfg['db_name'];
+                                $transferPdo = new PDO($dsn, $au, (string) ($cfg['db_admin_pass'] ?? ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+                                $transferAs = $au . ' (secrets db_admin_user)';
+                            } catch (Throwable $e) {
+                                $out .= "⚠ db_admin_user bağlantısı başarısız: " . $e->getMessage() . "\n";
+                                $transferPdo = null;
+                            }
+                        }
+                    }
+                    if ($transferPdo === null) {
+                        $ownershipBlocked = true;
+                        $cfgDb = db_config();
+                        $out .= "✗ Sahiplik devredilemedi — mevcut kullanıcı süper değil ve secrets.php'de db_admin_user tanımlı değil.\n";
+                        $out .= "  → Migration'lar uygulanmayacak. postgres olarak önce tek satır (kullanıcıyı secrets'tan okur):\n";
+                        $out .= "    cd " . dirname(__DIR__) . " && OWNER=\"$(/opt/plesk/php/8.5/bin/php -r '\$c=require \"config/secrets.php\"; echo \$c[\"db_user\"] ?? \"app\";')\" && sudo -u postgres psql -d " . $cfgDb['db_name'] . " -v ON_ERROR_STOP=1 -v owner=\"\$OWNER\" -c \"SELECT format('ALTER TABLE %I OWNER TO %I', tablename, :'owner') FROM pg_tables WHERE schemaname='public' \\gexec\"\n";
+                        $errors[] = 'Sahiplik devri gerekli ama yapılamadı (süper değil + db_admin_user yok) — migration uygulaması atlandı.';
+                    } else {
+                        $qUser = '"' . str_replace('"', '""', $curUser) . '"';
+                        $done = 0;
+                        $failN = 0;
+                        $specs = [
+                            ['ALTER TABLE %s OWNER TO %s', 'tablename', $ownTables],
+                            ['ALTER SEQUENCE %s OWNER TO %s', 'sequencename', $ownSeqs],
+                            ['ALTER VIEW %s OWNER TO %s', 'viewname', $ownViews],
+                        ];
+                        foreach ($specs as $sp) {
+                            [$tpl, $col, $rowsList] = $sp;
+                            foreach ($rowsList as $r) {
+                                $qn = '"' . str_replace('"', '""', (string) $r[$col]) . '"';
+                                try {
+                                    $transferPdo->exec(sprintf($tpl, $qn, $qUser));
+                                    $done++;
+                                } catch (Throwable $e) {
+                                    $failN++;
+                                    $out .= "⚠ devredilemedi: " . $qn . ' — ' . $e->getMessage() . "\n";
+                                }
+                            }
+                        }
+                        $ownershipTransferred = $done;
+                        $out .= "→ " . $done . " nesnenin sahipliği " . $curUser . "'a devredildi (" . $transferAs . ")" . ($failN > 0 ? ' · ' . $failN . ' başarısız' : '') . "\n";
+                        if ($done > 0) {
+                            audit_log('health.repair_ownership', 'schema', null, ['target_user' => $curUser, 'transferred' => $done, 'failed' => $failN, 'via' => $transferAs, 'note' => 'app kullanıcısı tablo sahibi olmadığı için sahiplik önce devredildi'], 'health-check');
+                        }
+                        if ($failN > 0) {
+                            $errors[] = 'Sahiplik devrinde ' . $failN . ' nesne başarısız.';
+                        }
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ Sahiplik denetimi yapılamadı: " . $e->getMessage() . "\n";
+        }
+
         // --- Onarım sonrası özet e-postası ---
         // --repair tam modda (dry-run değil) ve en az bir işlem yapıldıysa
         // admin_alert_email'e yapılanların özeti gider — düşürülen tablolar, DOLU
         // (elle müdahale) tablolar, yetim temizliği, otomatik öneri onayları, yedek.
-        if (!$dryRun && ($dropped > 0 || $skippedNonEmpty !== [] || (int) ($orphanRes['removed'] ?? 0) > 0 || $staleConfirmNote !== '')) {
+        if (!$dryRun && ($dropped > 0 || $skippedNonEmpty !== [] || (int) ($orphanRes['removed'] ?? 0) > 0 || $staleConfirmNote !== '' || $ownershipTransferred > 0)) {
             try {
                 $adminEmail = trim((string) platform_setting('admin_alert_email', ''));
                 if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
@@ -788,10 +878,14 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                     if ($backupFile !== null) {
                         $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">Şema yedeği</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . count($backedUp) . ' tablo</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">' . htmlspecialchars(basename((string) $backupFile)) . '</td></tr>';
                     }
+                    if ($ownershipTransferred > 0) {
+                        $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">Sahiplik devri</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . $ownershipTransferred . ' nesne</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">tablo/dizi/görünüm → ' . htmlspecialchars((string) $curUser) . '</td></tr>';
+                    }
                     $summary = $dropped . ' tablo düşürülüp yeniden kuruldu'
                         . ($skippedNonEmpty !== [] ? ' · ' . count($skippedNonEmpty) . ' DOLU tablo elle müdahale bekliyor' : '')
                         . ($orphanN > 0 ? ' · ' . $orphanN . ' yetim temizlendi' : '')
-                        . ($staleConfirmNote !== '' ? ' · öneri onayları otomatik tamamlandı' : '');
+                        . ($staleConfirmNote !== '' ? ' · öneri onayları otomatik tamamlandı' : '')
+                        . ($ownershipTransferred > 0 ? ' · ' . $ownershipTransferred . ' nesnenin sahipliği devredildi' : '');
                     queue_email($adminEmail,
                         'NEXUS: sağlık onarımı tamamlandı — ' . $summary,
                         '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto">'
@@ -845,6 +939,9 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     $legacyCount = count(array_filter($legacyFiles, fn($f) => !str_contains($f, '-postgres')));
 
     $out .= "\n=== 3) MIGRATION DURUMU (" . count($migrationFiles) . " postgres + " . $legacyCount . " legacy atlandı) ===\n";
+    if ($ownershipBlocked) {
+        $out .= "⚠ Sahiplik devri engellendiği için migration uygulaması ATLANDI — önce sahipliği devredin (yukarıdaki tek satır komut).\n";
+    }
     $pendingCount = 0;
     $failedMigs = [];
     foreach ($migrationFiles as $file) {
@@ -855,6 +952,10 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $forceReapply = isset($reapplyMigrations[$base]);
         if (!$forceReapply && isset($appliedMap[$base])) {
             $out .= '✓ ' . $base . (($appliedMap[$base] !== '') ? ' @ ' . substr($appliedMap[$base], 0, 7) : '') . "\n";
+            continue;
+        }
+        if ($ownershipBlocked) {
+            $out .= '⏳ ' . $base . ' (sahiplik devri bekleniyor — atlandı)' . "\n";
             continue;
         }
         if ($dryRun) {

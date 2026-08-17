@@ -8,6 +8,10 @@ declare(strict_types=1);
 //     channel_room_mappings) otomatik düşürüp migration'larla yeniden kurar; DOLU tablolara dokunmaz.
 //     Her tablo için ETKİLEŞİMLİ onay ister; otomasyon/cron için --yes (onaysız düşür) ekleyin.
 //     Önce --repair --dry-run ile tespiti görün — kuru mod hiçbir şey düşürmez.
+//     Ayrıca SAHİPLİK DEVRİ yapar: app kullanıcısı public tabloların sahibi değilse önce
+//     sahipliği devreder (mevcut bağlantı süper ise doğrudan, secrets db_admin_user varsa onunla),
+//     sonra migration'ları uygular; devir yapılamazsa migration uygulaması atlanır ve tek satır
+//     komut gösterilir.
 //   /opt/plesk/php/8.5/bin/php scripts/health-check.php --fix      → eksik/geçersiz/tekrarlanan kanal tokenlarını
 //     otomatik yeniler (64 hex, benzersiz); --dry-run ile yalnızca önizleme
 //   /opt/plesk/php/8.5/bin/php scripts/health-check.php --orphans  → yetim/uyumsuz eşleştirmeleri sayı yerine
