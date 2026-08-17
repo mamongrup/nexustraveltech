@@ -136,7 +136,16 @@ $describeAction = function (array $r): string {
 $wantCsv = (string) ($_GET['export'] ?? '') === 'csv';
 if ($wantCsv) {
     header('Content-Type: text/csv; charset=UTF-8');
-    header('Content-Disposition: attachment; filename="denetim-kayitlari.csv"');
+    // Dosya adına aktif filtreler eklenir: denetim-{işlem}-{tarih aralığı}-{yönetici}.csv
+    $fileParts = ['denetim'];
+    if ($action !== '') $fileParts[] = preg_replace('/[^a-zA-Z0-9_.-]+/', '-', $action);
+    if ($dateFrom !== '' || $dateTo !== '') {
+        $range = $dateFrom !== '' ? $dateFrom : 'baslangic';
+        if ($dateTo !== '') $range .= '..' . $dateTo;
+        $fileParts[] = $range;
+    }
+    if ($adminName !== '') $fileParts[] = preg_replace('/[^a-zA-Z0-9_.-]+/', '-', $adminName);
+    header('Content-Disposition: attachment; filename="' . implode('-', $fileParts) . '.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF"); // BOM — Excel'de Türkçe karakterler
     fputcsv($out, ['Zaman', 'Yönetici', 'İşlem', 'Açıklama', 'Nesne', 'Nesne ID', 'Detay (JSON)', 'IP']);
