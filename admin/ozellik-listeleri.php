@@ -88,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       } elseif ($action === 'move') {
         $featureId = (int) ($_POST['id'] ?? 0);
         $dir = ($_POST['direction'] ?? '') === 'up' ? 'up' : 'down';
-        $fq = db()->prepare('SELECT id, code, group_label FROM property_feature_catalog WHERE id=?');
+        $fq = db()->prepare('SELECT id, code, group_label, label FROM property_feature_catalog WHERE id=?');
         $fq->execute([$featureId]);
         $f = $fq->fetch();
         if (!$f) throw new RuntimeException('Özellik bulunamadı.');
@@ -108,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $all = db()->prepare('SELECT id FROM property_feature_catalog WHERE code=? AND group_label=? ORDER BY sort_order, id');
           $all->execute([$f['code'], $f['group_label']]);
           foreach ($all->fetchAll(PDO::FETCH_COLUMN) as $rid) { $renum->execute([$n, $rid]); $n += 10; }
-          audit_log('feature.move', 'feature_catalog', $featureId, ['code' => $f['code'], 'direction' => $dir]);
+          audit_log('feature.move', 'feature_catalog', $featureId, ['code' => $f['code'], 'label' => $f['label'], 'group' => $f['group_label'], 'direction' => $dir]);
           $msg = 'Sıralama güncellendi.';
         } else {
           $msg = 'Özellik zaten listenin başında/sonunda.';
