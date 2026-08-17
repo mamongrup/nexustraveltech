@@ -5,6 +5,7 @@ $active_module = 'properties';
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/../config/supplier_verification.php';
 require_once __DIR__ . '/../config/listing_integrity.php';
+require_once __DIR__ . '/../config/platform_settings.php';
 
 $u = $supplier_user;
 $pdo = db();
@@ -114,9 +115,9 @@ supply_start('Tesisler & ürünler', $active_module);
         <?php else: ?>
         <span class="ghost-button disabled" title="Eksik kalemler tamamlanmadan yayına alınamaz.">Yayına al</span>
         <?php endif; ?>
-        <?php if ($icalUrls): ?><button type="button" class="ghost-button ical-card-toggle" data-target="ical-card-<?= (int) $item['id'] ?>">iCal URL göster</button><?php endif; ?>
+        <?php $icalCardVisible = $icalUrls && (!(bool) platform_setting('ical_url_published_only', false) || $item['status'] === 'active'); if ($icalCardVisible): ?><button type="button" class="ghost-button ical-card-toggle" data-target="ical-card-<?= (int) $item['id'] ?>">iCal URL göster</button><?php endif; ?>
     </div>
-    <?php if ($icalUrls): ?>
+    <?php if ($icalCardVisible): ?>
     <div id="ical-card-<?= (int) $item['id'] ?>" class="ical-card-box" hidden>
         <?php foreach ($icalUrls as $icalUrl): $icalQ = (string) parse_url($icalUrl, PHP_URL_QUERY); $icalShort = 'api/ical?' . mb_substr($icalQ, 0, 10) . '…' . mb_substr($icalQ, 30, 4) . '…'; ?>
         <span class="ical-copy-row"><code title="<?= htmlspecialchars($icalUrl) ?>"><?= htmlspecialchars($icalShort) ?></code><button type="button" class="ical-copy-btn" data-copy="<?= htmlspecialchars($icalUrl) ?>">Kopyala</button></span>

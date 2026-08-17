@@ -261,3 +261,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - ical-takvimler sayfasindaki disa aktarma URL alani artik kisa etiket (api/ical?token=XXXX...xxxx) + Kopyala butonuyla gosterilir; tam URL hover ve panoda
 - otel-detay sayfasinda "Entegrasyon" paneli: tedarikcinin kanal webhook adresleri kisa etiket + Kopyala ile gosterilir (dagitim merkezindeki desen)
 - Token gizleme modu ortadan: kisa etiketler artik son 4 karakter yerine token'in ortasindaki 4 karakteri gosterir (api/ical?token=XXXXXXXXXX...XXXX...)
+- Kontrol merkezinde "iCal URL kutusu yalnizca yayindaki ilanlarda gosterilsin" ayari (ical_url_published_only): villa-detay paneli, tesisler karti ve ical-takvimler sayfasinda taslak ilanlarda URL kutulari gizlenir
