@@ -206,3 +206,6 @@ AYLIK SOHBET RAPORU (E-POSTA)
   eskiyse (veya hiç senkron yoksa) kalem ✓ yerine ⚠ sarı gösterilir — skoru düşürmez, yayına engel
   değildir. Villa/yat detay sayfasında "İncele →" iCal takvimler sayfasına gider; tesisler kartında
   ayrı sarı rozet listesi görünür.
+- Hazırlık kontrol listesinde aktif iCal dışa aktarma bağlantılarının URL'leri kopyalanabilir gösterilir
+  (listing_readiness ical kalemindeki urls alanı → villa-detay paneli): "Kopyala" butonu panoya yazar,
+  onay geri bildirimi gösterir.

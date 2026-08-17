@@ -97,11 +97,20 @@ function listing_readiness(array $property): array
             $icalLastSync = $syncSt->fetchColumn();
             $icalStale = $icalLastSync === null || strtotime((string) $icalLastSync) < time() - 7 * 86400;
         }
+        $icalExportUrls = [];
+        if ($isIcalType) {
+            $urlSt = $pdo->prepare("SELECT access_token FROM ical_connections WHERE property_id=? AND status='active' AND direction='export'");
+            $urlSt->execute([$pid]);
+            foreach ($urlSt->fetchAll(PDO::FETCH_COLUMN) as $icalToken) {
+                $icalExportUrls[] = 'https://nexustraveltech.com/api/ical?token=' . urlencode((string) $icalToken);
+            }
+        }
         $items[] = [
             'key' => 'ical',
             'label' => 'Aktif iCal bağlantısı (içe/dışa aktarma)',
             'ok' => $icalActive > 0,
             'warn' => $icalActive > 0 && $icalStale,
+            'urls' => $icalExportUrls,
             'detail' => $icalActive > 0
                 ? ($icalStale
                     ? $icalActive . ' bağlantı · son senkron 7 günden eski' . ($icalLastSync !== null ? ' (' . $icalLastSync . ')' : ' (henüz senkron yok)')

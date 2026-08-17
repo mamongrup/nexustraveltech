@@ -68,3 +68,9 @@
 .readiness-warn{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
 .readiness-warn li{font-size:12px;color:#8a6100;background:#fff3d6;border-radius:4px;padding:4px 8px}
 .readiness-check li.warn{color:#8a6100;background:#fff6dd}
+/* --- iCal dışa aktarma URL kopyalama (hazırlık listesi) --- */
+.ical-copy-list{flex-basis:100%;display:grid;gap:6px;margin-top:4px}
+.ical-copy-row{display:flex;align-items:center;gap:8px}
+.ical-copy-row code{font-size:11px;background:#f2f4ef;border:1px solid var(--line);border-radius:4px;padding:4px 7px;word-break:break-all;flex:1;color:var(--muted)}
+.ical-copy-btn{border:1px solid var(--line);background:#fff;border-radius:4px;padding:4px 9px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;color:var(--ink)}
+.ical-copy-btn.copied{background:#e6f8c7;border-color:#bcd98a;color:#4c7c0e}
