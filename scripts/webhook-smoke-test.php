@@ -80,8 +80,10 @@ try {
         vnote('ön koşullar eksik — webhook akışı atlandı (önce sahiplik devri + scripts/health-check.php ile migrationları uygulayın)');
     } elseif (!$conn) {
         vbad('aktif kanal bağlantısı (tokenli) yok — dağıtım merkezi bölüm 1den bir kanal etkinleştirin');
+    } elseif (!preg_match('/^[a-f0-9]{64}$/', (string) $conn['access_token'])) {
+        vbad('aktif kanalın tokenı geçersiz biçim (64 hex değil) — health-check --fix ile yenileyin');
     } else {
-        vok('aktif kanal: ' . (string) $conn['display_name'] . ' (' . (string) $conn['channel_code'] . ', id=' . (int) $conn['id'] . ')');
+        vok('aktif kanal: ' . (string) $conn['display_name'] . ' (' . (string) $conn['channel_code'] . ', id=' . (int) $conn['id'] . ', token 64 hex)');
 
         $prop = $pdo->prepare('SELECT m.property_id, m.external_property_id, p.name, p.property_type FROM channel_property_mappings m JOIN properties p ON p.id=m.property_id WHERE m.channel_connection_id=? ORDER BY m.id LIMIT 1');
         $prop->execute([(int) $conn['id']]);
