@@ -392,3 +392,28 @@ function channel_webhook_apply(array $log, array $payload): array
     }
     return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount, 'suggested_plans' => $suggestedPlanCount, 'fx_audit' => array_values($fxAudit)];
 }
+
+/**
+ * Neden bazlı akıllı retry: 'kalıcı' hatalar (yapılandırma/yük şeması) yeniden denenmez —
+ * retry cron/retry-channel-webhooks.php yalnızca geçici sayılan başarısızlıkları kuyruğa geri alır.
+ * Kodlar process-channel-webhooks tarafından hata mesajına [kod,...] olarak eklenir;
+ * bilinmeyen/eksik kodlar geçici sayılır (retry serbest, maksimum deneme sınırı zaten var).
+ */
+function channel_error_is_permanent(string $message): bool
+{
+    $permanent = [
+        'property_not_mapped', // ilan eşleştirmesi yok — tedarikçi eşlemeden retry başarısız kalır
+        'unsupported_scope',   // desteklenmeyen kapsam — yük şeması bozuk
+        'no_rooms',            // ilanda aktif oda/birim tipi yok
+        'no_rate_plan',        // ilanda aktif fiyat planı yok
+        'invalid_date',        // geçersiz tarih biçimi — yük verisi bozuk
+        'invalid_schema',      // geçersiz yük şeması
+        'malformed_payload',   // ayrıştırılamayan/bozuk yük
+    ];
+    foreach ($permanent as $code) {
+        if (str_contains($message, $code)) {
+            return true;
+        }
+    }
+    return false;
+}
