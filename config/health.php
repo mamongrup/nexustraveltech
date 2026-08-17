@@ -378,7 +378,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 }
             }
             try {
-                $pdo->exec('DROP TABLE IF EXISTS \"' . $table . '\" CASCADE');
+                $pdo->exec('DROP TABLE IF EXISTS "' . $table . '" CASCADE');
                 $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . implode(', ', $migs) . " zinciriyle yeniden kurulacak\n";
                 $dropped++;
                 $rebuiltTables[$table] = ['cols' => $expectedCols, 'migs' => $migs]; // 3b doğrulaması + denetimi için kaydet
