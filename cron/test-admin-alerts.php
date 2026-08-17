@@ -5,7 +5,7 @@ declare(strict_types=1);
 // kanallarını tek seferde doğrular.
 //
 //   /opt/plesk/php/8.5/bin/php cron/test-admin-alerts.php        → kuru çalışma (hiçbir şey kuyruğa yazılmaz)
-//   /opt/plesk/php/8.5/bin/php cron/test-admin-alerts.php --send → her uyarı türü için bir test e-postası kuyruğa girer
+//   /opt/plesk/php/8.5/bin/php cron/test-admin-alerts.php --send → TÜM uyarı kanalları tek özet e-postada kuyruğa girer (tablo)
 //
 // Konular ve related_type değerleri, gerçek görevlerin kullandıklarıyla birebirdir;
 // böylece e-posta şablonları (varsa), kuyruk işleyicisi ve teslimat uçtan uca test edilir.
@@ -39,32 +39,40 @@ $types = [
     ['trash_upcoming', 'Yaklaşan kalıcı silme uyarısı (test)'],
 ];
 
+// Tek özet mesajı — tüm kanalların sonucu tek tabloda; gelen kutuya 1 e-posta düşer.
+// Kanal satırları gerçek uyarı başlıklarıyla eşleşir; mesajın gelmesi, kuyruk
+// işleyicisinin ve e-posta altyapısının sağlıklı olduğunu gösterir.
+$rows = '';
 $ok = 0;
 foreach ($types as [$related, $subject]) {
-    $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
-        . '<h2 style="margin:0 0 6px">🧪 Admin uyarı e-postası testi</h2>'
-        . '<p style="color:#64716d;margin:0 0 10px">Bu, <b>' . htmlspecialchars($related) . '</b> kanalının doğru çalıştığını doğrulamak için gönderilen bir test mesajıdır. '
-        . 'Gerçek uyarılar bu başlık/kanalla gelir; bu mesajı alabiliyorsanız kanal sağlıklıdır.</p>'
-        . '<table style="border-collapse:collapse;font-size:13px"><tr>'
-        . '<td style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Kanal</td>'
-        . '<td style="padding:6px 12px;border:1px solid #e1e5de"><code>' . htmlspecialchars($related) . '</code></td></tr>'
-        . '<tr><td style="padding:6px 12px;border:1px solid #e1e5de;background:#f4f6f1">Gönderim</td>'
-        . '<td style="padding:6px 12px;border:1px solid #e1e5de">' . date('Y-m-d H:i') . ' · cron/test-admin-alerts.php</td></tr>'
-        . '</table>'
-        . '<p style="margin-top:16px;color:#64716d">Tekrarlanan gerçek uyarıların aksine bu test mesajı tek seferliktir; kuyruk işleyicisi (cron/process-emails.php) tarafından gönderilir.</p>'
-        . '</div>';
-    if ($send) {
-        queue_email($adminEmail, $subject, $body, $related);
-    }
-    echo ($send ? '✓ kuyruğa yazıldı: ' : '· sıralanır: ') . str_pad($related, 26) . $subject . "\n";
     $ok++;
+    $rows .= '<tr>'
+        . '<td style="padding:6px 12px;border:1px solid #e1e5de"><code>' . htmlspecialchars($related) . '</code></td>'
+        . '<td style="padding:6px 12px;border:1px solid #e1e5de">' . htmlspecialchars($subject) . '</td>'
+        . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center"><b style="color:#2e7d32">✓ test</b></td>'
+        . '</tr>';
+    echo ($send ? '✓ özete eklendi: ' : '· sıralanır: ') . str_pad($related, 26) . $subject . "\n";
+}
+$body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
+    . '<h2 style="margin:0 0 6px">🧪 Admin uyarı e-postası — toplu test özeti (' . $ok . ' kanal)</h2>'
+    . '<p style="color:#64716d;margin:0 0 10px">Bu tek mesaj, <b>' . $ok . ' uyarı kanalının</b> tamamını doğrular. Aşağıdaki her satır gerçek uyarıların gönderildiği kanalı temsil eder; bu özetin gelmesi kuyruk işleyicisinin ve e-posta altyapısının sağlıklı olduğunu gösterir.</p>'
+    . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px">'
+    . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Kanal</th>'
+    . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Başlık</th>'
+    . '<th style="padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Durum</th></tr>'
+    . $rows
+    . '</table>'
+    . '<p style="margin-top:14px;color:#64716d">Gönderim: ' . date('Y-m-d H:i') . ' · cron/test-admin-alerts.php --send · hedef: ' . htmlspecialchars($adminEmail) . ' · tek seferlik test — tekrarlanan gerçek uyarıların aksine bu mesaj kendini çoğaltmaz; kuyruk işleyicisi (cron/process-emails.php) tarafından gönderilir.</p>'
+    . '</div>';
+if ($send) {
+    queue_email($adminEmail, '🧪 Admin uyarı testi — ' . $ok . ' kanal özeti', $body, 'admin_alerts_test');
 }
 
 echo "\n" . ($send
-    ? "Tamam: $ok uyarı türü kuyruğa eklendi → cron/process-emails.php 5 dakika içinde gönderir."
-    : "Kuru çalışma tamam: $ok tür hazır. Gerçek gönderim için --send ekleyin.")
+    ? "Tamam: $ok kanal tek özet e-postada kuyruğa eklendi → cron/process-emails.php 5 dakika içinde gönderir."
+    : "Kuru çalışma tamam: $ok kanal özet tablosu hazır. Gerçek gönderim için --send ekleyin.")
     . "\n";
 echo $send
-    ? "Gelen kutunuzu kontrol edin; eksik/geçersiz kanal varsa kuyruk durumunu cron/process-emails.php çıktısından izleyin.\n"
+    ? "Gelen kutunuzu kontrol edin — tek mesaj, N kanal satırlı tablo; eksik/hatalı satır varsa kuyruk durumunu cron/process-emails.php çıktısından izleyin.\n"
     : "";
 exit(0);
