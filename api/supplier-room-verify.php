@@ -92,6 +92,38 @@ try {
         }
     }
 
+    // Kod bazında son 30 gün serisi: webhook kayıtlarından tarih -> en güncel fiyat/kontenjan.
+    // Entry'lerin kendi date alanı esas alınır (bugün-30 .. bugün); aynı tarih birden çok
+    // işlemde geldiyse en yeni işlemin değeri korunur (id ASC + üzerine yazma).
+    $dateMin = date('Y-m-d', strtotime('-30 days'));
+    $dateMax = date('Y-m-d');
+    $seriesQ = $pdo->prepare(
+        "SELECT request_payload FROM channel_sync_logs
+         WHERE channel_connection_id=? AND property_id=? AND direction='pull'
+           AND request_payload->'entries' @> ?::jsonb
+         ORDER BY id ASC"
+    );
+    $seriesQ->execute([$connId, $propId, $needle]);
+    $seriesMap = [];
+    foreach ($seriesQ->fetchAll() as $sl) {
+        $pl = json_decode((string) $sl['request_payload'], true);
+        if (!is_array($pl) || !is_array($pl['entries'] ?? null)) continue;
+        foreach ($pl['entries'] as $en) {
+            if (!is_array($en) || (string) ($en['external_room_id'] ?? '') !== $code) continue;
+            $d = (string) ($en['date'] ?? '');
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) || $d < $dateMin || $d > $dateMax) continue;
+            if (!isset($seriesMap[$d])) $seriesMap[$d] = ['price' => null, 'allotment' => null];
+            if (array_key_exists('price', $en)) $seriesMap[$d]['price'] = (float) $en['price'];
+            if (array_key_exists('allotment', $en)) $seriesMap[$d]['allotment'] = (int) $en['allotment'];
+        }
+    }
+    ksort($seriesMap);
+    $seriesMap = array_slice($seriesMap, -30, 30, true);
+    $seriesOut = [];
+    foreach ($seriesMap as $d => $v) {
+        $seriesOut[] = ['date' => $d, 'price' => $v['price'], 'allotment' => $v['allotment']];
+    }
+
     echo json_encode([
         'ok' => true,
         'found' => true,
@@ -110,6 +142,7 @@ try {
             'applied_rows' => $appliedRows,
             'skipped_rows' => $skippedRows,
         ],
+        'series' => $seriesOut,
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     echo json_encode(['ok' => false, 'message' => 'Doğrulama sırasında hata: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
