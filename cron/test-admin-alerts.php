@@ -36,6 +36,7 @@ $types = [
     ['health_check_alert', '⚠ Sağlık kontrolü: 0 sorun (test)'],
     ['trash_purge_approval', 'Son şans: çöp kutusu onayı (test)'],
     ['feature_trash_purge', 'Çöp kutusu temizlendi (test)'],
+    ['trash_upcoming', 'Yaklaşan kalıcı silme uyarısı (test)'],
 ];
 
 $ok = 0;
