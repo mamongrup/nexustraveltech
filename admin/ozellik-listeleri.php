@@ -515,7 +515,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $done++;
           } catch (Throwable $e) { $errors[] = '#' . $fid . ': ' . $e->getMessage(); }
         }
-        audit_log('feature.bulk_restore', 'feature_catalog', null, ['count' => $done, 'feature_ids' => $ids, 'skipped_unchanged' => $skipped]);
+        audit_log('feature.bulk_restore', 'feature_catalog', null, ['count' => $done, 'feature_ids' => $ids, 'skipped_unchanged' => $skipped, 'done_names' => array_slice($doneNames, 0, 100), 'skipped_names' => array_slice($skippedNames, 0, 100)]);
         $msg = "$done özellik geri yüklendi" . ($skipped ? ", $skipped özellik atlandı (çöp kutusunda değil ya da kayıt yok)" : '') . '.';
         if ($errors) $msg .= ' Hatalar: ' . implode('; ', array_slice($errors, 0, 5)) . '.';
         setcookie('nexus_bulk_result', json_encode([
@@ -627,6 +627,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               'feature_ids' => $ids,
               'skipped_unchanged' => $skipped,
               'affected_count' => $removed,
+              // Hangi özellikler gerçekten işlendi / hangileri atlandı — denetim satırında net görünsün.
+              'done_names' => array_slice($doneNames, 0, 100),
+              'skipped_names' => array_slice($skippedNames, 0, 100),
           ];
           if ($sub === 'delete') {
               $auditDetails['metrics'] = ['media' => 0, 'rooms' => 0, 'plans' => 0, 'bookings' => 0];
