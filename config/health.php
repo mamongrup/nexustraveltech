@@ -79,6 +79,86 @@ function health_orphan_cleanup(PDO $pdo, bool $dryRun = false): array
     return ['removed' => $removed, 'codes' => $codes, 'out' => $out, 'errors' => $errors];
 }
 
+/**
+ * Migration zincirinden tablo → kolon eşlemesini çözer.
+ * CREATE TABLE bloklarının parantezlerini dengeler, üst düzey virgüllerle böler ve
+ * kolon adlarını (kısıt/anahtar satırlarını atlayarak) çıkarır; ALTER TABLE
+ * ADD [COLUMN] [IF NOT EXISTS] ... satırlarını da toplar. Tablo ve kolon adları
+ * küçük harfe indirilir. --repair'in adaylarını requiredColumns'a elle eklemek
+ * zorunda kalmadan migration zincirinin TAMAMINDAN türetmesini sağlar.
+ */
+function health_parse_migration_columns(string $sql): array
+{
+    $cols = [];
+    $re = '/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+["`]?([A-Za-z_][A-Za-z0-9_]*)["`]?\s*\(/i';
+    if (preg_match_all($re, $sql, $m, PREG_OFFSET_CAPTURE)) {
+        $len = strlen($sql);
+        foreach ($m[0] as $i => $whole) {
+            $tbl = strtolower($m[1][$i][0]);
+            $open = $whole[1] + strlen($whole[0]) - 1;
+            if ($open >= $len) continue;
+            $depth = 0;
+            $end = $len;
+            $inStr = null;
+            for ($p = $open; $p < $len; $p++) {
+                $ch = $sql[$p];
+                if ($inStr !== null) {
+                    if ($ch === $inStr && ($p === 0 || $sql[$p - 1] !== '\\')) $inStr = null;
+                    continue;
+                }
+                if ($ch === "'" || $ch === '"' || $ch === '`') { $inStr = $ch; continue; }
+                if ($ch === '(') { $depth++; }
+                elseif ($ch === ')') {
+                    $depth--;
+                    if ($depth === 0) { $end = $p; break; }
+                }
+            }
+            $block = substr($sql, $open + 1, $end - $open - 1);
+            foreach (health_split_sql_top($block) as $seg) {
+                $seg = trim($seg);
+                if ($seg === '') continue;
+                if (preg_match('/^(PRIMARY|UNIQUE|CONSTRAINT|FOREIGN|CHECK|EXCLUDE|INDEX|KEY|FULLTEXT|SPATIAL|PERIOD|LIKE|PARTITION)\b/i', $seg)) continue;
+                if (preg_match('/^["`]?([A-Za-z_][A-Za-z0-9_]*)["`]?\s/i', $seg, $cm)) {
+                    $cols[$tbl][strtolower($cm[1])] = true;
+                }
+            }
+        }
+    }
+    if (preg_match_all('/ALTER\s+TABLE(?:\s+IF\s+EXISTS)?\s+["`]?([A-Za-z_][A-Za-z0-9_]*)["`]?\s+ADD(?:\s+COLUMN)?(?:\s+IF\s+NOT\s+EXISTS)?\s+["`]?([A-Za-z_][A-Za-z0-9_]*)["`]?\s/i', $sql, $am)) {
+        foreach ($am[1] as $i => $tbl) {
+            $cols[strtolower($tbl)][strtolower($am[2][$i])] = true;
+        }
+    }
+    return $cols;
+}
+
+/**
+ * SQL bloğunu tırnak ve parantez farkında olarak üst düzey virgüllerden böler.
+ */
+function health_split_sql_top(string $block): array
+{
+    $parts = [];
+    $depth = 0;
+    $inStr = null;
+    $cur = '';
+    $len = strlen($block);
+    for ($p = 0; $p < $len; $p++) {
+        $ch = $block[$p];
+        if ($inStr !== null) {
+            $cur .= $ch;
+            if ($ch === $inStr && ($p === 0 || $block[$p - 1] !== '\\')) $inStr = null;
+            continue;
+        }
+        if ($ch === "'" || $ch === '"' || $ch === '`') { $inStr = $ch; $cur .= $ch; continue; }
+        if ($ch === '(') { $depth++; $cur .= $ch; continue; }
+        if ($ch === ')') { $depth--; $cur .= $ch; continue; }
+        if ($ch === ',' && $depth === 0) { $parts[] = $cur; $cur = ''; continue; }
+        $cur .= $ch;
+    }
+    if (trim($cur) !== '') $parts[] = $cur;
+    return $parts;
+}
+
 function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false, bool $yes = false, bool $orphans = false): array
 {
     $pdo = db();
@@ -90,7 +170,8 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     // DOLU tablolara asla dokunulmaz (raporlanır, elle müdahale gerekir).
     // Tablo yanlış şemadaysa beklenen kolon yoktur -> boşsa düşürülür, migration'lar
     // (schema_migrations'ta kayıtlı olsalar bile) zorla yeniden uygulanır.
-    // Adaylar statik liste değil, requiredColumns'tan tam otomatik türetilir (aşağıda).
+    // Adaylar statik liste DEĞİL — requiredColumns + migration zincirinde CREATE TABLE
+    // ile kurulan HER tablo otomatik taranır (health_parse_migration_columns).
     $repairMap = [];
     $reapplyMigrations = []; // onarım sonrası zorla yeniden uygulanacak migration dosyaları
 
@@ -134,25 +215,40 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         'product_type_catalog'=>['step_targets'],
     ];
 
-    // Yabancı şema adayları — statik liste YOK; requiredColumns'ta beklenen kolonları olan
-    // HER tablo otomatik taranır. Migration zinciri, tabloyu değiştiren TÜM *-postgres.sql
-    // dosyalarından türetilir: CREATE TABLE, ALTER TABLE ve CREATE INDEX ... ON (sıralı).
-    // Böylece çok dosyalı kurulumlar da tam yakalanır — örn. channel_room_mappings
-    // 045'te CREATE + 047/049/052'de ALTER ile kurulur; salt CREATE araması zinciri kısaltır.
+    // Yabancı şema adayları — statik liste YOK. requiredColumns + migration zincirinde
+    // CREATE TABLE ile kurulan HER tablo otomatik taranır; beklenen kolon seti zincirin
+    // CREATE/ALTER içeriğinden çözümlenir (health_parse_migration_columns). Yeni bir
+    // tablo migration'a eklendiğinde requiredColumns'a elle eklemek GEREKMEZ.
+    // Migration zinciri, tabloyu değiştiren TÜM *-postgres.sql dosyalarından türetilir:
+    // CREATE TABLE, ALTER TABLE ve CREATE INDEX ... ON (sıralı). Böylece çok dosyalı
+    // kurulumlar da tam yakalanır — örn. channel_room_mappings 045'te CREATE +
+    // 047/049/052'de ALTER ile kurulur; salt CREATE araması zinciri kısaltır.
     // Güvenli onarım (İKİSİ de):
     //   1) Zincir tabloyu KURAN bir CREATE TABLE içermeli — suppliers/rate_plans gibi temel
     //      şemada (postgresql-schema.sql) oluşan tablolar migration ile yeniden kurulamaz;
     //      bunlar düşürülmez, yalnızca raporlanır.
     //   2) Zincirin toplam içeriği beklenen TÜM kolonları içermeli — ek kolonlar zincir dışı
     //      bir migration'da kalmışsa düşürme şemayı tam kuramaz, rapor-only kalır.
-    foreach ($requiredColumns as $tbl => $cols) {
+    $migFiles = glob(__DIR__ . '/../database/migrations/*-postgres.sql');
+    $migText = [];
+    $chainCols = [];
+    foreach ($migFiles as $f) {
+        $c = (string) @file_get_contents($f);
+        if ($c === '') continue;
+        $migText[basename($f)] = $c;
+        foreach (health_parse_migration_columns($c) as $t => $cset) {
+            foreach ($cset as $col => $v) $chainCols[$t][$col] = true;
+        }
+    }
+    $candidateTables = array_values(array_unique(array_merge(array_keys($requiredColumns), array_keys($chainCols))));
+    foreach ($candidateTables as $tbl) {
+        $cols = array_values(array_unique(array_merge($requiredColumns[$tbl] ?? [], array_keys($chainCols[$tbl] ?? []))));
+        if ($cols === []) continue;
         $nameRe = preg_quote($tbl, '/');
         $foundMigs = [];
-        foreach (glob(__DIR__ . '/../database/migrations/*-postgres.sql') as $f) {
-            $c = @file_get_contents($f);
-            if ($c === false) continue;
+        foreach ($migText as $fname => $c) {
             if (preg_match('/(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|ALTER\s+TABLE(?:\s+IF\s+EXISTS)?|CREATE(?:\s+UNIQUE)?\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?\S+\s+ON)\s+[`"]?' . $nameRe . '[\s"(]/i', $c)) {
-                $foundMigs[] = basename($f);
+                $foundMigs[] = $fname;
             }
         }
         sort($foundMigs);
@@ -161,9 +257,8 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         if ($foundMigs !== []) {
             $allText = '';
             foreach ($foundMigs as $fm) {
-                $fc = (string) @file_get_contents(__DIR__ . '/../database/migrations/' . $fm);
-                $allText .= $fc;
-                if (preg_match('/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+[`"]?' . $nameRe . '[\s"(]/i', $fc)) $hasCreate = true;
+                $allText .= $migText[$fm];
+                if (preg_match('/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+[`"]?' . $nameRe . '[\s"(]/i', $migText[$fm])) $hasCreate = true;
             }
             $safe = $hasCreate;
             if ($safe) {
