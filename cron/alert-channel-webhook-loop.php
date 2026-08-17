@@ -2,11 +2,13 @@
 declare(strict_types=1);
 
 // Kanal webhook tekrar deneme taraması — aynı yük (request_payload) son 24 saatte
-// birçok kez başarısız olduysa (varsayılan eşik: 3, platform ayarı ile değiştirilebilir:
-// channel_webhook_loop_threshold) bağlantının sahibi tedarikçiye panel bildirimi +
-// admin_alert_email'e e-posta gönderir. Kanalın webhook'u yeniden göndermesi her seferinde
-// yeni bir channel_sync_logs satırı oluşturduğu için aynı içerikteki yük gruplanarak sayılır.
-// Aynı bağlantı + yük için 24 saatte bir kez bildirim (notifications tipi webhook_loop_{bağlantı}_{hash}).
+// birçok kez başarısız olduysa bağlantının sahibi tedarikçiye panel bildirimi +
+// admin_alert_email'e e-posta gönderir. Eşik kanal başına belirlenir:
+// channel_connections.webhook_loop_threshold doluysa o değer, boşsa kontrol merkezindeki
+// varsayılan (channel_webhook_loop_threshold, 3) kullanılır. Kanalın webhook'u yeniden
+// göndermesi her seferinde yeni bir channel_sync_logs satırı oluşturduğu için aynı
+// içerikteki yük gruplanarak sayılır. Aynı bağlantı + yük için 24 saatte bir kez bildirim
+// (notifications tipi webhook_loop_{bağlantı}_{hash}).
 //
 // Zamanlayıcı: nexus-channel-webhook-loop-alerts (varsayılan: 15 dakikada bir).
 
@@ -38,8 +40,8 @@ $groups = $pdo->query(
        AND l.created_at >= now() - interval '24 hours'
        AND l.request_payload IS NOT NULL
      GROUP BY l.channel_connection_id, payload_hash, c.display_name, c.channel_code,
-              c.supplier_id, s.company_name, p.id, p.name
-     HAVING COUNT(*) >= {$threshold}
+              c.supplier_id, s.company_name, p.id, p.name, c.webhook_loop_threshold
+     HAVING COUNT(*) >= COALESCE(c.webhook_loop_threshold, {$threshold})
      ORDER BY attempt_count DESC"
 )->fetchAll();
 
@@ -58,13 +60,17 @@ foreach ($groups as $g) {
     }
 
     $count = (int) $g['attempt_count'];
+    // Kanal özel eşiği varsa onu kullan, yoksa kontrol merkezi varsayılanı.
+    $effThreshold = $g['webhook_loop_threshold'] !== null && (int) $g['webhook_loop_threshold'] >= 3
+        ? (int) $g['webhook_loop_threshold']
+        : $threshold;
     $err = trim((string) ($g['last_error'] ?? ''));
     $propertyLabel = $g['property_name'] !== null ? ' · ' . $g['property_name'] : '';
     $link = '/nexustraveltech/tedarikci/dagitim-merkezi';
 
     // 1) Tedarikçi panel bildirimi (tüm kullanıcılarına).
     $msg = 'Webhook döngü uyarısı: ' . $g['display_name'] . ' kanalına gönderilen aynı bildirim son 24 saatte '
-        . $count . ' kez işlenemedi' . $propertyLabel
+        . $count . ' kez işlenemedi (kanal eşiği: ' . $effThreshold . ')' . $propertyLabel
         . ($err !== '' ? '. Son hata: ' . mb_substr($err, 0, 160) : '')
         . '. Dağıtım & kanal merkezi bölüm 4\'ten işlem günlüğünü inceleyin.';
     notify_supplier_users($sid, $typeKey, mb_substr($msg, 0, 500), $link);

@@ -54,6 +54,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
 
     $requiredColumns = [
         'supplier_bookings'=>['rate_plan_id','booking_status','checked_in_at','checked_out_at','early_arrival','late_departure','deposit_amount','deposit_status','no_show_at','cancelled_at','cancellation_reason'],
+        'channel_connections'=>['webhook_loop_threshold'],
         'agency_booking_requests'=>['booking_id'],
         'guest_document_records'=>['reported_at'],
         'rate_plans'=>['free_cancel_before_days','cancel_fee_percent'],
