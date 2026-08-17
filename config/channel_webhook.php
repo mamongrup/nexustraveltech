@@ -42,9 +42,9 @@ function channel_webhook_apply(array $log, array $payload): array
     // Tanınmayan dış oda kodu: onay bekleyen eşleştirme önerisi oluştur (admin -> Kontrol merkezi; onay dağıtım merkezi bölüm 3).
     // Ayar kapalıysa eski güvenli varsayılan korunur: ilk aktif oda tipine yazılır (öneri oluşturulmaz).
     $autoMap = (bool) platform_setting('channel_webhook_auto_map', true);
-    $suggestSt = $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, external_room_id, status, suggested_at, suggestion_count)
-        VALUES(?,?,?,?,'suggested',now(),1)
-        ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET status='suggested', suggested_at=now(), suggestion_count=channel_room_mappings.suggestion_count+1, room_type_id=EXCLUDED.room_type_id, property_id=EXCLUDED.property_id");
+    $suggestSt = $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, external_room_id, status, suggested_at, suggestion_count, suggestion_score)
+        VALUES(?,?,?,?,'suggested',now(),1,?)
+        ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET status='suggested', suggested_at=now(), suggestion_count=channel_room_mappings.suggestion_count+1, room_type_id=EXCLUDED.room_type_id, property_id=EXCLUDED.property_id, suggestion_score=EXCLUDED.suggestion_score");
     // Fiyatların varsayılan geldiği birim (admin -> Kontrol merkezi; kanal currency göndermezse kullanılır).
     $defaultCurrency = strtoupper((string) platform_setting('channel_webhook_default_currency', 'EUR'));
     if (!preg_match('/^[A-Z]{3}$/', $defaultCurrency)) $defaultCurrency = 'EUR';
@@ -88,7 +88,56 @@ function channel_webhook_apply(array $log, array $payload): array
             'plan' => $m['rate_plan_id'] !== null ? (int) $m['rate_plan_id'] : null,
         ];
     }
-    $fallbackRoom = (int) $roomList[0]['id'];
+    // İsim benzerliği: dış kod ile oda tipi adını karşılaştırır (Türkçe normalizasyon + token/bigram).
+    $nameSim = function (string $a, string $b): float {
+        $norm = fn(string $s): string => strtolower(preg_replace('/[^a-z0-9 ]+/i', ' ', strtr($s, ['ç' => 'c', 'Ç' => 'C', 'ğ' => 'g', 'Ğ' => 'G', 'ı' => 'i', 'İ' => 'i', 'I' => 'i', 'ö' => 'o', 'Ö' => 'O', 'ş' => 's', 'Ş' => 'S', 'ü' => 'u', 'Ü' => 'U'])));
+        $at = preg_split('/\s+/', trim((string) $norm($a))) ?: [];
+        $bt = preg_split('/\s+/', trim((string) $norm($b))) ?: [];
+        $at = array_values(array_filter($at, fn($t) => $t !== ''));
+        $bt = array_values(array_filter($bt, fn($t) => $t !== ''));
+        if (!$at || !$bt) return 0.0;
+        // Token eşleşmesi: ortak token / toplam (kısmi token eşleşmesi dahil).
+        $tokScore = 0.0;
+        foreach ($at as $ta) {
+            $best = 0.0;
+            foreach ($bt as $tb) {
+                $la = strlen($ta);
+                $lb = strlen($tb);
+                if ($la === 0 || $lb === 0) continue;
+                if ($ta === $tb) { $best = 1.0; break; }
+                if (str_starts_with($ta, $tb) || str_starts_with($tb, $ta)) { $best = max($best, 0.8); continue; }
+                // bigram Jaccard
+                $big = function (string $t): array { $g = []; for ($i = 0; $i < strlen($t) - 1; $i++) $g[] = substr($t, $i, 2); return $g; };
+                $ga = $big($ta); $gb = $big($tb);
+                $inter = count(array_intersect($ga, $gb));
+                $union = count(array_unique(array_merge($ga, $gb)));
+                if ($union > 0) $best = max($best, $inter / $union);
+            }
+            $tokScore += $best;
+        }
+        $tokScore = $tokScore / max(1, count($at));
+        // Karakter düzeyi benzerlik (tam kod/kelime uzunluğu küçükse anlamlı).
+        $len = max(strlen((string) $norm($a)), strlen((string) $norm($b)));
+        $lev = $len > 0 ? 1 - (levenshtein(trim((string) $norm($a)), trim((string) $norm($b))) / $len) : 0.0;
+        return max($tokScore, $lev);
+    };
+    // En iyi eşleşme: skoru en yüksek aktif oda tipi (eşik 0.45); altındaysa ilk aktif tip (eski davranış).
+    $bestRoom = (int) $roomList[0]['id'];
+    $bestScore = 0.0;
+    $roomByName = [];
+    foreach ($roomList as $rl) {
+        $roomByName[(int) $rl['id']] = (string) $rl['name'];
+    }
+    $bestRoomFor = function (string $ext) use ($roomList, $nameSim, $bestRoom, &$bestScore): array {
+        $pick = $bestRoom;
+        $score = 0.0;
+        foreach ($roomList as $rl) {
+            $s = $nameSim($ext, (string) $rl['name']);
+            if ($s > $score) { $score = $s; $pick = (int) $rl['id']; }
+        }
+        $bestScore = $score >= 0.45 ? $score : 0.0;
+        return ['room' => $pick, 'score' => (int) round($bestScore * 100)];
+    };
     $suggestedCount = 0;
     // Tedarikçi bildirimi: öneri İLK kez oluştuğunda hangi kodun hangi oda tipine önerildiği panel bildirimi olarak gider.
     // Tekrar gelen aynı kod yalnızca suggestion_count artırır; bildirim tekrarlanmaz (spam yok).
@@ -96,18 +145,19 @@ function channel_webhook_apply(array $log, array $payload): array
     $supplierSt = $pdo->prepare('SELECT supplier_id FROM properties WHERE id=?');
     $supplierSt->execute([$propertyId]);
     $supplierId = (int) ($supplierSt->fetchColumn() ?: 0);
-    $roomName = (string) $roomList[0]['name'];
-    $roomResolve = function (string $ext) use ($roomMap, $fallbackRoom, $suggestSt, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $roomName): array {
+    $roomResolve = function (string $ext) use ($roomMap, $fallbackRoom, $suggestSt, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $bestRoomFor, $roomByName): array {
         if (isset($roomMap[$ext])) {
             return $roomMap[$ext];
         }
-        // Tanınmayan kod: ilk aktif oda tipine yazmak yerine onay bekleyen öneri oluştur.
+        // Tanınmayan kod: ilk aktif oda tipine yazmak yerine isim benzerliğine göre EN İYİ
+        // eşleşen oda tipine onay bekleyen öneri oluştur.
         if ($autoMap && $ext !== '') {
-            $suggestSt->execute([$connId, $propertyId, $fallbackRoom, $ext]);
+            $match = $bestRoomFor($ext);
+            $suggestSt->execute([$connId, $propertyId, $match['room'], $ext, $match['score'] > 0 ? $match['score'] : null]);
             if ($supplierId > 0 && (int) $suggestSt->rowCount() === 1) {
                 // rowCount 1 = yeni INSERT (ilk kez); 2 = ON CONFLICT güncellemesi (tekrar) → bildirim yalnızca ilkinde.
                 notify_supplier_users($supplierId, 'channel_mapping_suggestion',
-                    'Kanal webhook\'undan tanınmayan oda kodu geldi: "' . $ext . '" → "' . $roomName . '" için eşleştirme önerisi oluşturuldu (veri onaylanana kadar yazılmadı).',
+                    'Kanal webhook\'undan tanınmayan oda kodu geldi: "' . $ext . '" → "' . ($roomByName[$match['room']] ?? ('#' . $match['room'])) . '" için eşleştirme önerisi oluşturuldu' . ($match['score'] > 0 ? ' (benzerlik %' . $match['score'] . ')' : '') . '. Veri onaylanana kadar yazılmadı.',
                     '/nexustraveltech/tedarikci/dagitim-merkezi');
             }
             $roomMap[$ext] = ['room' => 0, 'plan' => null]; // bu yükte bir daha deneme
