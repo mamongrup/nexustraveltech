@@ -117,6 +117,7 @@ function channel_webhook_apply(array $log, array $payload): array
     $sellSt = $pdo->prepare('UPDATE inventory_calendar SET sold = sold + ? WHERE room_type_id=? AND rate_plan_id=? AND stay_date=?');
 
     $applied = 0;
+    $fxAudit = []; // dönüştürülen fiyatların orijinal/hedef birimi — denetim için channel_sync_logs.fx_audit'e yazılır.
     $limit = 2000; // Tek webhook için güvenlik sınırı.
     $dateMin = strtotime('today');
     $dateMax = strtotime('+730 days');
@@ -186,6 +187,17 @@ function channel_webhook_apply(array $log, array $payload): array
                         continue;
                     }
                     $base['base_price'] = fx_convert_amount($rawPrice, $inCur, $targetCurrency, $rate);
+                    // Denetim: orijinal ve dönüştürülmüş birim + kullanılan kur ve tutarlar.
+                    $fxKey = $inCur . '->' . $targetCurrency;
+                    if (!isset($fxAudit[$fxKey])) {
+                        $fxAudit[$fxKey] = ['from' => $inCur, 'to' => $targetCurrency, 'rate' => $rate, 'count' => 0, 'original_total' => 0.0, 'converted_total' => 0.0, 'first_date' => $date, 'last_date' => $date];
+                    }
+                    $fxAudit[$fxKey]['count']++;
+                    $fxAudit[$fxKey]['original_total'] += $rawPrice;
+                    $fxAudit[$fxKey]['converted_total'] += $base['base_price'];
+                    $fxAudit[$fxKey]['rate'] = $rate;
+                    if ($date < $fxAudit[$fxKey]['first_date']) $fxAudit[$fxKey]['first_date'] = $date;
+                    if ($date > $fxAudit[$fxKey]['last_date']) $fxAudit[$fxKey]['last_date'] = $date;
                 } else {
                     $base['base_price'] = $rawPrice;
                 }
@@ -208,8 +220,8 @@ function channel_webhook_apply(array $log, array $payload): array
     }
 
     if ($applied === 0 && $suggestedCount === 0) {
-        return ['ok' => false, 'message' => 'Hiçbir satır uygulanamadı. ' . implode('; ', array_slice($errors, 0, 5)), 'applied' => 0, 'errors' => $errors];
+        return ['ok' => false, 'message' => 'Hiçbir satır uygulanamadı. ' . implode('; ', array_slice($errors, 0, 5)), 'applied' => 0, 'errors' => $errors, 'fx_audit' => array_values($fxAudit)];
     }
     $suggestNote = $suggestedCount > 0 ? ' (+' . $suggestedCount . ' tanınmayan kod onay bekleyen öneri olarak kaydedildi — webhook satırı yazılmadı)' : '';
-    return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount];
+    return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount, 'fx_audit' => array_values($fxAudit)];
 }
