@@ -90,14 +90,26 @@ function channel_webhook_apply(array $log, array $payload): array
     }
     $fallbackRoom = (int) $roomList[0]['id'];
     $suggestedCount = 0;
-    // room <= 0 dönerse satır yazılmaz: öneri oluşturuldu, onay bekliyor.
-    $roomResolve = function (string $ext) use ($roomMap, $fallbackRoom, $suggestSt, $connId, $propertyId, $autoMap, &$suggestedCount): array {
+    // Tedarikçi bildirimi: öneri İLK kez oluştuğunda hangi kodun hangi oda tipine önerildiği panel bildirimi olarak gider.
+    // Tekrar gelen aynı kod yalnızca suggestion_count artırır; bildirim tekrarlanmaz (spam yok).
+    require_once __DIR__ . '/notifications.php';
+    $supplierSt = $pdo->prepare('SELECT supplier_id FROM properties WHERE id=?');
+    $supplierSt->execute([$propertyId]);
+    $supplierId = (int) ($supplierSt->fetchColumn() ?: 0);
+    $roomName = (string) $roomList[0]['name'];
+    $roomResolve = function (string $ext) use ($roomMap, $fallbackRoom, $suggestSt, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $roomName): array {
         if (isset($roomMap[$ext])) {
             return $roomMap[$ext];
         }
         // Tanınmayan kod: ilk aktif oda tipine yazmak yerine onay bekleyen öneri oluştur.
         if ($autoMap && $ext !== '') {
             $suggestSt->execute([$connId, $propertyId, $fallbackRoom, $ext]);
+            if ($supplierId > 0 && (int) $suggestSt->rowCount() === 1) {
+                // rowCount 1 = yeni INSERT (ilk kez); 2 = ON CONFLICT güncellemesi (tekrar) → bildirim yalnızca ilkinde.
+                notify_supplier_users($supplierId, 'channel_mapping_suggestion',
+                    'Kanal webhook\'undan tanınmayan oda kodu geldi: "' . $ext . '" → "' . $roomName . '" için eşleştirme önerisi oluşturuldu (veri onaylanana kadar yazılmadı).',
+                    '/nexustraveltech/tedarikci/dagitim-merkezi');
+            }
             $roomMap[$ext] = ['room' => 0, 'plan' => null]; // bu yükte bir daha deneme
             $suggestedCount++;
             return $roomMap[$ext];
