@@ -258,3 +258,10 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 /* ── iCal #sync odaklama: seçili ilana ait form + çoklu bağlantıda yumuşak vurgu ── */
 .ical-sync-flash{outline:3px solid #f5d97c;outline-offset:2px;border-radius:6px;transition:outline-color .2s}
 .ical-sync-flash-soft{outline:2px dashed #d9b94e;outline-offset:2px;border-radius:6px}
+
+/* ── iCal senkron AJAX bildirimi (toast) ── */
+.ical-toast-box{position:fixed;top:14px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:340px}
+.ical-toast{background:#1c2b3a;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:1;transition:opacity .35s,transform .35s;transform:translateY(0)}
+.ical-toast.ok{border-left:4px solid #2e7d4f}
+.ical-toast.err{border-left:4px solid #b0301a}
+.ical-toast.out{opacity:0;transform:translateY(-6px)}
