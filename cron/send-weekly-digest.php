@@ -163,7 +163,38 @@ $sendPanel = function (string $role, int $actorId, string $email, string $subjec
         $q2->execute([$actorId, $actorId]);
         $linkedCount = (int) $q2->fetchColumn();
     }
-    $body = panel_chat_weekly_html($d, $panelLink, $company, $linkedCount, 'tesis');
+    // Onay bekleyen eşleştirme önerileri (oda + fiyat planı): tedarikçide kendi kanalları,
+    // acentede iş yaptığı tedarikçilerin toplamı. Tablo/ilişki yoksa sessizce 0 kabul edilir.
+    $pendingRoom = 0;
+    $pendingPlan = 0;
+    try {
+        if ($role === 'supplier') {
+            $pq = db()->prepare("SELECT
+                (SELECT COUNT(*) FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id=? AND m.status='suggested') room_sug,
+                (SELECT COUNT(*) FROM channel_rate_plan_mappings pm JOIN channel_connections c2 ON c2.id=pm.channel_connection_id WHERE c2.supplier_id=? AND pm.status='suggested') plan_sug");
+            $pq->execute([$actorId, $actorId]);
+        } else {
+            $pq = db()->prepare("SELECT
+                (SELECT COUNT(*) FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id
+                   WHERE c.supplier_id IN (
+                     SELECT p.supplier_id FROM properties p JOIN agency_booking_requests ab ON ab.property_id=p.id WHERE ab.agency_id=?
+                     UNION SELECT p.supplier_id FROM properties p JOIN agency_discount_requests ad ON ad.property_id=p.id WHERE ad.agency_id=?
+                   ) AND m.status='suggested') room_sug,
+                (SELECT COUNT(*) FROM channel_rate_plan_mappings pm JOIN channel_connections c2 ON c2.id=pm.channel_connection_id
+                   WHERE c2.supplier_id IN (
+                     SELECT p.supplier_id FROM properties p JOIN agency_booking_requests ab2 ON ab2.property_id=p.id WHERE ab2.agency_id=?
+                     UNION SELECT p.supplier_id FROM properties p JOIN agency_discount_requests ad2 ON ad2.property_id=p.id WHERE ad2.agency_id=?
+                   ) AND pm.status='suggested') plan_sug");
+            $pq->execute([$actorId, $actorId, $actorId, $actorId]);
+        }
+        $pr = $pq->fetch();
+        $pendingRoom = (int) ($pr['room_sug'] ?? 0);
+        $pendingPlan = (int) ($pr['plan_sug'] ?? 0);
+    } catch (Throwable $e) {
+        $pendingRoom = 0;
+        $pendingPlan = 0;
+    }
+    $body = panel_chat_weekly_html($d, $panelLink, $company, $linkedCount, 'tesis', $pendingRoom, $pendingPlan);
     queue_email($email, $subjectPrefix . ' — ' . $d['dateLabel'], $body, 'chat_weekly_panel', $key);
     echo 'Panel özeti kuyruğa eklendi: ' . $email . " ({$role}#{$actorId}, {$d['total']} mesaj).\n";
 };

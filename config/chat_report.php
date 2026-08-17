@@ -278,8 +278,15 @@ function panel_chat_weekly_data(string $role, int $actorId): array
 /**
  * Panel haftalık özetini e-posta gövdesine çevirir.
  */
-function panel_chat_weekly_html(array $d, string $panelLink, string $company = '', int $linkedCount = 0, string $linkedLabel = 'tesis'): string
+function panel_chat_weekly_html(array $d, string $panelLink, string $company = '', int $linkedCount = 0, string $linkedLabel = 'tesis', int $pendingRoom = 0, int $pendingPlan = 0): string
 {
+    $pendingTotal = $pendingRoom + $pendingPlan;
+    $pendingHtml = '';
+    if ($pendingTotal > 0) {
+        $pendingHtml = '<div style="margin:14px 0 4px;padding:10px 14px;background:#fff8e6;border:1px solid #ead9a8;border-radius:8px">'
+            . '<h3 style="margin:0 0 4px;font-size:13px;color:#8a6100">⏳ Onay bekleyen eşleştirme önerileri: <b>' . $pendingTotal . '</b> (' . $pendingRoom . ' oda + ' . $pendingPlan . ' fiyat planı)</h3>'
+            . '<p style="margin:0;font-size:12px;color:#64716d">Webhook bildirimlerinden gelen dış oda/plan kodları öneri olarak bekliyor — onaylanana kadar veri yazılmaz. Onaylamak için Dağıtım & kanal merkezi → bölüm 3 (Oda eşleştirmesi) sayfasını açın.</p></div>';
+    }
     $qRows = '';
     foreach ($d['topQuestions'] as $i => $row) {
         $qRows .= '<tr><td style="padding:9px 12px;border-bottom:1px solid #e1e5de">' . htmlspecialchars(mb_substr((string) $row['q'], 0, 140)) . '</td>'
@@ -319,6 +326,7 @@ function panel_chat_weekly_html(array $d, string $panelLink, string $company = '
         . '<p style="color:#64716d;margin:0 0 16px">' . $d['dateLabel'] . ' · ' . $d['total'] . ' mesaj · ' . $d['activeDays'] . ' aktif gün · geçen hafta: ' . $d['totalPrev'] . ' mesaj <b style="color:' . $d['totalDeltaColor'] . '">(' . $d['totalDeltaTxt'] . ')</b></p>'
         . ($qRows !== '' ? '<table style="border-collapse:collapse;width:100%;max-width:560px"><tr><th style="text-align:left;padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">En çok sorulanlar</th><th style="padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d">Sayı</th></tr>' . $qRows . '</table>' : '')
         . $topicsHtml
+        . $pendingHtml
         . '<p style="margin-top:18px"><a href="' . htmlspecialchars($panelLink) . '" style="color:#0d7a4a">Aylık rapor sayfası →</a></p>'
         . '</div>';
 }
