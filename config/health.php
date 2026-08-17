@@ -197,9 +197,103 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $out .= "⚠ Token denetimi yapılamadı: " . $e->getMessage() . "\n";
     }
 
-    // --- 2c) Onarım — yabancı şemalı boş tabloları düşür (migration bölümü yeniden kurar).
+    // --- 2c) Tablo satır sayıları / tutarlılık denetimi — yarım kalan işler, yetim satırlar,
+    //         çift yedekler. Bu sorunlar webhook/senkron akışını sessizce tıkayabilir. ---
+    $out .= "\n=== 2c) TUTARLILIK / SATIR DENETİMİ ===\n";
+    $consistencyErrors = [];
+    $consistencyChecks = 0;
+
+    // 2c-1) Kanal webhook kuyruğunda yarım kalan işler (queued/running, 2+ saat beklemiş).
+    if (!in_array('channel_sync_logs', $missingTables, true)) {
+        $consistencyChecks++;
+        try {
+            $stuck = (int) $pdo->query("SELECT COUNT(*) FROM channel_sync_logs WHERE status IN ('queued','running') AND created_at < now() - interval '2 hours'")->fetchColumn();
+            if ($stuck > 0) {
+                $out .= "⚠ channel_sync_logs: " . $stuck . " yarım kalan iş (queued/running > 2 saat) — işleyici kilitlenmiş olabilir, cron/process-channel-webhooks.php denetleyin\n";
+                $consistencyErrors[] = 'channel_sync_logs: ' . $stuck . ' yarım kalan iş';
+            } else {
+                $out .= "✓ channel_sync_logs kuyruğu temiz (yarım kalan iş yok).\n";
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ channel_sync_logs denetimi yapılamadı: " . $e->getMessage() . "\n";
+        }
+    }
+
+    // 2c-2) Yetim kanal senkron günlüğü satırları (kanal bağlantısı silinmiş ama log kalmış —
+    //        FK yoksa veya yabancı şemalı tabloda oluşmuşsa görülür).
+    if (!in_array('channel_sync_logs', $missingTables, true) && !in_array('channel_connections', $missingTables, true)) {
+        $consistencyChecks++;
+        try {
+            $orphan = (int) $pdo->query("SELECT COUNT(*) FROM channel_sync_logs l LEFT JOIN channel_connections c ON c.id=l.channel_connection_id WHERE c.id IS NULL")->fetchColumn();
+            if ($orphan > 0) {
+                $out .= "⚠ channel_sync_logs: " . $orphan . " yetim satır (kanal bağlantısı yok)\n";
+                $consistencyErrors[] = 'channel_sync_logs: ' . $orphan . ' yetim satır';
+            } else {
+                $out .= "✓ Yetim kanal senkron günlüğü satırı yok.\n";
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ Yetim kanal log denetimi yapılamadı: " . $e->getMessage() . "\n";
+        }
+    }
+
+    // 2c-3) Aktif iCal bağlantısı 24+ saat hiç senkron kaydı üretmemiş (ölü bağlantı).
+    if (!in_array('ical_connections', $missingTables, true) && !in_array('ical_sync_logs', $missingTables, true)) {
+        $consistencyChecks++;
+        try {
+            $never = (int) $pdo->query("SELECT COUNT(*) FROM ical_connections c WHERE c.status='active' AND c.created_at < now() - interval '24 hours' AND NOT EXISTS (SELECT 1 FROM ical_sync_logs l WHERE l.ical_connection_id=c.id)")->fetchColumn();
+            if ($never > 0) {
+                $out .= "⚠ " . $never . " aktif iCal bağlantısı hiç senkron olmamış (>24 saat) — sync-ical-calendars.php denetleyin\n";
+                $consistencyErrors[] = 'ical_connections: ' . $never . ' bağlantı hiç senkron olmamış';
+            } else {
+                $out .= "✓ Tüm aktif iCal bağlantıları en az bir kez senkron oldu.\n";
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ iCal senkron denetimi yapılamadı: " . $e->getMessage() . "\n";
+        }
+    }
+
+    // 2c-4) Çöp kutusu yedeklerinde çift kayıt (idempotans ihlali — aynı özellik 2+ kez silinmiş).
+    if (!in_array('feature_delete_backups', $missingTables, true)) {
+        $consistencyChecks++;
+        try {
+            $dup = $pdo->query("SELECT feature_id, COUNT(*) AS n FROM feature_delete_backups GROUP BY feature_id HAVING COUNT(*)>1")->fetchAll();
+            if ($dup) {
+                $ids = implode(', ', array_map(fn($r) => '#' . (int) $r['feature_id'] . '×' . (int) $r['n'], $dup));
+                $out .= "⚠ feature_delete_backups: " . count($dup) . " özellikte çift yedek (" . $ids . ") — idempotans ihlali\n";
+                $consistencyErrors[] = 'feature_delete_backups: ' . count($dup) . ' özellikte çift yedek';
+            } else {
+                $out .= "✓ Silme yedekleri benzersiz (özellik başına 1 kayıt).\n";
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ feature_delete_backups denetimi yapılamadı: " . $e->getMessage() . "\n";
+        }
+    }
+
+    // 2c-5) Yetim kalıcı silme onayları — yedeği olmayan (geri yüklenmiş ama temizlenmemiş) onaylar.
+    if (!in_array('pending_trash_purges', $missingTables, true) && !in_array('feature_delete_backups', $missingTables, true)) {
+        $consistencyChecks++;
+        try {
+            $orphan = (int) $pdo->query("SELECT COUNT(*) FROM pending_trash_purges p LEFT JOIN feature_delete_backups b ON b.feature_id=p.feature_id WHERE b.id IS NULL")->fetchColumn();
+            if ($orphan > 0) {
+                $out .= "⚠ pending_trash_purges: " . $orphan . " yetim onay (yedeği yok — restore sonrası temizlenmemiş)\n";
+                $consistencyErrors[] = 'pending_trash_purges: ' . $orphan . ' yetim onay';
+            } else {
+                $out .= "✓ Kalıcı silme onayları tutarlı.\n";
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ pending_trash_purges denetimi yapılamadı: " . $e->getMessage() . "\n";
+        }
+    }
+
+    if ($consistencyErrors) {
+        $errors = array_merge($errors, $consistencyErrors);
+    } elseif ($consistencyChecks > 0) {
+        $out .= "✓ Tüm satır sayısı/tutarlılık kontrolleri temiz.\n";
+    }
+
+    // --- 2d) Onarım — yabancı şemalı boş tabloları düşür (migration bölümü yeniden kurar).
     if ($repair) {
-        $out .= "\n=== 2c) ONARIM MODU ===\n";
+        $out .= "\n=== 2d) ONARIM MODU ===\n";
         $dropped = 0;
         $dryRunDropped = 0;
         $skippedNonEmpty = [];
