@@ -148,36 +148,38 @@ function channel_webhook_apply(array $log, array $payload): array
         $lev = $len > 0 ? 1 - (levenshtein(trim((string) $norm($a)), trim((string) $norm($b))) / $len) : 0.0;
         return max($tokScore, $lev);
     };
-    // En iyi eşleşme: skoru en yüksek aktif oda tipi (eşik 0.45); altındaysa ilk aktif tip (eski davranış).
+    // Benzerlik eşiği — kontrol merkezinden ayarlanabilir platform ayarı (yüzde, varsayılan 45).
+    $simThreshold = max(0, min(100, (int) platform_setting('channel_webhook_similarity_threshold', 45))) / 100;
+    // En iyi eşleşme: skoru en yüksek aktif oda tipi (eşik $simThreshold); altındaysa ilk aktif tip (eski davranış).
     $bestRoom = (int) $roomList[0]['id'];
     $bestScore = 0.0;
     $roomByName = [];
     foreach ($roomList as $rl) {
         $roomByName[(int) $rl['id']] = (string) $rl['name'];
     }
-    $bestRoomFor = function (string $ext) use ($roomList, $nameSim, $bestRoom, &$bestScore): array {
+    $bestRoomFor = function (string $ext) use ($roomList, $nameSim, $bestRoom, &$bestScore, $simThreshold): array {
         $pick = $bestRoom;
         $score = 0.0;
         foreach ($roomList as $rl) {
             $s = $nameSim($ext, (string) $rl['name']);
             if ($s > $score) { $score = $s; $pick = (int) $rl['id']; }
         }
-        $bestScore = $score >= 0.45 ? $score : 0.0;
+        $bestScore = $score >= $simThreshold ? $score : 0.0;
         return ['room' => $pick, 'score' => (int) round($bestScore * 100)];
     };
-    // En iyi fiyat planı eşleşmesi: skoru en yüksek aktif plan (eşik 0.45).
+    // En iyi fiyat planı eşleşmesi: skoru en yüksek aktif plan (eşik $simThreshold).
     $planNames = [];
     foreach ($planRows as $pl) {
         $planNames[(int) $pl['id']] = (string) $pl['name'];
     }
-    $bestPlanFor = function (string $ext) use ($planRows, $nameSim): array {
+    $bestPlanFor = function (string $ext) use ($planRows, $nameSim, $simThreshold): array {
         $pick = (int) $planRows[0]['id'];
         $score = 0.0;
         foreach ($planRows as $pl) {
             $s = $nameSim($ext, (string) $pl['name']);
             if ($s > $score) { $score = $s; $pick = (int) $pl['id']; }
         }
-        $use = $score >= 0.45 ? $score : 0.0;
+        $use = $score >= $simThreshold ? $score : 0.0;
         return ['plan' => $pick, 'score' => (int) round($use * 100)];
     };
     $suggestedCount = 0;
