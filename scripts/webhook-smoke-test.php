@@ -248,7 +248,118 @@ try {
                         vnote('--keep: test satırları bırakıldı (log #' . $logId . ', kod ' . $code . ')');
                     }
                 }
-            }
+
+                // ─────────────────── 2b) KANAL ÖZGÜ KAPSAMLAR ───────────────────
+                vsection('2b) KAPSAM TESTLERİ: availability / restrictions / reservations');
+                // Rates akışının temizliği eşleştirmeyi sildi — kapsam testleri için yeniden kur.
+                $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status) VALUES(?,?,?,?,'confirmed') ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET room_type_id=EXCLUDED.room_type_id, rate_plan_id=EXCLUDED.rate_plan_id, property_id=EXCLUDED.property_id, status='confirmed'")
+                    ->execute([(int) $conn['id'], $propId, (int) $roomRow['id'], (int) $planRow['id'], $code]);
+                $scopeSpecs = [
+                    ['scope' => 'availability', 'date' => date('Y-m-d', strtotime('+61 days')), 'entry' => ['allotment' => 5], 'label' => 'kontenjan (allotment=5)'],
+                    ['scope' => 'restrictions', 'date' => date('Y-m-d', strtotime('+62 days')), 'entry' => ['stop_sale' => true, 'min_stay' => 2, 'max_stay' => 7], 'label' => 'stop_sale + min/max konaklama'],
+                    ['scope' => 'reservations', 'date' => date('Y-m-d', strtotime('+63 days')), 'entry' => ['qty' => 3], 'label' => 'rezervasyon (sold +3)'],
+                ];
+                foreach ($scopeSpecs as $spec) {
+                    $scope = (string) $spec['scope'];
+                    $scopeDate = (string) $spec['date'];
+                    if ($scope === 'reservations') {
+                        // reservations, inventory_calendar'da UPDATE sold yapar — satırın önce var olması gerekir.
+                        $prePayload = ['scope' => 'availability', 'external_property_id' => $ext, 'entries' => [['external_room_id' => $code, 'date' => $scopeDate, 'allotment' => 8]]];
+                        if ($noHttp) {
+                            $pdo->prepare("INSERT INTO channel_sync_logs(channel_connection_id, property_id, direction, scope, status, request_payload, response_payload) VALUES(?,?, 'pull', ?, 'queued', ?::jsonb, ?::jsonb)")
+                                ->execute([(int) $conn['id'], $propId, 'availability', json_encode($prePayload, JSON_UNESCAPED_UNICODE), json_encode(['received_at' => gmdate('c')])]);
+                        } else {
+                            $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/json\r\n", 'content' => json_encode($prePayload, JSON_UNESCAPED_UNICODE), 'ignore_errors' => true, 'timeout' => 20]]);
+                            @file_get_contents($baseUrl . '/api/channel-webhook?token=' . (string) $conn['access_token'], false, $ctx);
+                        }
+                        $preRow = $pdo->query("SELECT id FROM channel_sync_logs WHERE channel_connection_id=" . (int) $conn['id'] . " AND request_payload::text LIKE '%" . $code . "%' AND created_at > now() - interval '10 minutes' ORDER BY id DESC LIMIT 1")->fetchColumn();
+                        if ($preRow) {
+                            $pdo->prepare("UPDATE channel_sync_logs SET status='running', attempt_count=attempt_count+1 WHERE id=?")->execute([(int) $preRow]);
+                            $preJob = $pdo->query("SELECT * FROM channel_sync_logs WHERE id=" . (int) $preRow)->fetch();
+                            $prePl = json_decode((string) ($preJob['request_payload'] ?? '{}'), true);
+                            if (!is_array($prePl)) $prePl = [];
+                            $preRes = channel_webhook_apply($preJob, $prePl);
+                            if ($preRes['ok']) {
+                                $pdo->prepare("UPDATE channel_sync_logs SET status='success', response_payload=?::jsonb, error_message=NULL, completed_at=now() WHERE id=?")->execute([json_encode(['applied' => $preRes['applied']]), (int) $preRow]);
+                            } else {
+                                $pdo->prepare("UPDATE channel_sync_logs SET status='failed', error_message=?, completed_at=now() WHERE id=?")->execute([mb_substr((string) $preRes['message'], 0, 1000), (int) $preRow]);
+                            }
+                        }
+                    }
+                    $entry = array_merge(['external_room_id' => $code, 'date' => $scopeDate], (array) $spec['entry']);
+                    $payload = ['scope' => $scope, 'external_property_id' => $ext, 'entries' => [$entry]];
+                    $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
+                    if ($noHttp) {
+                        $pdo->prepare("INSERT INTO channel_sync_logs(channel_connection_id, property_id, direction, scope, status, request_payload, response_payload) VALUES(?,?, 'pull', ?, 'queued', ?::jsonb, ?::jsonb)")
+                            ->execute([(int) $conn['id'], $propId, $scope, $body, json_encode(['received_at' => gmdate('c')])]);
+                    } else {
+                        $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/json\r\n", 'content' => $body, 'ignore_errors' => true, 'timeout' => 20]]);
+                        $resp = @file_get_contents($baseUrl . '/api/channel-webhook?token=' . (string) $conn['access_token'], false, $ctx);
+                        $dec = is_string($resp) ? json_decode($resp, true) : null;
+                        if (!(is_array($dec) && ($dec['ok'] ?? false) && ($dec['queued'] ?? false))) {
+                            vbad($scope . ' gönderimi başarısız: ' . (is_string($resp) ? mb_substr($resp, 0, 200) : 'yanıt yok'));
+                            continue;
+                        }
+                    }
+                    $qrow2 = $pdo->prepare("SELECT id, status, attempt_count FROM channel_sync_logs WHERE channel_connection_id=? AND request_payload::text LIKE ? AND created_at > now() - interval '10 minutes' ORDER BY id DESC LIMIT 1");
+                    $qrow2->execute([(int) $conn['id'], '%' . $code . '%']);
+                    $log2 = $qrow2->fetch();
+                    if (!$log2) { vbad($scope . ': kuyruk satırı bulunamadı'); continue; }
+                    $log2Id = (int) $log2['id'];
+                    if ($log2['status'] === 'queued') {
+                        $pdo->prepare("UPDATE channel_sync_logs SET status='running', attempt_count=attempt_count+1 WHERE id=?")->execute([$log2Id]);
+                        $job2 = $pdo->query("SELECT * FROM channel_sync_logs WHERE id=" . $log2Id)->fetch();
+                        $pl2 = json_decode((string) ($job2['request_payload'] ?? '{}'), true);
+                        if (!is_array($pl2)) $pl2 = [];
+                        $res2 = channel_webhook_apply($job2, $pl2);
+                        if ($res2['ok']) {
+                            $pdo->prepare("UPDATE channel_sync_logs SET status='success', response_payload=?::jsonb, error_message=NULL, completed_at=now() WHERE id=?")->execute([json_encode(['applied' => $res2['applied'], 'message' => $res2['message']]), $log2Id]);
+                        } else {
+                            $pdo->prepare("UPDATE channel_sync_logs SET status='failed', error_message=?, completed_at=now() WHERE id=?")->execute([mb_substr((string) $res2['message'], 0, 1000), $log2Id]);
+                        }
+                    }
+                    $stat2 = $pdo->query("SELECT status FROM channel_sync_logs WHERE id=" . $log2Id)->fetchColumn();
+                    if ($stat2 !== 'success') {
+                        vbad($scope . ' işlenemedi (status=' . (string) $stat2 . ') — ' . $spec['label']);
+                        continue;
+                    }
+                    $inv2 = $pdo->query("SELECT allotment, sold, min_stay, max_stay, stop_sale FROM inventory_calendar WHERE room_type_id=" . (int) $roomRow['id'] . " AND rate_plan_id=" . (int) $planRow['id'] . " AND stay_date='" . $scopeDate . "'")->fetch();
+                    if ($scope === 'availability') {
+                        ((int) ($inv2['allotment'] ?? -1) === 5)
+                            ? vok('availability: kontenjan yazıldı (allotment=5 · ' . $scopeDate . ')')
+                            : vbad('availability: allotment beklenen 5 değil (bulunan ' . var_export($inv2['allotment'] ?? null, true) . ')');
+                    } elseif ($scope === 'restrictions') {
+                        ((bool) ($inv2['stop_sale'] ?? false) === true && (int) ($inv2['min_stay'] ?? 0) === 2 && (int) ($inv2['max_stay'] ?? 0) === 7)
+                            ? vok('restrictions: stop_sale + min 2 / max 7 yazıldı (' . $scopeDate . ')')
+                            : vbad('restrictions: beklenen değerler bulunamadı (' . var_export($inv2, true) . ')');
+                    } else {
+                        ((int) ($inv2['sold'] ?? -1) === 3 && (int) ($inv2['allotment'] ?? -1) === 8)
+                            ? vok('reservations: sold +3 işlendi, allotment 8 korundu (' . $scopeDate . ')')
+                            : vbad('reservations: sold beklenen 3 değil (bulunan sold=' . var_export($inv2['sold'] ?? null, true) . ', allotment=' . var_export($inv2['allotment'] ?? null, true) . ')');
+                    }
+                }
+                // Kapsam testi temizliği — tüm kapsam logları (ön yazım dahil) + takvim + eşleştirme.
+                if (!$keep) {
+                    $pdo->prepare("DELETE FROM channel_sync_logs WHERE channel_connection_id=? AND request_payload::text LIKE ? AND created_at > now() - interval '10 minutes'")->execute([(int) $conn['id'], '%' . $code . '%']);
+                    $pdo->prepare("DELETE FROM inventory_calendar WHERE room_type_id=? AND rate_plan_id=? AND stay_date IN (?,?,?)")->execute([(int) $roomRow['id'], (int) $planRow['id'], date('Y-m-d', strtotime('+61 days')), date('Y-m-d', strtotime('+62 days')), date('Y-m-d', strtotime('+63 days'))]);
+                    $pdo->prepare('DELETE FROM channel_room_mappings WHERE channel_connection_id=? AND external_room_id=?')->execute([(int) $conn['id'], $code]);
+                    vnote("kapsam testi temizliği tamam (loglar, takvim +61/+62/+63, eşleştirme '$code')");
+                } else {
+                    vnote('--keep: kapsam testi satırları bırakıldı (kod ' . $code . ')');
+                }
+
+                // ─────────────────── 2c) CURL ÖRNEKLERİ ───────────────────
+                vsection('CURL ÖRNEKLERİ (kopyala-yapıştır)');
+                echo "  Not: '" . $code . "' bu çalıştırmanın geçici test kodu — kendi eşleştirilmiş oda kodunuzla değiştirin.\n";
+                $curlBase = $baseUrl . '/api/channel-webhook?token=' . (string) $conn['access_token'];
+                echo "  # 1) availability — kontenjan\n";
+                echo "  curl -s -X POST \"$curlBase\" -H \"Content-Type: application/json\" -d '{\"scope\":\"availability\",\"external_property_id\":\"$ext\",\"entries\":[{\"external_room_id\":\"$code\",\"date\":\"$testDate\",\"allotment\":5}]}'\n";
+                echo "  # 2) rates — fiyat (kur varsa otomatik $planCur birimine çevrilir)\n";
+                echo "  curl -s -X POST \"$curlBase\" -H \"Content-Type: application/json\" -d '{\"scope\":\"rates\",\"external_property_id\":\"$ext\",\"currency\":\"$inCur\",\"entries\":[{\"external_room_id\":\"$code\",\"date\":\"$testDate\",\"price\":123.45}]}'\n";
+                echo "  # 3) restrictions — stop_sale + min/max konaklama\n";
+                echo "  curl -s -X POST \"$curlBase\" -H \"Content-Type: application/json\" -d '{\"scope\":\"restrictions\",\"external_property_id\":\"$ext\",\"entries\":[{\"external_room_id\":\"$code\",\"date\":\"$testDate\",\"stop_sale\":false,\"min_stay\":2,\"max_stay\":7}]}'\n";
+                echo "  # 4) reservations — satış (sold = sold + qty; takvim satırı önce var olmalı)\n";
+                echo "  curl -s -X POST \"$curlBase\" -H \"Content-Type: application/json\" -d '{\"scope\":\"reservations\",\"external_property_id\":\"$ext\",\"entries\":[{\"external_room_id\":\"$code\",\"date\":\"$testDate\",\"qty\":1}]}'\n";            }
         }
     }
 
