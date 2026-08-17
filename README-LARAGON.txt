@@ -209,3 +209,7 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Hazırlık kontrol listesinde aktif iCal dışa aktarma bağlantılarının URL'leri kopyalanabilir gösterilir
   (listing_readiness ical kalemindeki urls alanı → villa-detay paneli): "Kopyala" butonu panoya yazar,
   onay geri bildirimi gösterir.
+- Özellik silme etki denetimi (admin/ozellik-listeleri): silmeden önce o özelliği service_pricing veya
+  amenities alanında kullanan kayıtlı villa/yat ilanları JSONB sorgusuyla bulunur ve admin'e listelenir;
+  onay sonrası özellik katalogdan silinir ve aynı işlemde bu ilanların verisinden de kaldırılır
+  (jsonb_set + jsonb '-' operatörü).
