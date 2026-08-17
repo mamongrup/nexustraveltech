@@ -180,3 +180,9 @@ AYLIK SOHBET RAPORU (E-POSTA)
   görsel yükleme, komisyon/tahsilat ve iptal/iade). Tesisler listesindeki villa/yat kartları "İlanı
   tamamla →" ile bu sayfaya gider. Tür bazlı alanlar: villa (yatak odası, misafir, havuz, m², yapı tipi),
   yat (kabin, kapasite, uzunluk, liman, mürettebat, yıl).
+- Ürün kurulumu (tesis-ekle): villa ve yat şablonları genişletildi — villa (yatak odası, maks. misafir,
+  havuz tipi, m², kat, yapı tipi), yat (kabin, misafir kapasitesi, uzunluk, liman, mürettebat, yıl).
+  Sayısal alanlarda aralık doğrulaması (min/max), zorunlu alan kontrolü (villa: misafir, yat: kapasite +
+  uzunluk) POST tarafında yapılır. Villa/yat artık kurulumda birim tiplerini (tür bazlı özellik listesiyle)
+  ve otomatik fiyat planını da oluşturur, oluşturma sonrası villa-detay sayfasına gider.
+  Migration 041, mevcut veritabanındaki product_type_catalog villa/yat kayıtlarını bu şablonlarla günceller.
