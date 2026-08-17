@@ -219,3 +219,5 @@ AYLIK SOHBET RAPORU (E-POSTA)
   bölüm yönetir (Villa, Yat, Otel olanakları, Otel aktiviteleri, Otel etkinlikleri); otel hizmetlerinde
   grup adı zorunludur. Silme etki denetimi otelleri de kapsar (service_pricing/amenities/activities/events
   JSONB alanlarından temizler).
+- Katalogda elle sıralama: admin/ozellik-listeleri'nde her özellik chip'inde ↑/↓ butonları; taşıma aynı
+  kod + grup içinde komşuyla sort_order takas eder ve grubu 10'luk adımlara yeniden numaralar.

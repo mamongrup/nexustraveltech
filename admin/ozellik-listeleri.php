@@ -51,6 +51,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $msg = 'Özellik silindi' . ($affected ? ' ve ' . count($affected) . ' ilandan kaldırıldı: ' . implode(', ', array_map(fn($a) => $a['name'], $affected)) . '.' : '.');
           $deletedAudit = ['label' => $feat['label'], 'affected' => $affected];
         }
+      } elseif ($action === 'move') {
+        $featureId = (int) ($_POST['id'] ?? 0);
+        $dir = ($_POST['direction'] ?? '') === 'up' ? 'up' : 'down';
+        $fq = db()->prepare('SELECT id, code, group_label FROM property_feature_catalog WHERE id=?');
+        $fq->execute([$featureId]);
+        $f = $fq->fetch();
+        if (!$f) throw new RuntimeException('Özellik bulunamadı.');
+        $q = db()->prepare('SELECT id, sort_order FROM property_feature_catalog WHERE code=? AND group_label=? ORDER BY sort_order, id');
+        $q->execute([$f['code'], $f['group_label']]);
+        $rows = $q->fetchAll();
+        $pos = null;
+        foreach ($rows as $i => $r) if ((int) $r['id'] === $featureId) { $pos = $i; break; }
+        $target = $pos !== null ? ($dir === 'up' ? $pos - 1 : $pos + 1) : -1;
+        if ($pos !== null && $target >= 0 && $target < count($rows) && $pos !== $target) {
+          $upd = db()->prepare('UPDATE property_feature_catalog SET sort_order=? WHERE id=?');
+          $upd->execute([$rows[$target]['sort_order'], $rows[$pos]['id']]);
+          $upd->execute([$rows[$pos]['sort_order'], $rows[$target]['id']]);
+          // Grubu temiz 10'luk adımlara yeniden numarala.
+          $renum = db()->prepare('UPDATE property_feature_catalog SET sort_order=? WHERE id=?');
+          $n = 10;
+          $all = db()->prepare('SELECT id FROM property_feature_catalog WHERE code=? AND group_label=? ORDER BY sort_order, id');
+          $all->execute([$f['code'], $f['group_label']]);
+          foreach ($all->fetchAll(PDO::FETCH_COLUMN) as $rid) { $renum->execute([$n, $rid]); $n += 10; }
+          $msg = 'Sıralama güncellendi.';
+        } else {
+          $msg = 'Özellik zaten listenin başında/sonunda.';
+        }
       } elseif ($action === 'toggle') {
         db()->prepare('UPDATE property_feature_catalog SET is_active = NOT is_active WHERE id=?')->execute([(int) ($_POST['id'] ?? 0)]);
         $msg = 'Özellik durumu güncellendi.';
@@ -80,6 +107,6 @@ $typeLabel = fn($t) => ['hotel' => 'Otel', 'villa' => 'Villa', 'yacht' => 'Yat']
 <form class="c f" method="post"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="add"><div class="r"><select name="code"><option value="villa">Villa</option><option value="yacht">Yat</option><option value="amenity">Otel olanakları</option><option value="activity">Otel aktiviteleri</option><option value="event">Otel etkinlikleri</option></select><input name="label" placeholder="Yeni özellik adı" maxlength="120" required style="flex:1"><input name="group" placeholder="Grup (yalnızca otel hizmetleri; Örn. Spa & spor)" maxlength="120" style="flex:1"><button>Özellik ekle</button></div></form>
 <div class="two"><?php foreach ($sectionTitles as $code => $title): $isHotelCat = in_array($code, ['amenity', 'activity', 'event'], true); $grouped = []; foreach (($byCode[$code] ?? []) as $item) $grouped[$item['group_label'] ?: 'Genel'][] = $item; ?>
 <div class="c"><h2><?= $title ?> <small style="color:#6b7774;font-weight:normal">(<?= count($byCode[$code]) ?>)</small></h2><?php if (!$byCode[$code]): ?><p style="color:#6b7774">Liste boş — yukarıdan ekleyin.</p><?php endif; ?>
-<?php foreach ($grouped as $groupName => $groupItems): ?><?php if ($isHotelCat): ?><h3 style="font-size:13px;margin:14px 0 4px;color:#405b13"><?= htmlspecialchars($groupName) ?></h3><?php endif; ?><?php foreach ($groupItems as $item): ?><span class="chip <?= $item['is_active'] ? '' : 'off' ?>"><?= htmlspecialchars($item['label']) ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini" title="Aktif/pasif"><?= $item['is_active'] ? 'Pasifleştir' : 'Aktifleştir' ?></button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini del" onclick="return confirm('Bu özellik silinsin mi?');">×</button></form></span><?php endforeach; ?><?php endforeach; ?></div>
+<?php foreach ($grouped as $groupName => $groupItems): ?><?php if ($isHotelCat): ?><h3 style="font-size:13px;margin:14px 0 4px;color:#405b13"><?= htmlspecialchars($groupName) ?></h3><?php endif; ?><?php foreach ($groupItems as $item): ?><span class="chip <?= $item['is_active'] ? '' : 'off' ?>"><?= htmlspecialchars($item['label']) ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="up"><button class="mini" title="Yukarı taşı">↑</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="down"><button class="mini" title="Aşağı taşı">↓</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini" title="Aktif/pasif"><?= $item['is_active'] ? 'Pasifleştir' : 'Aktifleştir' ?></button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini del" onclick="return confirm('Bu özellik silinsin mi?');">×</button></form></span><?php endforeach; ?><?php endforeach; ?></div>
 <?php endforeach; ?></div>
 </main><?php require_once __DIR__ . '/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); ?></body></html>
