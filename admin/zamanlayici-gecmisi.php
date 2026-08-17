@@ -12,6 +12,8 @@ $status = (string) ($_GET['status'] ?? '');
 if (!in_array($status, ['', 'ok', 'error'], true)) $status = '';
 $limit = (int) ($_GET['limit'] ?? 200);
 if (!in_array($limit, [50, 200, 500], true)) $limit = 200;
+$hours = (int) ($_GET['hours'] ?? 0);
+if (!in_array($hours, [0, 24, 72, 168], true)) $hours = 0;
 
 $pdo = db();
 
@@ -25,6 +27,9 @@ if ($jobId > 0) {
 if ($status !== '') {
     $where .= ' AND r.status=?';
     $params[] = $status;
+}
+if ($hours > 0) {
+    $where .= ' AND r.created_at >= now() - interval \'' . $hours . ' hours\'';
 }
 $q = $pdo->prepare(
     "SELECT r.id,r.status,r.output,r.duration_ms,r.triggered_by,r.created_at,j.name,j.code,j.command
@@ -59,6 +64,18 @@ for ($i = 29; $i >= 0; $i--) {
 $durMax = max(1, max(array_column($durChart, 'avg_ms')));
 
 $jobs = scheduler_jobs();
+
+// Kartlardan filtre bağlantıları üret (görev seçimi korunur).
+$filterUrl = function (string $st, int $h) use ($jobId): string {
+    $q = [];
+    if ($jobId > 0) $q[] = 'job=' . $jobId;
+    if ($st !== '') $q[] = 'status=' . $st;
+    if ($h > 0) $q[] = 'hours=' . $h;
+    $q[] = 'limit=200';
+    return '?' . implode('&', $q);
+};
+$hasFilter = $status !== '' || $hours > 0;
+$filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başarılı' : '')) . ' ' . ($hours === 24 ? '· son 24 saat' : ($hours === 72 ? '· son 3 gün' : ($hours === 168 ? '· son 7 gün' : ''))));
 ?>
 <!doctype html>
 <html lang="tr">
@@ -67,7 +84,7 @@ $jobs = scheduler_jobs();
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Zamanlayıcı geçmişi | NEXUS Admin</title>
   <style>
-    body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(1080px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}select,button{padding:9px;font:inherit;border:1px solid #d8ded8}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #e1e5de;padding:9px 10px;text-align:left;vertical-align:top;font-size:13px}th{font-size:12px;text-transform:uppercase;color:#64716d}code{background:#f2f4ef;padding:2px 6px;font-size:12px}pre{background:#f2f4ef;padding:8px;font-size:12px;white-space:pre-wrap;margin:4px 0 0}.ok{color:#0d7a4a;font-weight:700}.er{color:#b0301a;font-weight:700}.stats{display:flex;gap:10px;flex-wrap:wrap}.stat{background:#fff;border:1px solid #ddd;padding:12px 16px;min-width:130px}.stat span{font-size:11px;text-transform:uppercase;color:#64716d}.stat b{display:block;font-size:20px;margin-top:3px}.stat.warn b{color:#a86026}.stat.danger b{color:#b0301a}.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.filters button{background:#10211f;color:#fff;border:0;cursor:pointer}.muted{color:#64716d;font-size:13px}summary{cursor:pointer;font-size:12px;color:#0d7a4a}
+    body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(1080px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}select,button{padding:9px;font:inherit;border:1px solid #d8ded8}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #e1e5de;padding:9px 10px;text-align:left;vertical-align:top;font-size:13px}th{font-size:12px;text-transform:uppercase;color:#64716d}code{background:#f2f4ef;padding:2px 6px;font-size:12px}pre{background:#f2f4ef;padding:8px;font-size:12px;white-space:pre-wrap;margin:4px 0 0}.ok{color:#0d7a4a;font-weight:700}.er{color:#b0301a;font-weight:700}.stats{display:flex;gap:10px;flex-wrap:wrap}.stat{background:#fff;border:1px solid #ddd;padding:12px 16px;min-width:130px;display:block;text-decoration:none;color:inherit}.stat span{font-size:11px;text-transform:uppercase;color:#64716d}.stat b{display:block;font-size:20px;margin-top:3px}.stat.warn b{color:#a86026}.stat.danger b{color:#b0301a}a.stat:hover{border-color:#10211f;box-shadow:0 2px 8px rgba(0,0,0,.08)}.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.filters button{background:#10211f;color:#fff;border:0;cursor:pointer}.muted{color:#64716d;font-size:13px}summary{cursor:pointer;font-size:12px;color:#0d7a4a}
   </style>
 </head>
 <body>
@@ -76,11 +93,14 @@ $jobs = scheduler_jobs();
 <p class="muted">Her çalıştırma (nabız, manuel, AI) ayrı satır olarak kaydedilir; kayıtlar 90 gün tutulur. <?= (int)$stats['totalRuns'] ?> toplam kayıt.</p>
 
 <div class="stats">
-  <div class="stat"><span>Son 7 gün çalışma</span><b><?= (int)$stats['total7'] ?></b></div>
-  <div class="stat <?= $stats['err24'] > 0 ? 'danger' : '' ?>"><span>Hata — son 24 saat</span><b><?= (int)$stats['err24'] ?></b></div>
-  <div class="stat <?= $stats['err7'] > 0 ? 'warn' : '' ?>"><span>Hata — son 7 gün</span><b><?= (int)$stats['err7'] ?></b></div>
+  <a class="stat" href="<?=htmlspecialchars($filterUrl('', 168))?>"><span>Son 7 gün çalışma</span><b><?= (int)$stats['total7'] ?></b></a>
+  <a class="stat <?= $stats['err24'] > 0 ? 'danger' : '' ?>" href="<?=htmlspecialchars($filterUrl('error', 24))?>"><span>Hata — son 24 saat</span><b><?= (int)$stats['err24'] ?></b></a>
+  <a class="stat <?= $stats['err7'] > 0 ? 'warn' : '' ?>" href="<?=htmlspecialchars($filterUrl('error', 168))?>"><span>Hata — son 7 gün</span><b><?= (int)$stats['err7'] ?></b></a>
   <div class="stat"><span>Ort. süre (7 gün)</span><b><?= number_format((int)$stats['avgMs']) ?> ms</b></div>
 </div>
+<?php if ($hasFilter): ?>
+<p class="muted" style="margin:10px 0 0">Filtre: <b><?=htmlspecialchars($filterLabel)?></b> · <a href="?limit=200" style="color:#0d7a4a;font-weight:700">Temizle</a></p>
+<?php endif; ?>
 
 <section class="c"><h2>Çalışma süresi — son 30 gün <?= $jobId > 0 ? '(görev bazında)' : '(tüm görevler)' ?></h2>
 <p class="muted" style="margin:0 0 8px">Günlük <b>ortalama</b> süre (ms). Üzerine gelince gün, süre ve çalışma sayısı görünür. <?= $jobId === 0 ? 'Tek görev görmek için yukarıdan bir görev seçin.' : '' ?></p>
@@ -111,6 +131,7 @@ $jobs = scheduler_jobs();
     <option value="200" <?= $limit === 200 ? 'selected' : '' ?>>200 kayıt</option>
     <option value="500" <?= $limit === 500 ? 'selected' : '' ?>>500 kayıt</option>
   </select>
+  <?php if ($hours > 0): ?><input type="hidden" name="hours" value="<?= (int)$hours ?>"><?php endif; ?>
   <button>Filtrele</button>
 </form>
 <?php if (!$runs): ?>
