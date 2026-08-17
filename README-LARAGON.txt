@@ -255,3 +255,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Dagitim sagligi ozeti e-postasina PDF eki: TCPDF kuruluysa sorun tablosunun yazdirilabilir hali (dagitim-sagligi-YYYY-MM-DD.pdf) ek olarak gonderilir; TCPDF yoksa HTML govde ile devam eder
 - admin/dagitim-sagligi sayfasi: iCal + kanal sorun tablosu canli goruntulenir, PDF (TCPDF) ve CSV olarak indirilebilir; haftalik e-posta ile ayni veri
 - Dagitim sagligi ozetine konum bazli kirilim: sorunlu iCal ilanlari sehir/limana gore gruplanir (yatlar icin home_port, degilse city); e-posta govdesinde ve PDF ekinde "Konum bazli kirilim" bolumu
+- Tesisler kartinda "Tum kalemler" genisletilebilir bolum: her hazirlik kalemi ikon + etiket + detay metni + eksikse "Doldur ->" / sariysa "Incele ->" baglantisiyla listelenir

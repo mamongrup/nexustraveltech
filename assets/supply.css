@@ -87,3 +87,18 @@
 /* --- Kanal bağlantısı hata durumu (dağıtım merkezi) --- */
 .conn-block.conn-error{border-color:#f3c4ba;background:#fff7f5}
 .conn-err-badge{display:inline-block;background:#b0301a;color:#fff;font-weight:700;font-size:11px;letter-spacing:.04em;border-radius:4px;padding:3px 8px;margin-bottom:6px}
+/* --- Genişletilebilir hazırlık kalemleri (tesisler kartı) --- */
+.readiness-toggle{display:block;width:100%;margin-top:8px;background:#f2f4ef;border:1px solid var(--line);border-radius:5px;padding:5px 9px;font-size:11px;font-weight:700;color:var(--ink);cursor:pointer;text-align:left}
+.readiness-toggle:hover{background:#e9eee1}
+.readiness-all{margin-top:8px;border:1px solid var(--line);border-radius:6px;background:#fff;padding:4px 8px}
+.readiness-all-row{display:flex;align-items:flex-start;gap:8px;padding:6px 2px;border-top:1px solid #eef0ea;font-size:12px}
+.readiness-all-row:first-child{border-top:0}
+.readiness-all-row.missing{color:#b0301a}
+.readiness-all-row.warn{color:#8a6100}
+.readiness-all-row.ok{color:#10211f}
+.readiness-all-icon{width:14px;text-align:center;flex:none}
+.readiness-all-text{flex:1;min-width:0}
+.readiness-all-text b{display:block;font-size:12px}
+.readiness-all-text small{display:block;color:var(--muted);font-size:11px;line-height:1.4;margin-top:1px}
+.readiness-all-row a{white-space:nowrap;font-size:11px;font-weight:700;color:#0d7a4a;text-decoration:none}
+.readiness-all-row.missing a{color:#b0301a}
