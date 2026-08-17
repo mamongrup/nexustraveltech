@@ -1,0 +1,110 @@
+-- 043: Otel olanak/aktivite/etkinlik gruplarını property_feature_catalog'a taşı.
+-- Katalog artık villa/yat yanında otel hizmetlerini de yönetir (code: amenity/activity/event,
+-- grup bilgisi group_label sütununda).
+
+ALTER TABLE property_feature_catalog DROP CONSTRAINT IF EXISTS property_feature_catalog_code_check;
+ALTER TABLE property_feature_catalog ADD CONSTRAINT property_feature_catalog_code_check CHECK (code IN ('villa','yacht','amenity','activity','event'));
+ALTER TABLE property_feature_catalog ADD COLUMN IF NOT EXISTS group_label VARCHAR(120) NOT NULL DEFAULT '';
+
+-- Otel olanakları (amenity)
+INSERT INTO property_feature_catalog (code, group_label, label, sort_order) VALUES
+  ('amenity','Genel hizmetler','Wi-Fi',10),
+  ('amenity','Genel hizmetler','Otopark',20),
+  ('amenity','Genel hizmetler','Vale',30),
+  ('amenity','Genel hizmetler','Resepsiyon 24 saat',40),
+  ('amenity','Genel hizmetler','Oda servisi',50),
+  ('amenity','Genel hizmetler','Çamaşırhane',60),
+  ('amenity','Genel hizmetler','Kuru temizleme',70),
+  ('amenity','Genel hizmetler','Elektrikli araç şarjı',80),
+  ('amenity','Genel hizmetler','Transfer hizmeti',90),
+  ('amenity','Genel hizmetler','Araç kiralama',100),
+  ('amenity','Yeme & içme','Ana restoran',10),
+  ('amenity','Yeme & içme','A la carte restoran',20),
+  ('amenity','Yeme & içme','Bar',30),
+  ('amenity','Yeme & içme','Snack bar',40),
+  ('amenity','Yeme & içme','Çocuk büfesi',50),
+  ('amenity','Yeme & içme','Vegan menü',60),
+  ('amenity','Yeme & içme','Glutensiz menü',70),
+  ('amenity','Yeme & içme','Odaya kahvaltı',80),
+  ('amenity','Havuz & plaj','Özel plaj',10),
+  ('amenity','Havuz & plaj','Mavi bayraklı plaj',20),
+  ('amenity','Havuz & plaj','İskele',30),
+  ('amenity','Havuz & plaj','Açık havuz',40),
+  ('amenity','Havuz & plaj','Kapalı havuz',50),
+  ('amenity','Havuz & plaj','Isıtmalı havuz',60),
+  ('amenity','Havuz & plaj','Çocuk havuzu',70),
+  ('amenity','Havuz & plaj','Aquapark',80),
+  ('amenity','Havuz & plaj','Şezlong ve şemsiye',90),
+  ('amenity','Spa & spor','SPA merkezi',10),
+  ('amenity','Spa & spor','Fitness',20),
+  ('amenity','Spa & spor','Türk hamamı',30),
+  ('amenity','Spa & spor','Sauna',40),
+  ('amenity','Spa & spor','Buhar odası',50),
+  ('amenity','Spa & spor','Masaj',60),
+  ('amenity','Spa & spor','Jakuzi',70),
+  ('amenity','Spa & spor','Yoga',80),
+  ('amenity','Spa & spor','Tenis',90),
+  ('amenity','Spa & spor','Su sporları',100),
+  ('amenity','Çocuk & aile','Mini kulüp',10),
+  ('amenity','Çocuk & aile','Çocuk animasyonu',20),
+  ('amenity','Çocuk & aile','Çocuk oyun alanı',30),
+  ('amenity','Çocuk & aile','Bebek yatağı',40),
+  ('amenity','Çocuk & aile','Bebek bakım hizmeti',50),
+  ('amenity','Çocuk & aile','Çocuk menüsü',60),
+  ('amenity','İş & erişilebilirlik','Toplantı salonu',10),
+  ('amenity','İş & erişilebilirlik','Konferans salonu',20),
+  ('amenity','İş & erişilebilirlik','Engelli erişimi',30),
+  ('amenity','İş & erişilebilirlik','Engelli odası',40),
+  ('amenity','İş & erişilebilirlik','Asansör',50),
+  ('amenity','İş & erişilebilirlik','Yetişkin oteli',60)
+ON CONFLICT (code, label) DO NOTHING;
+
+-- Otel aktiviteleri (activity)
+INSERT INTO property_feature_catalog (code, group_label, label, sort_order) VALUES
+  ('activity','Spor & su aktiviteleri','Fitness dersi',10),
+  ('activity','Spor & su aktiviteleri','Yoga / pilates',20),
+  ('activity','Spor & su aktiviteleri','Tenis',30),
+  ('activity','Spor & su aktiviteleri','Plaj voleybolu',40),
+  ('activity','Spor & su aktiviteleri','Basketbol',50),
+  ('activity','Spor & su aktiviteleri','Mini futbol',60),
+  ('activity','Spor & su aktiviteleri','Okçuluk',70),
+  ('activity','Spor & su aktiviteleri','Dalış',80),
+  ('activity','Spor & su aktiviteleri','Şnorkel',90),
+  ('activity','Spor & su aktiviteleri','Kano',100),
+  ('activity','Spor & su aktiviteleri','Paddle board',110),
+  ('activity','Spor & su aktiviteleri','Jet ski',120),
+  ('activity','Spor & su aktiviteleri','Parasailing',130),
+  ('activity','Spor & su aktiviteleri','Banana',140),
+  ('activity','Spor & su aktiviteleri','Su kayağı',150),
+  ('activity','Çocuk & aile aktiviteleri','Mini kulüp aktivitesi',10),
+  ('activity','Çocuk & aile aktiviteleri','Çocuk disko',20),
+  ('activity','Çocuk & aile aktiviteleri','Çocuk atölyesi',30),
+  ('activity','Çocuk & aile aktiviteleri','Bebek bakım hizmeti',40),
+  ('activity','Çocuk & aile aktiviteleri','Oyun salonu',50),
+  ('activity','Çocuk & aile aktiviteleri','Lunapark',60),
+  ('activity','Wellness & deneyim','Türk hamamı ritüeli',10),
+  ('activity','Wellness & deneyim','Masaj terapisi',20),
+  ('activity','Wellness & deneyim','Cilt bakımı',30),
+  ('activity','Wellness & deneyim','Kişisel antrenör',40),
+  ('activity','Wellness & deneyim','Yemek atölyesi',50),
+  ('activity','Wellness & deneyim','Şarap tadımı',60),
+  ('activity','Wellness & deneyim','Çevre gezisi',70)
+ON CONFLICT (code, label) DO NOTHING;
+
+-- Otel etkinlikleri (event)
+INSERT INTO property_feature_catalog (code, group_label, label, sort_order) VALUES
+  ('event','Gündüz & akşam programı','Canlı müzik',10),
+  ('event','Gündüz & akşam programı','DJ performansı',20),
+  ('event','Gündüz & akşam programı','Gece şovu',30),
+  ('event','Gündüz & akşam programı','Sahne gösterisi',40),
+  ('event','Gündüz & akşam programı','Tema gecesi',50),
+  ('event','Gündüz & akşam programı','Karaoke',60),
+  ('event','Gündüz & akşam programı','Sinema gösterimi',70),
+  ('event','Sezonluk & özel etkinlik','Çocuk festivali',10),
+  ('event','Sezonluk & özel etkinlik','Bayram programı',20),
+  ('event','Sezonluk & özel etkinlik','Yılbaşı galası',30),
+  ('event','Sezonluk & özel etkinlik','Konser',40),
+  ('event','Sezonluk & özel etkinlik','Festival',50),
+  ('event','Sezonluk & özel etkinlik','Düğün / davet',60),
+  ('event','Sezonluk & özel etkinlik','Kurumsal etkinlik',70)
+ON CONFLICT (code, label) DO NOTHING;

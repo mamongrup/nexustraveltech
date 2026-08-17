@@ -213,3 +213,9 @@ AYLIK SOHBET RAPORU (E-POSTA)
   amenities alanında kullanan kayıtlı villa/yat ilanları JSONB sorgusuyla bulunur ve admin'e listelenir;
   onay sonrası özellik katalogdan silinir ve aynı işlemde bu ilanların verisinden de kaldırılır
   (jsonb_set + jsonb '-' operatörü).
+- Otel olanak/aktivite/etkinlik grupları da özellik kataloğuna taşındı (migration 043): config/hotel_form.php
+  artık property_feature_groups() ile katalogdan okur (kodlar amenity/activity/event, grup bilgisi
+  group_label sütununda; tablo boşsa hotel_form varsayılanlarına döner). admin/ozellik-listeleri beş
+  bölüm yönetir (Villa, Yat, Otel olanakları, Otel aktiviteleri, Otel etkinlikleri); otel hizmetlerinde
+  grup adı zorunludur. Silme etki denetimi otelleri de kapsar (service_pricing/amenities/activities/events
+  JSONB alanlarından temizler).

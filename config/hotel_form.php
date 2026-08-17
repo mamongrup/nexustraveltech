@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/feature_lists.php';
 
 function hotel_taxonomy_locale(): string {
   $locale = strtolower((string)($_GET['lang'] ?? $_SESSION['supplier_locale'] ?? 'tr'));
@@ -25,14 +26,7 @@ function hotel_star_ratings(): array {
 }
 
 function hotel_amenity_groups(): array {
-  return [
-    'Genel hizmetler' => ['Wi-Fi','Otopark','Vale','Resepsiyon 24 saat','Oda servisi','Çamaşırhane','Kuru temizleme','Elektrikli araç şarjı','Transfer hizmeti','Araç kiralama'],
-    'Yeme & içme' => ['Ana restoran','A la carte restoran','Bar','Snack bar','Çocuk büfesi','Vegan menü','Glutensiz menü','Odaya kahvaltı'],
-    'Havuz & plaj' => ['Özel plaj','Mavi bayraklı plaj','İskele','Açık havuz','Kapalı havuz','Isıtmalı havuz','Çocuk havuzu','Aquapark','Şezlong ve şemsiye'],
-    'Spa & spor' => ['SPA merkezi','Fitness','Türk hamamı','Sauna','Buhar odası','Masaj','Jakuzi','Yoga','Tenis','Su sporları'],
-    'Çocuk & aile' => ['Mini kulüp','Çocuk animasyonu','Çocuk oyun alanı','Bebek yatağı','Bebek bakım hizmeti','Çocuk menüsü'],
-    'İş & erişilebilirlik' => ['Toplantı salonu','Konferans salonu','Engelli erişimi','Engelli odası','Asansör','Yetişkin oteli'],
-  ];
+  return property_feature_groups('amenity');
 }
 
 function hotel_themes(): array {
@@ -40,18 +34,11 @@ function hotel_themes(): array {
 }
 
 function hotel_activity_groups(): array {
-  return [
-    'Spor & su aktiviteleri' => ['Fitness dersi','Yoga / pilates','Tenis','Plaj voleybolu','Basketbol','Mini futbol','Okçuluk','Dalış','Şnorkel','Kano','Paddle board','Jet ski','Parasailing','Banana','Su kayağı'],
-    'Çocuk & aile aktiviteleri' => ['Mini kulüp aktivitesi','Çocuk disko','Çocuk atölyesi','Bebek bakım hizmeti','Oyun salonu','Lunapark'],
-    'Wellness & deneyim' => ['Türk hamamı ritüeli','Masaj terapisi','Cilt bakımı','Kişisel antrenör','Yemek atölyesi','Şarap tadımı','Çevre gezisi'],
-  ];
+  return property_feature_groups('activity');
 }
 
 function hotel_event_groups(): array {
-  return [
-    'Gündüz & akşam programı' => ['Canlı müzik','DJ performansı','Gece şovu','Sahne gösterisi','Tema gecesi','Karaoke','Sinema gösterimi'],
-    'Sezonluk & özel etkinlik' => ['Çocuk festivali','Bayram programı','Yılbaşı galası','Konser','Festival','Düğün / davet','Kurumsal etkinlik'],
-  ];
+  return property_feature_groups('event');
 }
 
 function hotel_service_items(array $groups): array {
