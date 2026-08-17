@@ -187,8 +187,9 @@ AYLIK SOHBET RAPORU (E-POSTA)
   ve otomatik fiyat planını da oluşturur, oluşturma sonrası villa-detay sayfasına gider.
   Migration 041, mevcut veritabanındaki product_type_catalog villa/yat kayıtlarını bu şablonlarla günceller.
 - Hazırlık kontrolü villa/yat türlerine uyarlandı: "Müsaitlik verisi" kalemi NEXUS takvimindeki fiyatlı
-  gelecek günleri VEYA içe aktarılmış gelecek iCal bloklarını (ical_events) kabul eder; villa/yat'a özel
-  "Aktif iCal bağlantısı" kalemi eklenir (opsiyonel — skor paydasına girmez). iCal bağlantısı olmadan da
-  NEXUS takvimi doluysa ilan yayına alınabilir.
-- Tür bazlı zorunlu hazırlık kalemleri: villa → "Havuz bilgisi", yat → "Bağlama limanı" + "Mürettebat".
-  Bunlar çekirdek kalemlerdir (skor paydasına girer); villa 7, yat 8 çekirdek kalemle %100'e ulaşır.
+  gelecek günleri VEYA içe aktarılmış gelecek iCal bloklarını (ical_events) kabul eder. Villa/yat için
+  "Aktif iCal bağlantısı" kalemi çekirdektir: en az bir aktif içe/dışa aktarma bağlantısı olmadan ilan
+  yayına alınamaz.
+- Tür bazlı zorunlu hazırlık kalemleri: villa → "Havuz bilgisi" + iCal bağlantısı, yat → "Bağlama limanı"
+  + "Mürettebat" + iCal bağlantısı. Bunlar çekirdek kalemlerdir (skor paydasına girer); villa 8,
+  yat 9 çekirdek kalemle %100'e ulaşır.

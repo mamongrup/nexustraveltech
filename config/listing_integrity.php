@@ -88,15 +88,15 @@ function listing_readiness(array $property): array
     }
 
     if ($isIcalType) {
-        $items[] = ['key' => 'ical', 'label' => 'Aktif iCal bağlantısı', 'ok' => $icalActive > 0, 'detail' => $icalActive > 0 ? $icalActive . ' bağlantı' : 'Bağlantı yok (opsiyonel) — iCal takvimler sayfasından ekleyin'];
+        $items[] = ['key' => 'ical', 'label' => 'Aktif iCal bağlantısı (içe/dışa aktarma)', 'ok' => $icalActive > 0, 'detail' => $icalActive > 0 ? $icalActive . ' bağlantı' : 'Bağlantı yok — iCal takvimler sayfasından en az bir aktif içe/dışa aktarma ekleyin'];
     }
     $items[] = ['key' => 'rules', 'label' => 'Satış / kontrat kuralı', 'ok' => $rules > 0, 'detail' => $rules > 0 ? $rules . ' kural' : 'Kural yok (opsiyonel)'];
 
 
-    // Skor yalnızca çekirdek kalemler üzerinden hesaplanır; satış kuralı ve iCal bağlantısı
-    // opsiyoneldir ve paydaya girmez — böylece kuralsız/iCal'sız ama yayına hazır ilan %100 gösterebilir.
-    // Tür bazlı zorunlu kalemler (pool / home_port / crew) çekirdektedir ve paydaya girer.
-    $coreItems = array_values(array_filter($items, fn($i) => $i['key'] !== 'rules' && $i['key'] !== 'ical'));
+    // Skor yalnızca çekirdek kalemler üzerinden hesaplanır; satış kuralı opsiyoneldir ve paydaya girmez.
+    // Villa/yat için iCal bağlantısı çekirdektedir (en az bir aktif içe/dışa aktarma zorunlu);
+    // tür bazlı kalemler (pool / home_port / crew) de çekirdektedir.
+    $coreItems = array_values(array_filter($items, fn($i) => $i['key'] !== 'rules'));
     $coreOk = count(array_filter($coreItems, fn($i) => $i['ok']));
     return [
         'score' => (int) round($coreOk / count($coreItems) * 100),

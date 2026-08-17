@@ -86,7 +86,7 @@ supply_start('Tesisler & ürünler', $active_module);
         <div class="readiness-bar"><i style="width:<?= (int) $readiness['score'] ?>%"></i></div>
         <?php $missing = array_filter($readiness['items'], fn($i) => !$i['ok']); ?>
         <?php if ($missing): ?>
-        <ul class="readiness-missing"><?php foreach ($missing as $m): ?><li>✗ <?= htmlspecialchars($m['label']) ?><?php if ($m['key'] === 'rules' || $m['key'] === 'ical'): ?> <em>(opsiyonel)</em><?php endif; ?></li><?php endforeach; ?></ul>
+        <ul class="readiness-missing"><?php foreach ($missing as $m): ?><li>✗ <?= htmlspecialchars($m['label']) ?><?php if ($m['key'] === 'rules'): ?> <em>(opsiyonel)</em><?php endif; ?></li><?php endforeach; ?></ul>
         <?php else: ?>
         <p class="readiness-ok">✓ Tüm kalemler tamam — yayına hazır.</p>
         <?php endif; ?>
