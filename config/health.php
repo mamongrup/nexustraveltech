@@ -322,6 +322,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $dropped = 0;
         $dryRunDropped = 0;
         $skippedNonEmpty = [];
+        $rebuiltTables = []; // gerçekten düşürülen tablolar — onarım sonrası doğrulama (3b) bunları kontrol eder
         foreach ($repairMap as $table => $spec) {
             [$expected, $migs] = $spec;
             $expectedCols = is_array($expected) ? $expected : [$expected];
@@ -380,6 +381,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 $pdo->exec('DROP TABLE IF EXISTS \"' . $table . '\" CASCADE');
                 $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . implode(', ', $migs) . " zinciriyle yeniden kurulacak\n";
                 $dropped++;
+                $rebuiltTables[$table] = $expectedCols; // 3b doğrulaması için kaydet
                 // Onarım denetimi: ne zaman, hangi tablo, hangi migration zinciri yeniden kurulacak.
                 audit_log('health.repair_drop', 'schema', null, ['table' => $table, 'migrations' => $migs, 'missing_columns' => $missingCols, 'note' => 'yabancı şema düşürüldü; migration zinciri tabloyu yeniden kuracak'], 'health-check');
             } catch (Throwable $e) {
@@ -502,6 +504,34 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     }
     if ($failedMigs) {
         $out .= "Başarısız migration'lar: " . implode(', ', $failedMigs) . "\n";
+    }
+
+    // --- 3b) Onarım sonrası doğrulama — düşürülüp yeniden kurulan tabloların beklenen
+    // kolonları tekrar kontrol edilir. Migration bölümü az önce bittiği için tablolar
+    // kurulmuş durumdadır; eksik kalan kolon varsa HATA sayılır (onarım başarısız demektir).
+    // Dry-run'da hiçbir tablo düşürülmediği için bu bölüm atlanır. --repair --yes ile
+    // koşan günlük görev de bu doğrulamayı görür — sorun varsa e-posta uyarısına düşer.
+    if ($repair && !$dryRun && $rebuiltTables !== []) {
+        $out .= "\n=== 3b) ONARIM SONRASI DOĞRULAMA (" . count($rebuiltTables) . " tablo) ===\n";
+        $postColStmt = $pdo->prepare("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?");
+        $postFail = [];
+        foreach ($rebuiltTables as $table => $cols) {
+            $postColStmt->execute([$table]);
+            $existing = array_flip($postColStmt->fetchAll(PDO::FETCH_COLUMN));
+            $missingAfter = array_values(array_diff($cols, array_keys($existing)));
+            if ($missingAfter === []) {
+                $out .= "✓ " . $table . " yeniden kuruldu — beklenen " . count($cols) . " kolon mevcut\n";
+            } else {
+                $out .= "✗ " . $table . " yeniden kurulamadı — hâlâ eksik: " . implode(', ', $missingAfter) . "\n";
+                $postFail[] = $table . ' (' . implode(', ', $missingAfter) . ')';
+            }
+        }
+        if ($postFail) {
+            $out .= "Özet: " . count($rebuiltTables) . " tablodan " . count($postFail) . " yeniden kurulamadı — " . implode('; ', $postFail) . "\n";
+            $errors[] = 'Onarım sonrası doğrulama: ' . count($postFail) . ' tablo hâlâ eksik kolonlarla (' . implode('; ', $postFail) . ')';
+        } else {
+            $out .= "✓ Onarım sonrası doğrulama başarılı — düşürülen tabloların tümü beklenen kolonlarla yeniden kuruldu.\n";
+        }
     }
 
     // --- 4) Operasyonel uyarılar (son 24 saat) ---
