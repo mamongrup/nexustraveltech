@@ -24,18 +24,28 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
     // Tablo yanlış şemadaysa beklenen kolon yoktur -> boşsa düşürülür, migration'lar
     // (schema_migrations'ta kayıtlı olsalar bile) zorla yeniden uygulanır.
     $repairMap = [
-        // tablo => [beklenen kolon, tam migration zinciri]
+        // tablo => [beklenen kolon(lar), tam migration zinciri]
+        // Tespit TAM kolon setine göre yapılır — tek kolon değil; örn. channel_room_mappings'te
+        // suggestion_score eksikse kısmi şema yakalanır ve (boşsa) yeniden kurulur.
         'channel_room_mappings' => [
-            'channel_connection_id',
+            ['channel_connection_id', 'property_id', 'room_type_id', 'external_room_id', 'status', 'suggested_at', 'suggestion_count', 'rate_plan_id', 'suggestion_score'],
             ['045-channel-room-mappings-postgres.sql', '047-room-mapping-suggestions-postgres.sql', '049-room-plan-mapping-postgres.sql', '052-suggestion-score-postgres.sql'],
         ],
         'channel_property_mappings' => [
-            'external_property_id',
+            ['channel_connection_id', 'property_id', 'external_property_id', 'status'],
             ['019-distribution-and-rate-management-postgres.sql'],
         ],
         'channel_rate_plan_mappings' => [
-            'external_rate_plan_id',
+            ['channel_connection_id', 'property_id', 'external_rate_plan_id', 'status', 'rate_plan_id'],
             ['054-rate-plan-mappings-postgres.sql'],
+        ],
+        'fx_audit_daily' => [
+            ['audit_date', 'missing_count', 'stale_count', 'details'],
+            ['055-fx-audit-daily-postgres.sql'],
+        ],
+        'product_type_catalog' => [
+            ['step_targets'],
+            ['053-product-step-targets-postgres.sql'],
         ],
     ];
     $reapplyMigrations = []; // onarım sonrası zorla yeniden uygulanacak migration dosyaları
@@ -130,31 +140,45 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
     if ($repair) {
         $out .= "\n=== 2b) ONARIM MODU ===\n";
         $dropped = 0;
+        $dryRunDropped = 0;
         $skippedNonEmpty = [];
-        foreach ($repairMap as $table => [$expectedCol, $migs]) {
+        foreach ($repairMap as $table => $spec) {
+            [$expected, $migs] = $spec;
+            $expectedCols = is_array($expected) ? $expected : [$expected];
             $exists = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='" . $table . "'")->fetchColumn();
             if (!$exists) {
                 $out .= "· " . $table . " yok — atlanıyor (migration kurar)\n";
                 continue;
             }
-            $hasExpected = (bool) $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='" . $table . "' AND column_name='" . $expectedCol . "'")->fetchColumn();
-            if ($hasExpected) {
-                $out .= "✓ " . $table . " beklenen şemada — onarım gerekmiyor\n";
+            $missingCols = [];
+            foreach ($expectedCols as $col) {
+                $hasCol = (bool) $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='" . $table . "' AND column_name='" . $col . "'")->fetchColumn();
+                if (!$hasCol) {
+                    $missingCols[] = $col;
+                }
+            }
+            if ($missingCols === []) {
+                $out .= "✓ " . $table . " beklenen şemada (" . count($expectedCols) . " kolon) — onarım gerekmiyor\n";
                 continue;
             }
             $count = (int) $pdo->query("SELECT COUNT(*) FROM \"" . $table . "\"")->fetchColumn();
             if ($count > 0) {
-                $skippedNonEmpty[] = $table . " (" . $count . " satır — elle müdahale gerekir)";
-                $out .= "⚠ " . $table . " yabancı şemada ama DOLU (" . $count . " satır) — DÜŞÜRÜLMEDİ, elle inceleyin\n";
+                $skippedNonEmpty[] = $table . " (" . $count . " satır — eksik kolon: " . implode(', ', $missingCols) . ")";
+                $out .= "⚠ " . $table . " yabancı şemada ama DOLU (" . $count . " satır) — DÜŞÜRÜLMEDİ, elle inceleyin (eksik: " . implode(', ', $missingCols) . ")\n";
+                continue;
+            }
+            foreach ($migs as $mig) {
+                $reapplyMigrations[$mig] = true; // dry-run'da da işaretlenir — migration bölümü ♻ gösterir
+            }
+            if ($dryRun) {
+                $dryRunDropped++;
+                $out .= "→ [dry-run] " . $table . " yabancı şemalı ve boş — DÜŞÜRÜLECEK; " . implode(', ', $migs) . " yeniden uygulanacak\n";
                 continue;
             }
             try {
                 $pdo->exec('DROP TABLE IF EXISTS \"' . $table . '\" CASCADE');
                 $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . implode(', ', $migs) . " zinciriyle yeniden kurulacak\n";
                 $dropped++;
-                foreach ($migs as $mig) {
-                    $reapplyMigrations[$mig] = true; // schema_migrations'ta kayıtlı olsa bile zorla yeniden uygula
-                }
             } catch (Throwable $e) {
                 $out .= "✗ " . $table . " düşürülemedi: " . $e->getMessage() . "\n";
                 $errors[] = $table . ' onarılamadı: ' . $e->getMessage();
@@ -167,14 +191,18 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
                 $orphanSql = "SELECT m.id, m.external_room_id, m.room_type_id, m.channel_connection_id, m.status FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE m.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))";
                 $orphans = $pdo->query($orphanSql)->fetchAll();
                 if ($orphans) {
-                    $del = $pdo->prepare('DELETE FROM channel_room_mappings WHERE id=?');
-                    $removed = 0;
-                    foreach ($orphans as $o) {
-                        $del->execute([(int) $o['id']]);
-                        $removed++;
-                        $out .= '→ yetim eşleştirme #' . (int) $o['id'] . ' (' . htmlspecialchars((string) $o['external_room_id']) . ', room_type=' . (int) $o['room_type_id'] . ') silindi' . "\n";
+                    if ($dryRun) {
+                        $out .= '→ [dry-run] ' . count($orphans) . " yetim eşleştirme SILİNECEK (örnek: " . htmlspecialchars((string) $orphans[0]['external_room_id']) . ')' . "\n";
+                    } else {
+                        $del = $pdo->prepare('DELETE FROM channel_room_mappings WHERE id=?');
+                        $removed = 0;
+                        foreach ($orphans as $o) {
+                            $del->execute([(int) $o['id']]);
+                            $removed++;
+                            $out .= '→ yetim eşleştirme #' . (int) $o['id'] . ' (' . htmlspecialchars((string) $o['external_room_id']) . ', room_type=' . (int) $o['room_type_id'] . ') silindi' . "\n";
+                        }
+                        $out .= "Özet: " . $removed . " yetim eşleştirme temizlendi.\n";
                     }
-                    $out .= "Özet: " . $removed . " yetim eşleştirme temizlendi.\n";
                 } else {
                     $out .= "✓ Yetim/uyumsuz eşleştirme yok.\n";
                 }
@@ -183,9 +211,13 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
                 $errors[] = 'yetim eşleştirme temizliği başarısız: ' . $e->getMessage();
             }
         }
-        $out .= $dropped === 0 && $skippedNonEmpty === []
-            ? "✓ Onarım gerektiren boş tablo yok.\n"
-            : "Özet: " . $dropped . " tablo düşürüldü" . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . "\n";
+        $out .= $dryRun
+            ? ($dryRunDropped === 0 && $skippedNonEmpty === []
+                ? "✓ (dry-run) Düşürülecek tablo yok.\n"
+                : "Özet (dry-run): " . $dryRunDropped . " tablo DÜŞÜRÜLECEK" . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . " — hiçbir değişiklik yapılmadı\n")
+            : ($dropped === 0 && $skippedNonEmpty === []
+                ? "✓ Onarım gerektiren boş tablo yok.\n"
+                : "Özet: " . $dropped . " tablo düşürüldü" . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . "\n");
     }
 
     // --- 3) Migration durumu ---
@@ -228,7 +260,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
         // Onarım modunda düşürülen tabloların migration'ları schema_migrations'ta kayıtlı olsa
         // bile zorla yeniden uygulanır (CREATE TABLE IF NOT EXISTS tabloyu yeniden kurar;
         // ALTER ... IF NOT EXISTS güvenlidir). Kayıt güncel commit hash'iyle güncellenir.
-        $forceReapply = !$dryRun && isset($reapplyMigrations[$base]);
+        $forceReapply = isset($reapplyMigrations[$base]);
         if (!$forceReapply && isset($appliedMap[$base])) {
             $out .= '✓ ' . $base . (($appliedMap[$base] !== '') ? ' @ ' . substr($appliedMap[$base], 0, 7) : '') . "\n";
             continue;
