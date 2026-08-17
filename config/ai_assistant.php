@@ -26,7 +26,8 @@ function ai_assistant_system_prompt(string $role, array $ctx): string
         return $base . ' Sen platform yöneticisin; genel istatistikler, acenteler, hatalar ve zamanlayıcı görevleri hakkında bilgi verirsin.';
     }
     if ($role === 'supplier') {
-        return $base . ' Sen bir tedarikçinin (otel operatörü) yardımcısısın; günlük ön büro, rezervasyonlar, gelir ve ödeme linkleri konularında yardımcı olursun.';
+        return $base . ' Sen bir tedarikçinin (otel operatörü) yardımcısısın; günlük ön büro, rezervasyonlar, gelir ve ödeme linkleri konularında yardımcı olursun. '
+            . 'Onay bekleyen oda / fiyat planı eşleştirme önerisi sayısını sorarsa pending_mappings aracını kullan; ' . 'öneri varsa kullanıcıyı Dağıtım & kanal merkezi → bölüm 3 (Oda eşleştirmesi) sayfasına yönlendir ve öneriler onaylanmadan webhook verisi yazılmadığını belirt.';
     }
     return $base . ' Sen bir seyahat acentesinin yardımcısısın; canlı müsaitlik, teklifler, rezervasyon talepleri ve webhooklar konusunda yardımcı olursun.';
 }
@@ -142,6 +143,28 @@ function ai_assistant_tools(string $role, array $ctx): array
             if (!$bid) return 'Rezervasyon bulunamadı.';
             $created = create_payment_link($sid, $bid, $amount, 'EUR', true, 30);
             return json_encode(['url' => $created['url'], 'test_modu' => true], JSON_UNESCAPED_UNICODE);
+        });
+        $tool('pending_mappings', 'Onay bekleyen oda / fiyat planı eşleştirme önerisi sayısı: kanal webhook verisi yazılmadan önce dağıtım merkezi bölüm 3\'te onaylanması gerekir.', [], [], function () use ($sid): string {
+            $pdo = db();
+            $room = 0;
+            $plan = 0;
+            try {
+                $q = $pdo->prepare("SELECT COUNT(*) FROM channel_room_mappings m JOIN channel_connections c ON c.id=m.channel_connection_id WHERE c.supplier_id=? AND m.status='suggested'");
+                $q->execute([$sid]);
+                $room = (int) $q->fetchColumn();
+            } catch (Throwable $e) { $room = -1; }
+            try {
+                $q = $pdo->prepare("SELECT COUNT(*) FROM channel_rate_plan_mappings p JOIN channel_connections c2 ON c2.id=p.channel_connection_id WHERE c2.supplier_id=? AND p.status='suggested'");
+                $q->execute([$sid]);
+                $plan = (int) $q->fetchColumn();
+            } catch (Throwable $e) { $plan = -1; }
+            return json_encode([
+                'toplam_onay_bekleyen' => max(0, $room) + max(0, $plan),
+                'oda_onerisi' => $room,
+                'plan_onerisi' => $plan,
+                'onay_sayfasi' => '/nexustraveltech/tedarikci/dagitim-merkezi#sec-room-map',
+                'not' => 'Öneriler onaylanmadan webhook verisi takvime yazılmaz; onay Dağıtım & kanal merkezi → bölüm 3 (Oda eşleştirmesi) bölümünde yapılır.',
+            ], JSON_UNESCAPED_UNICODE);
         });
     }
 
