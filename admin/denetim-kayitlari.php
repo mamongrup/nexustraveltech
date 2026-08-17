@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 require __DIR__ . '/../config/auth.php';
 require __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/platform_settings.php';
+require_once __DIR__ . '/../config/audit.php';
 
 require_admin();
+if (empty($_SESSION['admin_csrf'])) $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
 
 // Hızlı bakış uç noktası — toplu işlem detayındaki ID chip'ine tıklayınca özelliğin
 // o anki durumunu döndürür (aktif/pasif/çöp kutusu + kalan gün).
@@ -36,6 +39,54 @@ if (($_GET['qview'] ?? '') === 'feature') {
         'custom_purge' => $customPurge,
         'remain_days' => $remain,
     ], JSON_UNESCAPED_UNICODE));
+}
+
+// Çöp kutusundaki özelliği tek tıkla geri yükle — hızlı bakış kutusundaki butonun uç noktası.
+// ozellik-listeleri'ndeki restore akışının birebir aynısı; JSON döner.
+if (($_GET['restore'] ?? '') === '1' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json; charset=UTF-8');
+    if (!hash_equals($_SESSION['admin_csrf'], (string) ($_POST['csrf'] ?? ''))) { http_response_code(403); exit(json_encode(['ok' => false, 'error' => 'Güvenlik doğrulaması geçersiz.'])); }
+    $fid = (int) ($_POST['id'] ?? 0);
+    if ($fid <= 0) { http_response_code(400); exit(json_encode(['ok' => false, 'error' => 'Geçersiz özellik kimliği.'])); }
+    try {
+        $bkQ = db()->prepare('SELECT * FROM feature_delete_backups WHERE feature_id=? ORDER BY id DESC LIMIT 1');
+        $bkQ->execute([$fid]);
+        $bk = $bkQ->fetch();
+        if (!$bk) throw new RuntimeException('Geri alınacak kayıt bulunamadı.');
+        $label = (string) $bk['label'];
+        db()->prepare('UPDATE property_feature_catalog SET deleted_at=NULL, purge_at=NULL, group_label=?, label=?, sort_order=?, is_active=? WHERE id=?')
+            ->execute([$bk['group_label'] ?? '', $label, (int) ($bk['sort_order'] ?? 100), (bool) ($bk['is_active'] ?? true), $fid]);
+        db()->prepare('DELETE FROM pending_trash_purges WHERE feature_id=?')->execute([$fid]);
+        $props = json_decode((string) ($bk['affected_properties'] ?? '[]'), true) ?: [];
+        $restored = 0;
+        $restoreSp = db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{service_pricing}', COALESCE(product_details -> 'service_pricing', '{}'::jsonb) || jsonb_build_object(?, ?), true) WHERE id=? AND NOT jsonb_exists(COALESCE(product_details -> 'service_pricing', '{}'::jsonb), ?)");
+        $restoreSec = [
+            'amenities' => db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{amenities}', COALESCE(product_details -> 'amenities', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'amenities', '[]'::jsonb) @> ?::jsonb)"),
+            'activities' => db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{activities}', COALESCE(product_details -> 'activities', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'activities', '[]'::jsonb) @> ?::jsonb)"),
+            'events' => db()->prepare("UPDATE properties SET product_details = jsonb_set(product_details, '{events}', COALESCE(product_details -> 'events', '[]'::jsonb) || ?::jsonb, true) WHERE id=? AND NOT (COALESCE(product_details -> 'events', '[]'::jsonb) @> ?::jsonb)"),
+        ];
+        foreach ($props as $pr) {
+            $sections = is_array($pr['sections'] ?? null) ? $pr['sections'] : [];
+            $pid = (int) ($pr['id'] ?? 0);
+            $price = (string) ($pr['price'] ?? '');
+            foreach ($sections as $sec) {
+                if ($sec === 'service_pricing') { $restoreSp->execute([$label, $price, $pid, $label]); $restored++; }
+                elseif (isset($restoreSec[$sec])) { $restoreSec[$sec]->execute([json_encode([$label]), $pid, json_encode([$label])]); $restored++; }
+            }
+        }
+        audit_log('feature.restore', 'feature_catalog', $fid, [
+            'code' => $bk['code'] ?? '',
+            'label' => $label,
+            'affected_count' => count($props),
+            'affected_listing_ids' => array_map(fn($pr) => (int) ($pr['id'] ?? 0), $props),
+            'restored_sections' => $restored,
+            'source' => 'quickview',
+        ]);
+        exit(json_encode(['ok' => true, 'label' => $label, 'code' => (string) ($bk['code'] ?? ''), 'affected_count' => count($props), 'restored_sections' => $restored], JSON_UNESCAPED_UNICODE));
+    } catch (Throwable $e) {
+        http_response_code(500);
+        exit(json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE));
+    }
 }
 
 // feature.delete satırından CSV: silinen özelliğin etki listesi.
@@ -232,6 +283,8 @@ $admins = db()->query("SELECT DISTINCT admin_username FROM admin_audit_logs WHER
 </table>
 <?= $pager ?>
 </main><script>
-function fidQuickView(el){var fid=el.dataset.id,box=el.closest('div').querySelector('.fid-qv-box');if(!box)return;if(box.dataset.fid===fid&&box.style.display!=='none'){box.style.display='none';box.dataset.fid='';return}box.dataset.fid=fid;box.textContent='Yükleniyor…';box.style.display='block';fetch('/nexustraveltech/admin/denetim-kayitlari?qview=feature&id='+fid).then(function(r){return r.json()}).then(function(d){if(!d.ok){box.innerHTML='<b style="color:#8e2410">#'+fid+'</b> — '+d.error;return}var html='<b style="color:#10211f">'+d.label+'</b> <code>'+d.code+'</code>';if(d.group)html+=' <small style="color:#6b7774">· '+d.group+'</small>';if(d.in_trash){html+='<div style="margin-top:4px"><span style="display:inline-block;background:#fdf3e3;border:1px solid #e0c9a3;color:#8a6100;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold">🗑 Çöp kutusunda</span> <small style="color:#6b7774">silindi '+d.deleted_at.slice(0,16)+' · kalıcı silmeye '+d.remain_days+' gün'+(d.custom_purge?' · özel tarih':'')+'</small></div>'}else{html+='<div style="margin-top:4px"><span style="display:inline-block;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold;background:'+(d.is_active?'#e6f8c7;color:#2e7d32':'#ffe2de;color:#b0301a')+'">'+(d.is_active?'● Aktif':'○ Pasif')+'</span></div>'}html+='<div style="margin-top:6px"><a href="/nexustraveltech/admin/ozellik-listeleri#feat-'+fid+'" style="color:#1a3d6d;font-size:12px;font-weight:bold;text-decoration:none">🔗 Özellik kataloğunda aç</a></div>';box.innerHTML=html}).catch(function(){box.innerHTML='<b style="color:#8e2410">#'+fid+'</b> — Durum okunamadı (oturum süresi dolmuş olabilir).'})}
+function fidQuickView(el){var fid=el.dataset.id,box=el.closest('div').querySelector('.fid-qv-box');if(!box)return;if(box.dataset.fid===fid&&box.style.display!=='none'){box.style.display='none';box.dataset.fid='';return}box.dataset.fid=fid;box.textContent='Yükleniyor…';box.style.display='block';fetch('/nexustraveltech/admin/denetim-kayitlari?qview=feature&id='+fid).then(function(r){return r.json()}).then(function(d){if(!d.ok){box.innerHTML='<b style="color:#8e2410">#'+fid+'</b> — '+d.error;return}var html='<b style="color:#10211f">'+d.label+'</b> <code>'+d.code+'</code>';if(d.group)html+=' <small style="color:#6b7774">· '+d.group+'</small>';if(d.in_trash){html+='<div style="margin-top:4px"><span style="display:inline-block;background:#fdf3e3;border:1px solid #e0c9a3;color:#8a6100;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold">🗑 Çöp kutusunda</span> <small style="color:#6b7774">silindi '+d.deleted_at.slice(0,16)+' · kalıcı silmeye '+d.remain_days+' gün'+(d.custom_purge?' · özel tarih':'')+'</small><div style="margin-top:6px"><button type="button" onclick="qvRestore('+fid+',this)" style="background:#e6f8c7;color:#10211f;border:1px solid #bcd98a;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:bold;cursor:pointer">↩ Tek tıkla geri yükle</button></div></div>'}else{html+='<div style="margin-top:4px"><span style="display:inline-block;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold;background:'+(d.is_active?'#e6f8c7;color:#2e7d32':'#ffe2de;color:#b0301a')+'">'+(d.is_active?'● Aktif':'○ Pasif')+'</span></div>'}html+='<div style="margin-top:6px"><a href="/nexustraveltech/admin/ozellik-listeleri#feat-'+fid+'" style="color:#1a3d6d;font-size:12px;font-weight:bold;text-decoration:none">🔗 Özellik kataloğunda aç</a></div>';box.innerHTML=html}).catch(function(){box.innerHTML='<b style="color:#8e2410">#'+fid+'</b> — Durum okunamadı (oturum süresi dolmuş olabilir).'})}
 document.querySelectorAll('.fid-qv').forEach(function(a){a.addEventListener('click',function(){fidQuickView(a)})});
+var QV_CSRF='<?= htmlspecialchars((string) $_SESSION['admin_csrf'], ENT_QUOTES) ?>';
+function qvRestore(fid,btn){if(!confirm('“#'+fid+'” çöp kutusundan geri yüklenecek. Devam edilsin mi?'))return;btn.disabled=true;btn.textContent='Yükleniyor…';var fd=new FormData();fd.append('csrf',QV_CSRF);fd.append('id',fid);fetch('/nexustraveltech/admin/denetim-kayitlari?restore=1',{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(d){if(!d.ok){btn.outerHTML='<b style="color:#8e2410">'+d.error+'</b>';return}var box=btn.closest('.fid-qv-box');box.innerHTML='<b style="color:#10211f">'+d.label+'</b> <code>'+d.code+'</code><div style="margin-top:6px"><span style="display:inline-block;background:#e6f8c7;color:#2e7d32;border:1px solid #bcd98a;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold">✓ Geri yüklendi</span> <small style="color:#6b7774">'+d.affected_count+' ilana '+d.restored_sections+' bölüm eklendi</small></div><div style="margin-top:6px"><a href="/nexustraveltech/admin/ozellik-listeleri#feat-'+fid+'" style="color:#1a3d6d;font-size:12px;font-weight:bold;text-decoration:none">🔗 Özellik kataloğunda aç</a></div>'}).catch(function(){btn.outerHTML='<b style="color:#8e2410">Geri yükleme başarısız (oturum süresi dolmuş olabilir).</b>'})}
 </script><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>
