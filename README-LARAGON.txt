@@ -240,3 +240,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - Tesisler listesi kartında "iCal URL göster" açılır kutusu: aktif dışa aktarma URL'leri kısa etiketle
   listelenir, "Kopyala" butonu tam URL'i panoya yazar (kart başına bağımsız aç/kapa).
 - Kanal webhook uç noktası (api/channel-webhook) + dağıtım merkezinde kopyalanabilir webhook URL (migration 044: channel_connections.access_token)
+- Ozellik katalogu islemleri (ekle/sil/aktiflestir/tasi) admin_audit_logs'a kaydedilir; silme kaydinda etkilenen ilan sayisi + listesi bulunur

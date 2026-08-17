@@ -3,12 +3,14 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/feature_lists.php';
+require_once __DIR__ . '/../config/audit.php';
 require_admin();
 if (empty($_SESSION['admin_csrf'])) $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
 $msg = '';
 $err = '';
 $pendingDelete = null;
 $deletedAudit = null;
+$typeLabel = fn($t) => ['hotel' => 'Otel', 'villa' => 'Villa', 'yacht' => 'Yat'][$t] ?? $t;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!hash_equals($_SESSION['admin_csrf'], (string) ($_POST['csrf'] ?? ''))) {
     $err = 'Güvenlik doğrulaması geçersiz.';
@@ -28,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $max = db()->prepare('SELECT COALESCE(MAX(sort_order),0)+10 FROM property_feature_catalog WHERE code=? AND group_label=?');
         $max->execute([$code, $isHotelCat ? $group : '']);
         db()->prepare('INSERT INTO property_feature_catalog (code,group_label,label,sort_order) VALUES (?,?,?,?)')->execute([$code, $isHotelCat ? $group : '', $label, (int) $max->fetchColumn()]);
+        audit_log('feature.add', 'feature_catalog', (int) db()->lastInsertId(), ['code' => $code, 'label' => $label, 'group' => $group]);
         $msg = 'Özellik eklendi.';
       } elseif ($action === 'delete') {
         $featureId = (int) ($_POST['id'] ?? 0);
@@ -48,6 +51,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $stripSql = "UPDATE properties SET product_details = jsonb_set(jsonb_set(jsonb_set(jsonb_set(product_details, '{service_pricing}', COALESCE(product_details -> 'service_pricing', '{}'::jsonb) - ?, true), '{amenities}', COALESCE(product_details -> 'amenities', '[]'::jsonb) - ?, true), '{activities}', COALESCE(product_details -> 'activities', '[]'::jsonb) - ?, true), '{events}', COALESCE(product_details -> 'events', '[]'::jsonb) - ?, true) WHERE id = ?";
           $strip = db()->prepare($stripSql);
           foreach ($affected as $a) $strip->execute([$feat['label'], $feat['label'], $feat['label'], $feat['label'], (int) $a['id']]);
+          audit_log('feature.delete', 'feature_catalog', $featureId, [
+              'code' => $feat['code'],
+              'label' => $feat['label'],
+              'affected_count' => count($affected),
+              'affected_listing_ids' => array_map(fn($a) => (int) $a['id'], $affected),
+              'affected_listings' => array_map(fn($a) => $a['name'] . ' (' . $typeLabel($a['property_type']) . ')', $affected),
+          ]);
           $msg = 'Özellik silindi' . ($affected ? ' ve ' . count($affected) . ' ilandan kaldırıldı: ' . implode(', ', array_map(fn($a) => $a['name'], $affected)) . '.' : '.');
           $deletedAudit = ['label' => $feat['label'], 'affected' => $affected];
         }
@@ -74,12 +84,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $all = db()->prepare('SELECT id FROM property_feature_catalog WHERE code=? AND group_label=? ORDER BY sort_order, id');
           $all->execute([$f['code'], $f['group_label']]);
           foreach ($all->fetchAll(PDO::FETCH_COLUMN) as $rid) { $renum->execute([$n, $rid]); $n += 10; }
+          audit_log('feature.move', 'feature_catalog', $featureId, ['code' => $f['code'], 'direction' => $dir]);
           $msg = 'Sıralama güncellendi.';
         } else {
           $msg = 'Özellik zaten listenin başında/sonunda.';
         }
       } elseif ($action === 'toggle') {
+        $toggleQ = db()->prepare('SELECT id, code, label, is_active FROM property_feature_catalog WHERE id=?');
+        $toggleQ->execute([(int) ($_POST['id'] ?? 0)]);
+        $toggleF = $toggleQ->fetch();
         db()->prepare('UPDATE property_feature_catalog SET is_active = NOT is_active WHERE id=?')->execute([(int) ($_POST['id'] ?? 0)]);
+        audit_log('feature.toggle', 'feature_catalog', (int) ($_POST['id'] ?? 0), ['code' => $toggleF['code'] ?? null, 'label' => $toggleF['label'] ?? null, 'is_active' => $toggleF ? !(bool) $toggleF['is_active'] : null]);
         $msg = 'Özellik durumu güncellendi.';
       } else {
         throw new RuntimeException('Geçersiz işlem.');
@@ -93,7 +108,6 @@ $rows = db()->query('SELECT id, code, group_label, label, is_active FROM propert
 $byCode = ['villa' => [], 'yacht' => [], 'amenity' => [], 'activity' => [], 'event' => []];
 foreach ($rows as $r) $byCode[$r['code']][] = $r;
 $sectionTitles = ['villa' => 'Villa özellikleri', 'yacht' => 'Yat özellikleri', 'amenity' => 'Otel olanakları', 'activity' => 'Otel aktiviteleri', 'event' => 'Otel etkinlikleri'];
-$typeLabel = fn($t) => ['hotel' => 'Otel', 'villa' => 'Villa', 'yacht' => 'Yat'][$t] ?? $t;
 ?>
 <!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Özellik listeleri</title><style>body{font-family:Arial;background:#f7f7f2;color:#10211f;margin:0}.w{width:min(1000px,calc(100% - 30px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:16px 0;border-radius:8px}.f{display:grid;gap:9px}.r{display:flex;gap:9px;align-items:center;flex-wrap:wrap}input,select,button{padding:9px;font:inherit;border:1px solid #ddd;border-radius:5px}button{background:#10211f;color:#fff;font-weight:bold;border:0;cursor:pointer}.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid #d5dccf;background:#fafbf8;border-radius:20px;padding:5px 10px;font-size:13px;margin:4px}.chip.off{opacity:.5;text-decoration:line-through}.chip form{display:inline}.mini{background:#fff;color:#10211f;border:1px solid #ddd;padding:4px 8px;font-size:11px}.del{background:#ffe2de;color:#9d3b1c;border:1px solid #f3c4ba}.ok{background:#e6f8c7;padding:9px;border-radius:5px}.er{background:#ffe2de;padding:9px;border-radius:5px}h2{letter-spacing:-.02em}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:700px){.two{grid-template-columns:1fr}}</style></head><body><main class="w"><a href="/nexustraveltech/admin/kontrol-merkezi">← Kontrol merkezi</a><h1>Özellik listeleri</h1><p>Villa/yat ilan detay sayfasındaki "Özellikler & hizmetler" ve otel ilan formundaki olanak/aktivite/etkinlik bölümlerini besler. Pasifleştirilen özellik formda görünmez; silinen özellik kullanıldığı ilanlardan da kaldırılır.</p>
 <?php if ($msg): ?><p class="ok">✓ <?= htmlspecialchars($msg) ?></p><?php endif; ?>
