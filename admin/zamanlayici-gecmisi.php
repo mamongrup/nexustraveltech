@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__ . '/../config/auth.php';
 require __DIR__ . '/../config/database.php';
 require __DIR__ . '/../config/scheduler.php';
+require_once __DIR__ . '/../config/platform_settings.php';
 
 require_admin();
 
@@ -70,6 +71,53 @@ for ($i = 29; $i >= 0; $i--) {
 $durMax = max(1, max(array_column($durChart, 'avg_ms')));
 $durErrDays = count(array_filter($durChart, fn($v) => $v['err'] > 0));
 
+// Operasyonel uyarı trendi — sağlık kontrolü 4. bölümündeki sayaçların günlük kırılımı.
+// Eşikler kontrol merkezinden (health_warn_*) okunur; eşiği aşan gün ⚠ sayılır.
+$opsDays = (int) ($_GET['ops_days'] ?? 14);
+if (!in_array($opsDays, [7, 14, 30], true)) $opsDays = 14;
+$opsThresholds = [
+    'log'     => max(1, (int) platform_setting('health_warn_error_logs', 20)),
+    'email'   => max(1, (int) platform_setting('health_warn_email_queue', 50)),
+    'webhook' => max(1, (int) platform_setting('health_warn_webhook_fail', 10)),
+    'ical'    => max(1, (int) platform_setting('health_warn_ical_fail', 3)),
+];
+$opsQuery = function (string $sql) use ($pdo): array {
+    try {
+        $q = $pdo->query($sql);
+        return $q ? $q->fetchAll() : [];
+    } catch (Throwable $e) {
+        return [];
+    }
+};
+$opsSince = 'CURRENT_DATE - ' . ($opsDays - 1);
+$opsByDay = [
+    'log'     => $opsQuery("SELECT created_at::date d, COUNT(*) c FROM error_logs WHERE level IN ('error','critical') AND created_at >= " . $opsSince . " GROUP BY 1"),
+    'webhook' => $opsQuery("SELECT created_at::date d, COUNT(*) c FROM channel_sync_logs WHERE direction='pull' AND status='failed' AND created_at >= " . $opsSince . " GROUP BY 1"),
+    'ical'    => $opsQuery("SELECT created_at::date d, COUNT(*) c FROM ical_sync_logs WHERE status='failed' AND created_at >= " . $opsSince . " GROUP BY 1"),
+    'email'   => $opsQuery("SELECT created_at::date d, COUNT(*) c FROM email_outbox WHERE status='queued' AND created_at >= " . $opsSince . " GROUP BY 1"),
+];
+$opsMap = [];
+foreach ($opsByDay as $metric => $rows) {
+    foreach ($rows as $r) {
+        $opsMap[$metric][(string) $r['d']] = (int) $r['c'];
+    }
+}
+$opsRows = [];
+$opsWarnDays = 0;
+$opsMaxTotal = 1;
+for ($i = $opsDays - 1; $i >= 0; $i--) {
+    $d = date('Y-m-d', time() - $i * 86400);
+    $log = $opsMap['log'][$d] ?? 0;
+    $web = $opsMap['webhook'][$d] ?? 0;
+    $ic  = $opsMap['ical'][$d] ?? 0;
+    $em  = $opsMap['email'][$d] ?? 0;
+    $warn = $log > $opsThresholds['log'] || $web > $opsThresholds['webhook'] || $ic > $opsThresholds['ical'] || $em > $opsThresholds['email'];
+    $total = $log + $web + $ic + $em;
+    if ($warn) $opsWarnDays++;
+    $opsMaxTotal = max($opsMaxTotal, $total);
+    $opsRows[] = ['d' => $d, 'log' => $log, 'web' => $web, 'ic' => $ic, 'em' => $em, 'warn' => $warn, 'total' => $total];
+}
+
 $jobs = scheduler_jobs();
 
 // Kartlardan filtre bağlantıları üret (görev seçimi korunur).
@@ -121,6 +169,33 @@ $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başar�
 <?php endforeach; ?>
 </div>
 <p class="muted" style="margin:6px 0 0">En yüksek gün: <?= number_format($durMax) ?> ms · <?= count(array_filter($durChart, fn($v) => $v['avg_ms'] > 0)) ?>/30 gün verili · <b style="color:#b0301a"><?= (int)$durErrDays ?> gün hatalı</b> <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#b0301a;vertical-align:middle"></span></p>
+</section>
+
+<section class="c"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">📊 Operasyonel uyarılar — günlük trend (son <?= (int)$opsDays ?> gün)</h2>
+<form method="get" action="/nexustraveltech/admin/zamanlayici-gecmisi" style="display:flex;gap:6px;align-items:center"><?php if ($jobId > 0): ?><input type="hidden" name="job" value="<?= (int)$jobId ?>"><?php endif; ?><?php if ($status !== ''): ?><input type="hidden" name="status" value="<?=htmlspecialchars($status)?>"><?php endif; ?><?php if ($hours > 0): ?><input type="hidden" name="hours" value="<?= (int)$hours ?>"><?php endif; ?><input type="hidden" name="limit" value="<?= (int)$limit ?>"><input type="hidden" name="chart_job" value="<?= (int)$chartJob ?>"><select name="ops_days" onchange="this.form.submit()"><option value="7" <?= $opsDays === 7 ? 'selected' : '' ?>>7 gün</option><option value="14" <?= $opsDays === 14 ? 'selected' : '' ?>>14 gün</option><option value="30" <?= $opsDays === 30 ? 'selected' : '' ?>>30 gün</option></select></form></div>
+<p class="muted" style="margin:6px 0 8px">Sağlık kontrolünün 4. bölümündeki sayaçların gün bazında kırılımı — eşiği aşan hücre <b style="color:#b0301a">kırmızı</b> kalın, gün durumu ⚠ olur. Eşikler <a href="/nexustraveltech/admin/kontrol-merkezi">kontrol merkezinden</a> ayarlanır: hata logu <?= (int)$opsThresholds['log'] ?> · webhook <?= (int)$opsThresholds['webhook'] ?> · iCal <?= (int)$opsThresholds['ical'] ?> · e-posta <?= (int)$opsThresholds['email'] ?>.</p>
+<table>
+<tr><th>Gün</th><th style="text-align:center">Hata logu</th><th style="text-align:center">Webhook fail</th><th style="text-align:center">iCal hata</th><th style="text-align:center">E-posta kuyruğu</th><th style="text-align:center">Toplam</th><th style="text-align:center">Durum</th></tr>
+<?php foreach ($opsRows as $o): ?>
+<tr style="background:<?= $o['warn'] ? '#fff6f2' : '' ?>">
+  <td style="white-space:nowrap"><?= htmlspecialchars($o['d']) ?></td>
+  <td style="text-align:center" class="<?= $o['log'] > $opsThresholds['log'] ? 'er' : '' ?>"><?= (int)$o['log'] ?></td>
+  <td style="text-align:center" class="<?= $o['web'] > $opsThresholds['webhook'] ? 'er' : '' ?>"><?= (int)$o['web'] ?></td>
+  <td style="text-align:center" class="<?= $o['ic'] > $opsThresholds['ical'] ? 'er' : '' ?>"><?= (int)$o['ic'] ?></td>
+  <td style="text-align:center" class="<?= $o['em'] > $opsThresholds['email'] ? 'er' : '' ?>"><?= (int)$o['em'] ?></td>
+  <td style="text-align:center"><?= (int)$o['total'] ?></td>
+  <td style="text-align:center"><?= $o['warn'] ? '<span class="er">⚠</span>' : '<span class="ok">✓</span>' ?></td>
+</tr>
+<?php endforeach; ?>
+</table>
+<div style="display:flex;gap:2px;align-items:flex-end;max-width:820px;margin-top:10px">
+<?php foreach ($opsRows as $o): ?>
+  <div title="<?=htmlspecialchars($o['d'])?>: <?= (int)$o['total'] ?> sorun<?= $o['warn'] ? ' (⚠)' : '' ?>" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;min-width:4px">
+    <i style="display:block;width:100%;background:<?= $o['warn'] ? '#b0301a' : '#10211f' ?>;border-radius:2px 2px 0 0;height:<?= max(2, (int) round((int)$o['total'] / $opsMaxTotal * 46)) ?>px"></i>
+  </div>
+<?php endforeach; ?>
+</div>
+<p class="muted" style="margin:6px 0 0">Alt çubuk: günün toplam sorun sayısı (en yüksek gün <?= (int)$opsMaxTotal ?>). <b><?= (int)$opsWarnDays ?>/<?= (int)$opsDays ?> gün en az bir eşiği aştı</b> <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#b0301a;vertical-align:middle"></span></p>
 </section>
 
 <section class="c">
