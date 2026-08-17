@@ -175,7 +175,7 @@ function channel_webhook_apply(array $log, array $payload): array
     $supplierSt = $pdo->prepare('SELECT supplier_id FROM properties WHERE id=?');
     $supplierSt->execute([$propertyId]);
     $supplierId = (int) ($supplierSt->fetchColumn() ?: 0);
-    $roomResolve = function (string $ext, ?string $planHint = null) use ($roomMap, $fallbackRoom, $suggestSt, $planSuggestSt, $planMap, $bestPlanFor, $planNames, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $bestRoomFor, $roomByName): array {
+    $roomResolve = function (string $ext, ?string $planHint = null) use ($roomMap, $bestRoom, $suggestSt, $planSuggestSt, $planMap, $bestPlanFor, $planNames, $connId, $propertyId, $autoMap, &$suggestedCount, $supplierId, $bestRoomFor, $roomByName): array {
         if (isset($roomMap[$ext])) {
             return $roomMap[$ext];
         }
@@ -214,7 +214,7 @@ function channel_webhook_apply(array $log, array $payload): array
             return $roomMap[$ext];
         }
         // Ayar kapalı: eski davranış — ilk aktif oda tipine yaz (kalıcı eşleştirme oluşturulmaz).
-        return ['room' => $fallbackRoom, 'plan' => null];
+        return ['room' => $bestRoom, 'plan' => null];
     };
     $suggestedPlanCount = 0;
     // Dış fiyat planı kodu çözümü: boşsa oda eşleştirmesindeki plan / ilk aktif plan;
