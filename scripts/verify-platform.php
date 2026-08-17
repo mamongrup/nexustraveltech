@@ -55,6 +55,13 @@ try {
         if($missingCols)$errors[]="{$table} tablosunda eksik kolon(lar): ".implode(', ',$missingCols);
     }
 
+    // Oda eşleştirme durumu — channel_room_mappings tablosu varsa tutarlılık denetimi.
+    if(!in_array('channel_room_mappings',$missing,true)){
+        $mappingCount=(int)$pdo->query('SELECT COUNT(*) FROM channel_room_mappings')->fetchColumn();
+        $orphanMappings=(int)$pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id")->fetchColumn();
+        if($orphanMappings>0)$errors[]="channel_room_mappings: {$orphanMappings} yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait).";
+        echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, '.$orphanMappings." uyumsuz.\n";
+    }
     if(strlen((string)($config['app_encryption_key']??''))<32)$errors[]='app_encryption_key eksik veya 32 karakterden kısa.';
     if(!extension_loaded('curl'))$errors[]='PHP cURL etkin değil; iCal aktarımı çalışmaz.';
     if(!extension_loaded('pdo_pgsql'))$errors[]='PDO PostgreSQL etkin değil.';

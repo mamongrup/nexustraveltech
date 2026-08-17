@@ -308,3 +308,6 @@ AYLIK SOHBET RAPORU (E-POSTA)
   otomatik olusturulur (ON CONFLICT DO NOTHING, ayni yukte tekrar denenmez);
   basari mesajina "+N yeni dis kod eslestirildi" eklenir. Kontrol merkezinden
   kapatilabilir; eslesme panelden sonradan degistirilebilir.
+- verify-platform'a oda eslestirme durumu denetimi: channel_room_mappings kolon
+  kontrolune ek olarak yetim/uyumsuz eslestirme taramasi (oda tipi veya kanal yok,
+  oda tipi baska urune ait) — sorun varsa dogrulama HATA ile cikar.
