@@ -135,4 +135,4 @@ try {
     if(!extension_loaded('pdo_pgsql'))$errors[]='PDO PostgreSQL etkin değil.';
     if($errors){foreach($errors as $error)fwrite(STDERR,'HATA: '.$error.PHP_EOL);exit(1);}
     echo 'NEXUS platform doğrulaması başarılı. '.count($requiredTables).' tablo, kolon şemaları ve gerekli PHP uzantıları hazır.'.PHP_EOL;
-} catch(Throwable $e) { fwrite(STDERR,'HATA: Veritabanı doğrulaması yapılamadı.'.PHP_EOL); exit(1); }
+} catch(Throwable $e) { fwrite(STDERR,'HATA: Veritabanı doğrulaması yapılamadı: '.$e->getMessage().PHP_EOL); exit(1); }
