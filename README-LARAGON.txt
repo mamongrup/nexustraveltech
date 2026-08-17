@@ -252,3 +252,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - nexus-ical-inactive-alerts artik iki dal calistirir: (1) pasif iCal baglantisi (ical_inactive_{id}), (2) aktif baglanti var ama son senkron 30+ gun eski veya hic yok (ical_stale_{id}) — 30 gun esigi hazirlik kontrolundeki kirmizi kalemle ayni; 7 gunluk sari durum bildirim uretmez
 - alert-ical-inactive ciktisi ilan bazli kademe ve senkron yasini gosterir: her ilan icin [durum] satiri (guncul / sari 7-30 gun / kirmizi pasif veya 30+ gun + yas), sonunda tarama ozeti (guncul/sari/kirmizi sayilari)
 - Hazirlik skorundaki iCal kaleminde "hic senkron yok" ayri mesajla gosterilir: "N baglanti · hic ice aktarma yapilmadi — 'Simdi ice aktar' ile ilk senkronu baslatin" (30+ gun eski senkron ile karistirilmaz)
+- Dagitim sagligi ozeti e-postasina PDF eki: TCPDF kuruluysa sorun tablosunun yazdirilabilir hali (dagitim-sagligi-YYYY-MM-DD.pdf) ek olarak gonderilir; TCPDF yoksa HTML govde ile devam eder

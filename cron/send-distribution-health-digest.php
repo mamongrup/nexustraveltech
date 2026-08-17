@@ -14,6 +14,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/mailer.php';
 require_once __DIR__ . '/../config/platform_settings.php';
+require_once __DIR__ . '/../config/pdf.php';
 
 $to = trim((string) platform_setting('admin_alert_email', ''));
 if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
@@ -111,8 +112,10 @@ $icalCount = count(array_filter($problems, fn($p) => $p['cat'] === 'iCal'));
 $channelCount = count(array_filter($problems, fn($p) => $p['cat'] === 'Kanal'));
 
 $bodyRows = '';
+$pdfRows = '';
 foreach ($problems as $p) {
     $lastTxt = $p['age'] !== null ? $p['age'] . ' gün önce' : '—';
+    $pdfRows .= '<tr><td>' . htmlspecialchars($p['name']) . '<br><small>' . htmlspecialchars($p['company']) . '</small></td><td>' . htmlspecialchars($p['cat']) . '</td><td>' . htmlspecialchars($p['status']) . '</td><td>' . $lastTxt . '</td></tr>';
     $bodyRows .= '<tr>'
         . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de"><b>' . htmlspecialchars($p['name']) . '</b><br><small style="color:#64716d">' . htmlspecialchars($p['company']) . '</small></td>'
         . '<td style="padding:7px 12px;border-bottom:1px solid #e1e5de"><span style="background:#eef1ea;border-radius:4px;padding:2px 7px;font-size:11px">' . htmlspecialchars($p['cat']) . '</span></td>'
@@ -132,6 +135,20 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/tedarikci-onaylari" style="color:#0d7a4a">Tedarikçi yönetimi →</a></p>'
     . '</div>';
 
-queue_email($to, 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')', $body, 'distribution_health_digest');
+// PDF eki (TCPDF kuruluysa): e-posta gövdesiyle aynı tablonun yazdırılabilir hali.
+$attName = null;
+$attBase64 = null;
+$pdf = pdf_build('<h2>Dağıtım sağlığı haftalık özeti — ' . date('d.m.Y') . '</h2>'
+    . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . '</p>'
+    . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:10px">'
+    . '<tr style="background:#f2f4ef"><th align="left">İlan / Tedarikçi</th><th align="left">Tip</th><th align="left">Durum</th><th align="left">Son senkron</th></tr>'
+    . $pdfRows
+    . '</table>');
+if ($pdf !== null) {
+    $attName = 'dagitim-sagligi-' . date('Y-m-d') . '.pdf';
+    $attBase64 = base64_encode($pdf);
+}
+
+queue_email($to, 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')', $body, 'distribution_health_digest', (int) str_replace('-', '', $week), $attName, $attBase64);
 save_platform_setting('distribution_health_week', $week);
-echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}).\n";
+echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
