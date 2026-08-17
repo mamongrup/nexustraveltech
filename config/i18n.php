@@ -130,3 +130,76 @@ function readiness_tooltips(): array
     }
     return $out;
 }
+
+/**
+ * Diğer panel sayfaları (fiyat-kontenjan, satis-kurallari, ical-takvimler)
+ * arasındaki geçiş bağlantılarının çok dilli araç ipuçları.
+ * Bazı değerler sprintf şablonudur (%d = sayaç).
+ */
+function panel_link_tooltips(): array
+{
+    $lang = readiness_lang();
+    $map = [
+        'rooms_edit' => [
+            'tr' => 'Oda envanteri bölümü',
+            'en' => 'Room inventory section',
+            'de' => 'Zimmerbestands-Abschnitt',
+            'ru' => 'Раздел инвентаря номеров',
+            'ar' => 'قسم مخزون الغرف',
+            'fr' => 'Section inventaire des chambres',
+        ],
+        'units_edit' => [
+            'tr' => 'Birim envanteri bölümü',
+            'en' => 'Unit inventory section',
+            'de' => 'Einheitenbestands-Abschnitt',
+            'ru' => 'Раздел инвентаря единиц',
+            'ar' => 'قسم مخزون الوحدات',
+            'fr' => 'Section inventaire des unités',
+        ],
+        'row_view' => [
+            'tr' => 'Takvim satırını gör',
+            'en' => 'View calendar row',
+            'de' => 'Kalenderzeile anzeigen',
+            'ru' => 'Просмотреть строку календаря',
+            'ar' => 'عرض صف التقويم',
+            'fr' => 'Voir la ligne du calendrier',
+        ],
+        'row_inspect' => [
+            'tr' => 'Satışı kapalı gün — takvimde incele',
+            'en' => 'Stop-sale day — inspect in calendar',
+            'de' => 'Verkaufsstopp-Tag — im Kalender prüfen',
+            'ru' => 'День остановки продаж — проверить в календаре',
+            'ar' => 'يوم إيقاف البيع — فحص في التقويم',
+            'fr' => 'Jour de suspension — inspecter dans le calendrier',
+        ],
+        'rule_view' => [
+            'tr' => 'Satış kuralını gör',
+            'en' => 'View sales rule',
+            'de' => 'Verkaufsregel anzeigen',
+            'ru' => 'Просмотреть правило продаж',
+            'ar' => 'عرض قاعدة البيع',
+            'fr' => 'Voir la règle de vente',
+        ],
+        'rule_inspect' => [
+            'tr' => 'Satış kuralını incele',
+            'en' => 'Inspect sales rule',
+            'de' => 'Verkaufsregel prüfen',
+            'ru' => 'Проверить правило продаж',
+            'ar' => 'فحص قاعدة البيع',
+            'fr' => 'Inspecter la règle de vente',
+        ],
+        'ical_err24' => [
+            'tr' => 'Son 24 saatte %d senkron hatası — bağlantıyı kontrol edin',
+            'en' => '%d sync errors in the last 24 hours — check the connection',
+            'de' => '%d Sync-Fehler in den letzten 24 Stunden — Verbindung prüfen',
+            'ru' => '%d ошибок синхронизации за 24 часа — проверьте подключение',
+            'ar' => '%d خطأ مزامنة خلال 24 ساعة — تحقق من الاتصال',
+            'fr' => '%d erreurs de synchro sur 24 h — vérifiez la connexion',
+        ],
+    ];
+    $out = [];
+    foreach ($map as $key => $texts) {
+        $out[$key] = $texts[$lang] ?? $texts['tr'];
+    }
+    return $out;
+}
