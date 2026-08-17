@@ -12,7 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/database.php';
 
-function health_check_run(bool $dryRun = false, bool $repair = false): array
+function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false): array
 {
     $pdo = db();
     $errors = [];
@@ -137,9 +137,69 @@ function health_check_run(bool $dryRun = false, bool $repair = false): array
         }
     }
 
-    // --- 2b) Onarım — yabancı şemalı boş tabloları düşür (migration bölümü yeniden kurar).
+    // --- 2b) Kanal token doğrulama — eksik/geçersiz/tekrarlanan access_token HATA sayılır;
+    //        --fix ile otomatik yenilenir (64 hex, benzersiz). Webhook ucu bu token ile korunur.
+    $out .= "\n=== 2b) KANAL TOKEN DOĞRULAMA ===\n";
+    try {
+        $tokens = $pdo->query('SELECT id, channel_code, display_name, access_token FROM channel_connections ORDER BY id')->fetchAll();
+        if (!$tokens) {
+            $out .= "· Kanal bağlantısı yok — token denetimi atlandı.\n";
+        } else {
+            $missing = [];
+            $invalid = [];
+            $byToken = [];
+            foreach ($tokens as $t) {
+                $tok = trim((string) ($t['access_token'] ?? ''));
+                if ($tok === '') { $missing[] = $t; continue; }
+                if (!preg_match('/^[a-f0-9]{64}$/', $tok)) { $invalid[] = $t; continue; }
+                $byToken[$tok][] = $t;
+            }
+            $dups = [];
+            foreach ($byToken as $rows) {
+                if (count($rows) > 1) $dups = array_merge($dups, array_slice($rows, 1));
+            }
+            $nProb = count($missing) + count($invalid) + count($dups);
+            $probText = [];
+            if ($missing) {
+                $probText[] = count($missing) . ' kanalda token eksik (' . implode(', ', array_map(fn($m) => $m['display_name'] . ' #' . (int) $m['id'], $missing)) . ')';
+                $out .= '✗ ' . end($probText) . "\n";
+            }
+            if ($invalid) {
+                $probText[] = count($invalid) . ' kanalda token geçersiz biçim (' . implode(', ', array_map(fn($m) => $m['display_name'] . ' #' . (int) $m['id'], $invalid)) . ')';
+                $out .= '✗ ' . end($probText) . "\n";
+            }
+            if ($dups) {
+                $probText[] = count($dups) . ' kanalda tekrarlanan token (aynı token 2+ kanalda — güvenlik riski)';
+                $out .= '✗ ' . end($probText) . "\n";
+            }
+            if ($nProb === 0) {
+                $out .= "✓ Tüm kanal tokenları geçerli (" . count($tokens) . " bağlantı: 64 hex, benzersiz).\n";
+            }
+            if ($nProb > 0 && $fix) {
+                if ($dryRun) {
+                    $out .= '→ [dry-run] ' . $nProb . " token YENİLENECEK (64 hex rastgele — kanal tarafındaki webhook adresi güncellenmeli)\n";
+                } else {
+                    $upd = $pdo->prepare('UPDATE channel_connections SET access_token=? WHERE id=?');
+                    $fixed = 0;
+                    foreach (array_merge($missing, $invalid, $dups) as $t) {
+                        $upd->execute([bin2hex(random_bytes(32)), (int) $t['id']]);
+                        $fixed++;
+                    }
+                    $out .= '→ ' . $fixed . " token yenilendi (eksik/geçersiz/tekrarlanan) — kanal tarafındaki webhook adresi güncellenmeli.\n";
+                    $nProb = 0;
+                }
+            }
+            if ($nProb > 0) {
+                $errors[] = 'kanal token sorunu: ' . implode('; ', $probText);
+            }
+        }
+    } catch (Throwable $e) {
+        $out .= "⚠ Token denetimi yapılamadı: " . $e->getMessage() . "\n";
+    }
+
+    // --- 2c) Onarım — yabancı şemalı boş tabloları düşür (migration bölümü yeniden kurar).
     if ($repair) {
-        $out .= "\n=== 2b) ONARIM MODU ===\n";
+        $out .= "\n=== 2c) ONARIM MODU ===\n";
         $dropped = 0;
         $dryRunDropped = 0;
         $skippedNonEmpty = [];
