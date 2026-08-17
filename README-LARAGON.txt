@@ -298,3 +298,8 @@ AYLIK SOHBET RAPORU (E-POSTA)
   kaydina yazilir, admin_alert_email tanimliysa yoneticiye bilgi epostasi gider.
 - Ozellik silme onay ekrani: etki listesi tedarikci bazinda gruplanir (sirket adi +
   ilan sayisi + ilanlar) — hangi tedarikcinin kac ilani etkilendigi tek bakista gorulur.
+- Sunucu saglik kontrolu (scripts/health-check.php): tek komutla 45 tablo, kritik
+  kolonlar ve migration durumunu dogrular. schema_migrations tablosuyla hangi
+  *-postgres.sql dosyalarinin uygulandigini takip eder; uygulanmamis olanlari
+  idempotent uygular (002-008 legacy MySQL dosyalari atlanir). --dry-run ile
+  yalnizca durum gosterilir; sorun varsa cikis kodu 1.
