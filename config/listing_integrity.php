@@ -21,7 +21,7 @@ function record_audit_event(string $actorType, ?int $actorId, string $action, st
 /**
  * İlan hazırlık kontrolü — satışa açmadan önce eksik kalemleri ve skoru (0-100) döndürür.
  *
- * @return array{score: int, ready: bool, items: array<int, array{key: string, label: string, ok: bool, detail: string, warn?: bool}>}
+ * @return array{score: int, ready: bool, items: array<int, array{key: string, label: string, ok: bool, detail: string, warn?: bool, age_days?: ?int}>}
  */
 function listing_readiness(array $property): array
 {
@@ -95,13 +95,16 @@ function listing_readiness(array $property): array
         $icalSyncOld30 = false;
         $icalNeverSynced = false;
         $icalLastSync = null;
+        $icalAgeDays = null;
         if ($icalActive > 0) {
             $syncSt = $pdo->prepare("SELECT MAX(last_sync_at) FROM ical_connections WHERE property_id=? AND status='active'");
             $syncSt->execute([$pid]);
             $icalLastSync = $syncSt->fetchColumn();
             $icalNeverSynced = $icalLastSync === null || (string) $icalLastSync === '';
-            $icalSyncOld30 = $icalNeverSynced || strtotime((string) $icalLastSync) < time() - 30 * 86400;
-            $icalStale = !$icalSyncOld30 && strtotime((string) $icalLastSync) < time() - 7 * 86400;
+            $icalTs = $icalNeverSynced ? 0 : strtotime((string) $icalLastSync);
+            $icalAgeDays = $icalTs > 0 ? (int) floor((time() - $icalTs) / 86400) : null;
+            $icalSyncOld30 = $icalNeverSynced || $icalTs < time() - 30 * 86400;
+            $icalStale = !$icalSyncOld30 && $icalTs > 0 && $icalTs < time() - 7 * 86400;
         }
         $icalExportUrls = [];
         if ($isIcalType) {
@@ -116,6 +119,7 @@ function listing_readiness(array $property): array
             'label' => 'Aktif iCal bağlantısı (içe/dışa aktarma)',
             'ok' => $icalActive > 0 && !$icalSyncOld30,
             'warn' => $icalActive > 0 && !$icalSyncOld30 && $icalStale,
+            'age_days' => $icalAgeDays,
             'urls' => $icalExportUrls,
             'detail' => $icalActive === 0
                 ? 'Bağlantı yok — iCal takvimler sayfasından en az bir aktif içe/dışa aktarma ekleyin'
