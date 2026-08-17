@@ -12,11 +12,19 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/database.php';
 
-function health_check_run(bool $dryRun = false): array
+function health_check_run(bool $dryRun = false, bool $repair = false): array
 {
     $pdo = db();
     $errors = [];
     $out = '';
+
+    // --repair: bilinen yabancı/hatalı şemalı tabloları otomatik tespit edip, BOŞSA düşürür;
+    // ardından migration bölümü `CREATE TABLE IF NOT EXISTS` ile yeniden kurar.
+    // DOLU tablolara asla dokunulmaz (raporlanır, elle müdahale gerekir).
+    $repairMap = [
+        // tablo => [beklenen kolon, onarımı yapan migration]
+        'channel_room_mappings' => ['channel_connection_id', '045-channel-room-mappings-postgres.sql'],
+    ];
 
     $requiredTables = ['suppliers','supplier_users','properties','supplier_bookings','inventory_calendar','channel_connections','ical_connections','ical_events','physical_rooms','booking_folios','folio_transactions','payment_records','payment_allocations','hotel_invoices','night_audit_runs','hotel_staff','hotel_roles','loyalty_tiers','guest_loyalty_accounts','revenue_recommendations','guest_service_requests','login_throttle','guest_reviews','agency_booking_requests','email_outbox','webhook_subscriptions','webhook_deliveries','error_logs','admin_audit_logs','payment_links','fx_rates','booking_groups','notifications','agencies','agency_users','email_templates','admin_2fa','scheduled_jobs','public_chat_messages','blocked_ips','panel_chat_messages','scheduled_job_runs','property_feature_catalog','channel_room_mappings','feature_delete_backups','channel_sync_logs','ical_sync_logs','pending_trash_purges'];
 
@@ -84,6 +92,42 @@ function health_check_run(bool $dryRun = false): array
     $out .= $colErrors === []
         ? "✓ Tüm kritik kolonlar mevcut.\n"
         : implode("\n", array_map(fn($e) => '✗ ' . $e, $colErrors)) . "\n";
+
+    // --- 2b) Onarım — yabancı şemalı boş tabloları düşür (migration bölümü yeniden kurar).
+    if ($repair) {
+        $out .= "\n=== 2b) ONARIM MODU ===\n";
+        $dropped = 0;
+        $skippedNonEmpty = [];
+        foreach ($repairMap as $table => [$expectedCol, $mig]) {
+            $exists = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='" . $table . "'")->fetchColumn();
+            if (!$exists) {
+                $out .= "· " . $table . " yok — atlanıyor (migration kurar)\n";
+                continue;
+            }
+            $hasExpected = (bool) $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='" . $table . "' AND column_name='" . $expectedCol . "'")->fetchColumn();
+            if ($hasExpected) {
+                $out .= "✓ " . $table . " beklenen şemada — onarım gerekmiyor\n";
+                continue;
+            }
+            $count = (int) $pdo->query("SELECT COUNT(*) FROM \"" . $table . "\"")->fetchColumn();
+            if ($count > 0) {
+                $skippedNonEmpty[] = $table . " (" . $count . " satır — elle müdahale gerekir)";
+                $out .= "⚠ " . $table . " yabancı şemada ama DOLU (" . $count . " satır) — DÜŞÜRÜLMEDİ, elle inceleyin\n";
+                continue;
+            }
+            try {
+                $pdo->exec('DROP TABLE IF EXISTS \"' . $table . '\" CASCADE');
+                $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . $mig . " ile yeniden kurulacak\n";
+                $dropped++;
+            } catch (Throwable $e) {
+                $out .= "✗ " . $table . " düşürülemedi: " . $e->getMessage() . "\n";
+                $errors[] = $table . ' onarılamadı: ' . $e->getMessage();
+            }
+        }
+        $out .= $dropped === 0 && $skippedNonEmpty === []
+            ? "✓ Onarım gerektiren boş tablo yok.\n"
+            : "Özet: " . $dropped . " tablo düşürüldü" . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . "\n";
+    }
 
     // --- 3) Migration durumu ---
     $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())");
