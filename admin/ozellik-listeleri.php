@@ -258,7 +258,11 @@ if (in_array($export, ['delete_impact', 'delete_type', 'bulk_impact', 'bulk_type
             $label = (string) ($fq->fetchColumn() ?: '');
             if ($label === '') continue;
             $iq->execute([$label, json_encode([$label]), json_encode([$label]), json_encode([$label])]);
-            foreach ($iq->fetchAll() as $a) { $sec = $sectionsOf($a, $label); $rows[] = ['Özellik', $label, $a['company_name'] ?? '', $a['name'], $typeLabelCsv($a['property_type']), count($sec), implode(', ', array_map(fn($s) => $secLabels[$s] ?? $s, $sec)), $a['id']]; }
+            // Özellik başına tür bazlı etki (otel/villa/yat) — önce topla, sonra her satıra nihai değeri yaz.
+            $listingRows = $iq->fetchAll();
+            $featByType = ['hotel' => 0, 'villa' => 0, 'yacht' => 0];
+            foreach ($listingRows as $a) { if (isset($featByType[$a['property_type']])) $featByType[$a['property_type']]++; }
+            foreach ($listingRows as $a) { $sec = $sectionsOf($a, $label); $rows[] = ['Özellik', $label, $a['company_name'] ?? '', $a['name'], $typeLabelCsv($a['property_type']), count($sec), implode(', ', array_map(fn($s) => $secLabels[$s] ?? $s, $sec)), $a['id'], $featByType['hotel'], $featByType['villa'], $featByType['yacht']]; }
         }
     }
     header('Content-Type: text/csv; charset=UTF-8');
@@ -268,7 +272,7 @@ if (in_array($export, ['delete_impact', 'delete_type', 'bulk_impact', 'bulk_type
     if ($export === 'delete_impact') {
         fputcsv($out, ['Tedarikçi', 'İlan', 'Tür', 'Etkilenen bölüm sayısı', 'Bölümler', 'İlan ID']);
     } else {
-        fputcsv($out, ['Özellik', 'Tedarikçi', 'İlan', 'Tür', 'Etkilenen bölüm sayısı', 'Bölümler', 'İlan ID']);
+        fputcsv($out, ['Özellik', 'Tedarikçi', 'İlan', 'Tür', 'Etkilenen bölüm sayısı', 'Bölümler', 'İlan ID', 'Otel etkisi', 'Villa etkisi', 'Yat etkisi']);
     }
     foreach ($rows as $r) fputcsv($out, $r);
     fclose($out);
