@@ -38,6 +38,7 @@ $requiredColumns=[
     'channel_sync_logs'=>['channel_connection_id','property_id','direction','scope','status','request_payload','response_payload','error_message','fx_audit'],
     'ical_sync_logs'=>['ical_connection_id','property_id','status','error_message','error_hash'],
     'pending_trash_purges'=>['feature_id','token','expires_at','approved_at'],
+    'product_type_catalog'=>['step_targets'],
 ];
 
 try {

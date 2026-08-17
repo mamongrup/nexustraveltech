@@ -20,36 +20,13 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     $errors = [];
     $out = '';
 
-    // --repair: bilinen yabancı/hatalı şemalı tabloları otomatik tespit edip, BOŞSA düşürür;
+    // --repair: yabancı/hatalı şemalı tabloları otomatik tespit edip, BOŞSA düşürür;
     // ardından migration bölümü tabloyu TAM migration zinciriyle yeniden kurar.
     // DOLU tablolara asla dokunulmaz (raporlanır, elle müdahale gerekir).
     // Tablo yanlış şemadaysa beklenen kolon yoktur -> boşsa düşürülür, migration'lar
     // (schema_migrations'ta kayıtlı olsalar bile) zorla yeniden uygulanır.
-    $repairMap = [
-        // tablo => [beklenen kolon(lar), tam migration zinciri]
-        // Tespit TAM kolon setine göre yapılır — tek kolon değil; örn. channel_room_mappings'te
-        // suggestion_score eksikse kısmi şema yakalanır ve (boşsa) yeniden kurulur.
-        'channel_room_mappings' => [
-            ['channel_connection_id', 'property_id', 'room_type_id', 'external_room_id', 'status', 'suggested_at', 'suggestion_count', 'rate_plan_id', 'suggestion_score'],
-            ['045-channel-room-mappings-postgres.sql', '047-room-mapping-suggestions-postgres.sql', '049-room-plan-mapping-postgres.sql', '052-suggestion-score-postgres.sql'],
-        ],
-        'channel_property_mappings' => [
-            ['channel_connection_id', 'property_id', 'external_property_id', 'status'],
-            ['019-distribution-and-rate-management-postgres.sql'],
-        ],
-        'channel_rate_plan_mappings' => [
-            ['channel_connection_id', 'property_id', 'external_rate_plan_id', 'status', 'rate_plan_id'],
-            ['054-rate-plan-mappings-postgres.sql'],
-        ],
-        'fx_audit_daily' => [
-            ['audit_date', 'missing_count', 'stale_count', 'details'],
-            ['055-fx-audit-daily-postgres.sql'],
-        ],
-        'product_type_catalog' => [
-            ['step_targets'],
-            ['053-product-step-targets-postgres.sql'],
-        ],
-    ];
+    // Adaylar statik liste değil, requiredColumns'tan tam otomatik türetilir (aşağıda).
+    $repairMap = [];
     $reapplyMigrations = []; // onarım sonrası zorla yeniden uygulanacak migration dosyaları
 
     $requiredTables = ['suppliers','supplier_users','properties','supplier_bookings','inventory_calendar','channel_connections','channel_property_mappings','ical_connections','ical_events','physical_rooms','booking_folios','folio_transactions','payment_records','payment_allocations','hotel_invoices','night_audit_runs','hotel_staff','hotel_roles','loyalty_tiers','guest_loyalty_accounts','revenue_recommendations','guest_service_requests','login_throttle','guest_reviews','agency_booking_requests','email_outbox','webhook_subscriptions','webhook_deliveries','error_logs','admin_audit_logs','payment_links','fx_rates','booking_groups','notifications','agencies','agency_users','email_templates','admin_2fa','scheduled_jobs','public_chat_messages','blocked_ips','panel_chat_messages','scheduled_job_runs','property_feature_catalog','channel_room_mappings','channel_rate_plan_mappings','feature_delete_backups','channel_sync_logs','ical_sync_logs','pending_trash_purges','fx_audit_daily','trash_upcoming_alerts','channel_mapping_blacklist'];
@@ -89,32 +66,47 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         'channel_sync_logs'=>['channel_connection_id','property_id','direction','scope','status','request_payload','response_payload','error_message','fx_audit'],
         'ical_sync_logs'=>['ical_connection_id','property_id','status','error_message','error_hash'],
         'pending_trash_purges'=>['feature_id','token','expires_at','approved_at'],
+        'product_type_catalog'=>['step_targets'],
     ];
 
-    // Diğer yabancı şema adayları — requiredColumns'ta beklenen kolonları olan HER tablo
-    // otomatik taranır. Migration zinciri dosya içeriğinden bulunur (CREATE TABLE içeren dosya).
-    // Güvenli onarım: zincirdeki dosyaların toplam içeriği beklenen TÜM kolonları içeriyorsa
-    // yeniden uygulama şemayı tam kurar -> boşsa düşürülüp yeniden kurulur; ek kolonlar başka
-    // migration'larda ise yalnızca raporlanır, düşürülmez (veri/kısıt kaybı riski yok).
+    // Yabancı şema adayları — statik liste YOK; requiredColumns'ta beklenen kolonları olan
+    // HER tablo otomatik taranır. Migration zinciri, tabloyu değiştiren TÜM *-postgres.sql
+    // dosyalarından türetilir: CREATE TABLE, ALTER TABLE ve CREATE INDEX ... ON (sıralı).
+    // Böylece çok dosyalı kurulumlar da tam yakalanır — örn. channel_room_mappings
+    // 045'te CREATE + 047/049/052'de ALTER ile kurulur; salt CREATE araması zinciri kısaltır.
+    // Güvenli onarım (İKİSİ de):
+    //   1) Zincir tabloyu KURAN bir CREATE TABLE içermeli — suppliers/rate_plans gibi temel
+    //      şemada (postgresql-schema.sql) oluşan tablolar migration ile yeniden kurulamaz;
+    //      bunlar düşürülmez, yalnızca raporlanır.
+    //   2) Zincirin toplam içeriği beklenen TÜM kolonları içermeli — ek kolonlar zincir dışı
+    //      bir migration'da kalmışsa düşürme şemayı tam kuramaz, rapor-only kalır.
     foreach ($requiredColumns as $tbl => $cols) {
-        if (isset($repairMap[$tbl])) continue;
+        $nameRe = preg_quote($tbl, '/');
         $foundMigs = [];
-        foreach (glob(__DIR__ . '/../database/migrations/*.sql') as $f) {
+        foreach (glob(__DIR__ . '/../database/migrations/*-postgres.sql') as $f) {
             $c = @file_get_contents($f);
-            if ($c !== false && preg_match('/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+[`"]?' . preg_quote($tbl, '/') . '[\s"(]/i', $c)) {
+            if ($c === false) continue;
+            if (preg_match('/(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|ALTER\s+TABLE(?:\s+IF\s+EXISTS)?|CREATE(?:\s+UNIQUE)?\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?\S+\s+ON)\s+[`"]?' . $nameRe . '[\s"(]/i', $c)) {
                 $foundMigs[] = basename($f);
             }
         }
-        $safe = $foundMigs !== [];
-        if ($safe) {
+        sort($foundMigs);
+        $safe = false;
+        $hasCreate = false;
+        if ($foundMigs !== []) {
             $allText = '';
             foreach ($foundMigs as $fm) {
-                $allText .= (string) @file_get_contents(__DIR__ . '/../database/migrations/' . $fm);
+                $fc = (string) @file_get_contents(__DIR__ . '/../database/migrations/' . $fm);
+                $allText .= $fc;
+                if (preg_match('/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+[`"]?' . $nameRe . '[\s"(]/i', $fc)) $hasCreate = true;
             }
-            foreach ($cols as $col) {
-                if (!preg_match('/(?:^|[\s,(])' . preg_quote($col, '/') . '[\s,)]/i', $allText)) {
-                    $safe = false;
-                    break;
+            $safe = $hasCreate;
+            if ($safe) {
+                foreach ($cols as $col) {
+                    if (!preg_match('/(?:^|[\s,(])' . preg_quote($col, '/') . '[\s,)]/i', $allText)) {
+                        $safe = false;
+                        break;
+                    }
                 }
             }
         }
