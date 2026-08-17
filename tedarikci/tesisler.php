@@ -84,9 +84,9 @@ supply_start('Tesisler & ürünler', $active_module);
     <div class="readiness-block">
         <div class="readiness-head"><span>YAYIN HAZIRLIĞI</span><b><?= $readiness['score'] ?>/100</b></div>
         <div class="readiness-bar"><i style="width:<?= (int) $readiness['score'] ?>%"></i></div>
-        <?php $missing = array_filter($readiness['items'], fn($i) => !$i['ok']); $warnings = array_filter($readiness['items'], fn($i) => !empty($i['warn'])); ?>
+        <?php $missing = array_filter($readiness['items'], fn($i) => !$i['ok']); $warnings = array_filter($readiness['items'], fn($i) => !empty($i['warn'])); $warnLinks = ['ical' => '/nexustraveltech/tedarikci/ical-takvimler']; ?>
         <?php if ($warnings): ?>
-        <ul class="readiness-warn"><?php foreach ($warnings as $w): ?><li>⚠ <?= htmlspecialchars($w['label']) ?> — <?= htmlspecialchars($w['detail']) ?></li><?php endforeach; ?></ul>
+        <ul class="readiness-warn"><?php foreach ($warnings as $w): ?><li><a class="readiness-warn-link" href="<?= htmlspecialchars($warnLinks[$w['key']] ?? '/nexustraveltech/tedarikci/ical-takvimler') ?>">⚠ <?= htmlspecialchars($w['label']) ?> — <?= htmlspecialchars($w['detail']) ?></a></li><?php endforeach; ?></ul>
         <?php endif; ?>
         <?php if ($missing): ?>
         <ul class="readiness-missing"><?php foreach ($missing as $m): ?><li>✗ <?= htmlspecialchars($m['label']) ?><?php if ($m['key'] === 'rules'): ?> <em>(opsiyonel)</em><?php endif; ?></li><?php endforeach; ?></ul>

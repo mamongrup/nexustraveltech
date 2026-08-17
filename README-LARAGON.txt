@@ -234,3 +234,4 @@ AYLIK SOHBET RAPORU (E-POSTA)
   haftalık iCal sağlık özetini admin_alert_email'e gönderir — 7+ gün eski senkron (sarı), 30+ gün/hiç yok
   (kırmızı), pasif bağlantı durumlarını tek tabloda; sorun yoksa e-posta gitmez. Haftada bir kez
   (platform ayarı ical_health_digest_week = ISO yıl-hafta) idempotent.
+- Tesisler kartındaki sarı uyarı rozetleri tıklanabilir: iCal uyarısına tıklayınca iCal takvimler sayfası açılır.
