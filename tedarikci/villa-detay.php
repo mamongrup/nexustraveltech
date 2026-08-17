@@ -1,0 +1,162 @@
+<?php
+$active_module = 'properties';
+require_once __DIR__ . '/layout.php';
+require_once __DIR__ . '/../config/listing_integrity.php';
+$u = $supplier_user;
+$id = filter_input(INPUT_GET, 'product', FILTER_VALIDATE_INT);
+if (!$id) { header('Location: /nexustraveltech/tedarikci/tesisler'); exit; }
+$q = db()->prepare("SELECT * FROM properties WHERE id=? AND supplier_id=? AND property_type IN ('villa','yacht') LIMIT 1");
+$q->execute([$id, $u['supplier_id']]);
+$listing = $q->fetch();
+if (!$listing) { http_response_code(404); exit('Ürün bulunamadı.'); }
+$isYacht = $listing['property_type'] === 'yacht';
+$unitLabel = $isYacht ? 'Kabin / yat' : 'Konaklama birimi';
+$details = json_decode($listing['product_details'] ?? '{}', true) ?: [];
+$error = '';
+$notice = isset($_GET['published']) ? 'Ürün yayına alındı — acente müsaitlik sorgularında artık görünür.' : (isset($_GET['saved']) ? 'Detaylar kaydedildi.' : (isset($_GET['room_saved']) ? 'Yeni birim çoğaltıldı; özellik ve fiyatı kaydedildi.' : ''));
+
+// --- Yayına al ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'publish') {
+  if (!csrf_valid($_POST['csrf_token'] ?? null)) { $error = 'Güvenlik doğrulaması yenilendi. Lütfen tekrar deneyin.'; }
+  else {
+    $readiness = listing_readiness($listing);
+    if (!$readiness['ready']) {
+      $missing = array_map(fn($i) => $i['label'], array_filter($readiness['items'], fn($i) => !$i['ok']));
+      $error = 'Ürün yayına alınamadı — eksik kalemler: ' . implode(', ', $missing) . '.';
+    } else {
+      db()->prepare("UPDATE properties SET status='active' WHERE id=? AND supplier_id=?")->execute([$id, $u['supplier_id']]);
+      record_audit_event('supplier', (int) $u['id'], 'publish', 'property', $id, ['name' => $listing['name']]);
+      header('Location: /nexustraveltech/tedarikci/villa-detay?product=' . $id . '&published=1'); exit;
+    }
+  }
+}
+
+// --- Birim çoğalt ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['room_action'] ?? '') === 'duplicate') {
+  if (!csrf_valid($_POST['csrf_token'] ?? null)) { $error = 'Güvenlik doğrulaması yenilendi. Lütfen tekrar deneyin.'; }
+  else {
+    $sourceId = (int)($_POST['room_source_id'] ?? 0);
+    $newName = trim((string)($_POST['room_name'] ?? ''));
+    $source = db()->prepare('SELECT r.* FROM room_types r WHERE r.id=? AND r.property_id=? LIMIT 1');
+    $source->execute([$sourceId, $id]); $source = $source->fetch();
+    if (!$source || $newName === '') { $error = 'Çoğaltılacak birim ve yeni ad gereklidir.'; }
+    else {
+      $roomDetails = json_decode($source['room_details'] ?? '{}', true) ?: [];
+      $roomDetails['area_m2'] = max(0, (int)($_POST['room_area'] ?? ($roomDetails['area_m2'] ?? 0)));
+      $roomDetails['default_nightly_price'] = max(0, (float)str_replace(',', '.', (string)($_POST['room_price'] ?? ($roomDetails['default_nightly_price'] ?? 0))));
+      $roomDetails['price_currency'] = in_array($_POST['room_currency'] ?? 'EUR', ['TRY','EUR','USD','GBP'], true) ? $_POST['room_currency'] : 'EUR';
+      $capacity = max(1, min(20, (int)($_POST['room_capacity'] ?? $source['capacity_adults'])));
+      $units = max(0, min(9999, (int)($_POST['room_units'] ?? $source['total_units'])));
+      db()->prepare('INSERT INTO room_types (property_id,name,capacity_adults,total_units,room_details,status) VALUES (?,?,?,?,?,"active")')->execute([$id,$newName,$capacity,$units,json_encode($roomDetails, JSON_UNESCAPED_UNICODE)]);
+      header('Location: /nexustraveltech/tedarikci/villa-detay?product='.$id.'&room_saved=1'); exit;
+    }
+  }
+}
+
+// --- Genel kaydet ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['room_action'] ?? '') !== 'duplicate' && ($_POST['action'] ?? '') !== 'publish') {
+  if (!csrf_valid($_POST['csrf_token'] ?? null)) { $error = 'Güvenlik doğrulaması yenilendi. Lütfen tekrar deneyin.'; }
+  else {
+    $typeKeys = $isYacht
+      ? ['cabins','guest_capacity','length','home_port','crew','year_built']
+      : ['bedrooms','max_guests','pool','area_m2','floors','building_type'];
+    $textKeys = array_merge(['address','district','area','airport_distance','beach_distance','latitude','longitude','short_description','description','check_in','check_out','pet_policy','smoking_policy','minimum_age','board_notes','commission_rate','deposit_rate','collection_model','account_holder','bank_name','iban','payment_note','free_cancellation_until','cancellation_advance_days','cancellation_fee_rate','no_show_fee_rate','refund_method','refund_processing_days','cancellation_note'], $typeKeys);
+    foreach ($textKeys as $key) { $value = trim((string)($_POST['details'][$key] ?? '')); if ($value !== '') $details[$key] = $value; else unset($details[$key]); }
+    foreach (['bedrooms','max_guests','area_m2','floors','cabins','guest_capacity','length','year_built'] as $key) {
+      if (isset($details[$key])) { $details[$key] = max(0, (int) $details[$key]); if ($details[$key] === 0) unset($details[$key]); }
+    }
+    if (isset($details['crew'])) { $details['crew'] = trim((string) $details['crew']); if ($details['crew'] === '') unset($details['crew']); }
+    $amenityList = villa_amenity_list($isYacht);
+    $servicePricing = [];
+    foreach (($_POST['service_pricing'] ?? []) as $service => $status) {
+      if (in_array($service, $amenityList, true) && in_array($status, ['free', 'paid'], true)) $servicePricing[$service] = $status;
+    }
+    $details['service_pricing'] = $servicePricing;
+    $details['amenities'] = array_values(array_intersect(array_keys($servicePricing), $amenityList));
+    $commission = (float)str_replace(',', '.', $details['commission_rate'] ?? '0');
+    $deposit = (float)str_replace(',', '.', $details['deposit_rate'] ?? '0');
+    $allowedCollectionModels = ['agency_collects_deposit','agency_collects_full','property_collects_full'];
+    $details['collection_model'] = $details['collection_model'] ?? 'agency_collects_deposit';
+    if ($commission < 0 || $commission > 100 || $deposit < 0 || $deposit > 100 || !in_array($details['collection_model'], $allowedCollectionModels, true)) {
+      $error = 'Komisyon, ön ödeme ve tahsilat modeli bilgilerini kontrol edin.';
+    }
+    $iban = preg_replace('/\s+/', '', strtoupper($details['iban'] ?? ''));
+    if ($iban !== '' && !preg_match('/^TR\d{24}$/', $iban)) $error = 'IBAN, TR ile başlayan 26 karakterlik geçerli bir Türkiye IBAN’ı olmalıdır.';
+    $details['iban'] = $iban;
+    foreach (['cancellation_advance_days','cancellation_fee_rate','no_show_fee_rate','refund_processing_days'] as $key) {
+      $value = (float)str_replace(',', '.', $details[$key] ?? '0');
+      $max = $key === 'cancellation_advance_days' ? 365 : ($key === 'refund_processing_days' ? 60 : 100);
+      if ($value < 0 || $value > $max) $error = 'İptal ve iade oranlarını kontrol edin.';
+    }
+    $allowedRefundMethods = ['original_payment','bank_transfer','agency_settlement','voucher'];
+    if (($details['refund_method'] ?? '') !== '' && !in_array($details['refund_method'], $allowedRefundMethods, true)) $error = 'Geçerli bir iade yöntemi seçin.';
+    if ($error === '') {
+    try {
+      $pdo = db(); $pdo->beginTransaction();
+      $pdo->prepare('UPDATE properties SET product_details=? WHERE id=? AND supplier_id=?')->execute([json_encode($details, JSON_UNESCAPED_UNICODE), $id, $u['supplier_id']]);
+      if (!empty($_FILES['media']['name'][0])) {
+        $allowed = ['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $dir = dirname(__DIR__) . '/uploads/properties/' . $id;
+        if (!is_dir($dir)) mkdir($dir, 0755, true);
+        $insert = $pdo->prepare('INSERT INTO property_media (property_id,file_path,file_name,mime_type,is_cover,sort_order) VALUES (?,?,?,?,?,?)');
+        foreach ($_FILES['media']['tmp_name'] as $index=>$tmp) {
+          if ($_FILES['media']['error'][$index] !== UPLOAD_ERR_OK || $_FILES['media']['size'][$index] > 8*1024*1024) continue;
+          $mime = $finfo->file($tmp); if (!isset($allowed[$mime])) continue;
+          $filename = bin2hex(random_bytes(12)) . '.' . $allowed[$mime];
+          if (move_uploaded_file($tmp, $dir . '/' . $filename)) $insert->execute([$id,'uploads/properties/'.$id.'/'.$filename,basename((string)$_FILES['media']['name'][$index]),$mime,$index===0 ? 1 : 0,$index]);
+        }
+      }
+      $pdo->commit(); header('Location: /nexustraveltech/tedarikci/villa-detay?product='.$id.'&saved=1'); exit;
+    } catch (Throwable $e) { if (db()->inTransaction()) db()->rollBack(); $error='Kaydetme sırasında bir sorun oluştu.'; }
+    }
+  }
+}
+
+function villa_amenity_list(bool $yacht): array {
+  return $yacht
+    ? ['Güverte','Şezlong','Kabin TV','Klima','Müzik sistemi','Su sporları ekipmanı','Balıkçılık ekipmanı','Şnorkel','Dalış ekipmanı','Mutfak','Buzdolabı','Barbekü','Mürettebat','Yüzme merdiveni','Güneşlenme alanı','Wi-Fi']
+    : ['Özel havuz','Jakuzi','Klima','Wi-Fi','Televizyon','Mutfak','Bulaşık makinesi','Çamaşır makinesi','Bahçe','Teras','Mangal','Otopark','Güvenlik','Özel giriş','Deniz manzarası','Ebeveyn banyosu','Şömine','Isıtmalı havuz'];
+}
+
+$media = db()->prepare('SELECT * FROM property_media WHERE property_id=? ORDER BY is_cover DESC, sort_order, id'); $media->execute([$id]); $media=$media->fetchAll();
+$rooms = db()->prepare('SELECT * FROM room_types WHERE property_id=? ORDER BY id'); $rooms->execute([$id]); $rooms=$rooms->fetchAll();
+$servicePricing = is_array($details['service_pricing'] ?? null) ? $details['service_pricing'] : [];
+foreach (($details['amenities'] ?? []) as $service) if (!isset($servicePricing[$service])) $servicePricing[$service] = 'free';
+supply_start(htmlspecialchars($listing['name']).' · ilan detayları', $active_module); ?>
+<section class="hotel-editor-head"><div><span><?= $isYacht ? 'YAT İLAN KURULUMU' : 'VİLLA İLAN KURULUMU' ?></span><h2>Satış kanallarına eksiksiz<br>ürün verisi gönderin.</h2><p>İlan tamamlanma durumu: <b><?= count($media) ? 'görseller eklendi' : 'görsel bekliyor' ?></b></p></div><a href="/nexustraveltech/tedarikci/tesisler">← Ürün listesine dön</a></section>
+<?php $readiness = listing_readiness($listing); $linkFor = ['rooms' => '/nexustraveltech/tedarikci/villa-detay?product='.$id, 'rates' => '/nexustraveltech/tedarikci/fiyat-kontenjan?property='.$id, 'inventory' => '/nexustraveltech/tedarikci/fiyat-kontenjan?property='.$id, 'media' => '/nexustraveltech/tedarikci/villa-detay?product='.$id, 'description' => '/nexustraveltech/tedarikci/villa-detay?product='.$id, 'location' => '/nexustraveltech/tedarikci/villa-detay?product='.$id, 'rules' => '/nexustraveltech/tedarikci/satis-kurallari?property='.$id]; /* Bölümler tek kaynaktan numaralanır — yeni bölüm eklerken yalnızca bu diziye satır ekle. */ $editorSections = ['Kimlik, sınıflandırma & konum' => 'Kimlik & konum', 'Satış içeriği & operasyon' => 'Satış içeriği', 'Özellikler & hizmetler' => 'Özellikler', $unitLabel.' envanteri & fiyat' => 'Birim & fiyat', 'Görseller' => 'Görseller', 'Acente komisyonu & tahsilat' => 'Komisyon & tahsilat', 'İptal & iade şartları' => 'İptal & iade']; $editorToc = []; $editorN = 0; foreach ($editorSections as $fullTitle => $shortTitle) { $editorN++; $editorToc[] = ['id' => 'sec-'.str_pad((string)$editorN, 2, '0', STR_PAD_LEFT), 'no' => str_pad((string)$editorN, 2, '0', STR_PAD_LEFT), 'title' => $fullTitle, 'short' => $shortTitle]; } $editorN = 0; ?>
+<section class="publish-panel"><div class="publish-head"><div><span>YAYINA ALMA AKIŞI</span><h3>Hazırlık kontrol listesi · <b><?= $readiness['score'] ?>/100</b></h3><p>Altı çekirdek kalem tamamlandığında ürün tek tıkla yayına alınır; satış kuralı opsiyoneldir.</p></div><?php if ($listing['status'] === 'active'): ?><b class="status active-status">YAYINDA</b><?php else: ?><form method="post" class="publish-form"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="publish"><?php if ($readiness['ready']): ?><button class="primary-button" onclick="return confirm('Ürün yayına alınsın mı? Acente müsaitlik sorgularında görünür olur.');">Yayına al →</button><?php else: ?><span class="ghost-button disabled" title="Eksik kalemler tamamlanmadan yayına alınamaz.">Yayına al</span><?php endif; ?></form><?php endif; ?></div><ul class="readiness-check"><?php foreach ($readiness['items'] as $item): ?><li class="<?= $item['ok'] ? 'ok' : 'missing' ?>"><?= $item['ok'] ? '✓' : '✗' ?> <?= htmlspecialchars($item['label']) ?><small><?= htmlspecialchars($item['detail']) ?></small><?php if (!$item['ok']): ?><a href="<?= htmlspecialchars($linkFor[$item['key']] ?? '#') ?>">Doldur →</a><?php endif; ?></li><?php endforeach; ?></ul></section>
+<?php if($error): ?><p class="login-error"><?= htmlspecialchars($error) ?></p><?php endif; ?><?php if($notice): ?><p class="save-success">✓ <?= htmlspecialchars($notice) ?></p><?php endif; ?>
+<div class="hotel-editor-wrap"><aside class="editor-toc"><div class="editor-toc-head"><span>İÇİNDEKİLER</span><b><?= count($editorToc) ?> bölüm</b></div><nav><?php foreach ($editorToc as $t): ?><a href="#<?= $t['id'] ?>"><span><?= $t['no'] ?></span><?= htmlspecialchars($t['short']) ?></a><?php endforeach; ?></nav><p class="editor-toc-hint">Bölüme gitmek için tıklayın.</p></aside><form method="post" enctype="multipart/form-data" class="hotel-editor"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+<?php $sec = $editorToc[$editorN++]; ?><section id="<?= $sec['id'] ?>" class="editor-section"><div class="editor-title"><span><?= $sec['no'] ?></span><div><h3><?= htmlspecialchars($sec['title']) ?></h3><p><?= $isYacht ? 'Kabin yapısı, kapasite, uzunluk ve liman bilgileri acente filtrelerini besler.' : 'Yatak odası, kapasite, havuz ve konum bilgileri acente filtrelerini besler.' ?></p></div></div><div class="editor-fields">
+<?php if ($isYacht): ?>
+<label>Kabin sayısı<input type="number" name="details[cabins]" min="0" value="<?= htmlspecialchars($details['cabins'] ?? '') ?>" placeholder="Örn. 4"></label>
+<label>Misafir kapasitesi<input type="number" name="details[guest_capacity]" min="0" value="<?= htmlspecialchars($details['guest_capacity'] ?? '') ?>" placeholder="Örn. 8"></label>
+<label>Yat uzunluğu (m)<input type="number" name="details[length]" min="0" step="0.1" value="<?= htmlspecialchars($details['length'] ?? '') ?>" placeholder="Örn. 22"></label>
+<label>Bağlama limanı<input name="details[home_port]" value="<?= htmlspecialchars($details['home_port'] ?? '') ?>" placeholder="Örn. Göcek Marina"></label>
+<label>Mürettebat<input name="details[crew]" value="<?= htmlspecialchars($details['crew'] ?? '') ?>" placeholder="Örn. Kaptan + 2 personel"></label>
+<label>Yapım yılı<input type="number" name="details[year_built]" min="1900" max="2100" value="<?= htmlspecialchars($details['year_built'] ?? '') ?>" placeholder="Örn. 2021"></label>
+<?php else: ?>
+<label>Yatak odası<input type="number" name="details[bedrooms]" min="0" value="<?= htmlspecialchars($details['bedrooms'] ?? '') ?>" placeholder="Örn. 4"></label>
+<label>Maksimum misafir<input type="number" name="details[max_guests]" min="0" value="<?= htmlspecialchars($details['max_guests'] ?? '') ?>" placeholder="Örn. 8"></label>
+<label>Havuz tipi<select name="details[pool]"><option value="">Seçin</option><?php foreach (['Özel havuz','Ortak havuz','Havuz yok'] as $p): ?><option value="<?= htmlspecialchars($p) ?>" <?= ($details['pool']??'')===$p?'selected':'' ?>><?= htmlspecialchars($p) ?></option><?php endforeach; ?></select></label>
+<label>Alan (m²)<input type="number" name="details[area_m2]" min="0" value="<?= htmlspecialchars($details['area_m2'] ?? '') ?>" placeholder="Örn. 180"></label>
+<label>Kat sayısı<input type="number" name="details[floors]" min="0" value="<?= htmlspecialchars($details['floors'] ?? '') ?>" placeholder="Örn. 2"></label>
+<label>Yapı tipi<select name="details[building_type]"><option value="">Seçin</option><?php foreach (['Müstakil','Yarı müstakil','Dubleks','Rezidans'] as $bt): ?><option value="<?= htmlspecialchars($bt) ?>" <?= ($details['building_type']??'')===$bt?'selected':'' ?>><?= htmlspecialchars($bt) ?></option><?php endforeach; ?></select></label>
+<?php endif; ?>
+<label class="wide">Açık adres<input name="details[address]" value="<?= htmlspecialchars($details['address'] ?? '') ?>" placeholder="Mahalle, cadde, kapı no"></label>
+<label>İlçe<input name="details[district]" value="<?= htmlspecialchars($details['district'] ?? '') ?>" placeholder="Örn. Fethiye"></label>
+<label>Mevkii / bölge<input name="details[area]" value="<?= htmlspecialchars($details['area'] ?? '') ?>" placeholder="Örn. Ölüdeniz"></label>
+<label>Havalimanı mesafesi<input name="details[airport_distance]" value="<?= htmlspecialchars($details['airport_distance'] ?? '') ?>" placeholder="Örn. 45 km"></label>
+<label>Plaj mesafesi<input name="details[beach_distance]" value="<?= htmlspecialchars($details['beach_distance'] ?? '') ?>" placeholder="Örn. 300 m"></label>
+<label>Enlem<input name="details[latitude]" value="<?= htmlspecialchars($details['latitude'] ?? '') ?>" placeholder="36.6..."></label>
+<label>Boylam<input name="details[longitude]" value="<?= htmlspecialchars($details['longitude'] ?? '') ?>" placeholder="29.1..."></label>
+</div></section>
+<?php $sec = $editorToc[$editorN++]; ?><section id="<?= $sec['id'] ?>" class="editor-section"><div class="editor-title"><span><?= $sec['no'] ?></span><div><h3><?= htmlspecialchars($sec['title']) ?></h3><p>İlan metni, giriş-çıkış ve tesis kuralları.</p></div></div><div class="editor-fields"><label class="wide">Kısa açıklama<textarea name="details[short_description]" maxlength="300" placeholder="Tesis kartında görünecek kısa satış cümlesi."><?= htmlspecialchars($details['short_description'] ?? '') ?></textarea></label><label class="wide">Detaylı açıklama<textarea name="details[description]" rows="6" placeholder="<?= $isYacht ? 'Yatın deneyimi, rotaları ve öne çıkan yönleri.' : 'Villanın deneyimi, konumu ve öne çıkan yönleri.' ?>"><?= htmlspecialchars($details['description'] ?? '') ?></textarea></label><label>Giriş saati<input type="time" name="details[check_in]" value="<?= htmlspecialchars($details['check_in'] ?? '15:00') ?>"></label><label>Çıkış saati<input type="time" name="details[check_out]" value="<?= htmlspecialchars($details['check_out'] ?? '11:00') ?>"></label><label>Evcil hayvan<select name="details[pet_policy]"><option><?= htmlspecialchars($details['pet_policy'] ?? 'Kabul edilmez') ?></option><option>Kabul edilir</option><option>Talep üzerine</option><option>Kabul edilmez</option></select></label><label>Sigara politikası<select name="details[smoking_policy]"><option><?= htmlspecialchars($details['smoking_policy'] ?? 'Sigara içilmez') ?></option><option>Sigara içilmez</option><option>Belirlenmiş alanlarda</option><option>Odada içilebilir</option></select></label><label>Minimum konaklama yaşı<input type="number" name="details[minimum_age]" min="0" value="<?= htmlspecialchars($details['minimum_age'] ?? '') ?>" placeholder="Örn. 16"></label><label class="wide">Konsept / servis notları<textarea name="details[board_notes]" placeholder="<?= $isYacht ? 'Kiralama periyotları, yakıt, mürettebat ve ek hizmet ayrıntıları.' : 'Giriş saati esnekliği, temizlik ücreti, depozito ve ek hizmet ayrıntıları.' ?>"><?= htmlspecialchars($details['board_notes'] ?? '') ?></textarea></label></div></section>
+<?php $sec = $editorToc[$editorN++]; ?><section id="<?= $sec['id'] ?>" class="editor-section"><div class="editor-title"><span><?= $sec['no'] ?></span><div><h3><?= htmlspecialchars($sec['title']) ?></h3><p>Sunulan her hizmet için durumunu belirtin. Ücretli seçenekler acente ve misafire ayrı şekilde gösterilir.</p></div></div><div class="editor-options"><div class="service-grid"><?php foreach (villa_amenity_list($isYacht) as $item): $status = $servicePricing[$item] ?? ''; ?><label><span><?= htmlspecialchars($item) ?></span><select name="service_pricing[<?= htmlspecialchars($item) ?>]"><option value="" <?= $status===''?'selected':'' ?>>Sunulmuyor</option><option value="free" <?= $status==='free'?'selected':'' ?>>Ücretsiz</option><option value="paid" <?= $status==='paid'?'selected':'' ?>>Ücretli</option></select></label><?php endforeach; ?></div></div></section>
+<?php $sec = $editorToc[$editorN++]; ?><section id="<?= $sec['id'] ?>" class="editor-section"><div class="editor-title"><span><?= $sec['no'] ?></span><div><h3><?= htmlspecialchars($sec['title']) ?></h3><p>Mevcut bir <?= strtolower($unitLabel) ?> tipini temel alarak çoğaltın; yalnızca değişen kapasite, m², adet ve başlangıç fiyatını düzenleyin.</p></div></div><div class="editor-fields"><div class="wide room-summary"><?php if($rooms): ?><?php foreach($rooms as $room): $roomInfo=json_decode($room['room_details']??'{}',true)?:[]; ?><article><b><?= htmlspecialchars($room['name']) ?></b><span><?= (int)$room['capacity_adults'] ?> misafir · <?= (int)$room['total_units'] ?> adet · <?= (int)($roomInfo['area_m2']??0) ?> m²</span><em><?= htmlspecialchars((string)($roomInfo['default_nightly_price']??'—')) ?> <?= htmlspecialchars((string)($roomInfo['price_currency']??'EUR')) ?> / gece</em></article><?php endforeach; ?><?php else: ?><p>Henüz birim tipi yok. İlk birimi tesis kurulumundan ekleyin.</p><?php endif; ?></div><label class="wide">Çoğaltılacak birim tipi<select name="room_source_id"><?php foreach($rooms as $room): ?><option value="<?= (int)$room['id'] ?>"><?= htmlspecialchars($room['name']) ?></option><?php endforeach; ?></select></label><label>Yeni birim adı<input name="room_name" placeholder="<?= $isYacht ? 'Örn. Deluxe kabin' : 'Örn. Havuzlu 4+1 villa' ?>"></label><label>Misafir kapasitesi<input type="number" name="room_capacity" min="1" max="20" value="2"></label><label>Toplam adet<input type="number" name="room_units" min="0" value="0"></label><label>Alan (m²)<input type="number" name="room_area" min="0" placeholder="Örn. 120"></label><label>Başlangıç gece fiyatı<input type="number" name="room_price" min="0" step="0.01" placeholder="Örn. 450"></label><label>Para birimi<select name="room_currency"><option>EUR</option><option>TRY</option><option>USD</option><option>GBP</option></select></label><div class="wide"><button class="room-copy-button" type="submit" name="room_action" value="duplicate" <?= $rooms ? '' : 'disabled' ?>>Seçili birimi çoğalt ve kaydet →</button></div></div></section>
+<?php $sec = $editorToc[$editorN++]; ?><section id="<?= $sec['id'] ?>" class="editor-section"><div class="editor-title"><span><?= $sec['no'] ?></span><div><h3><?= htmlspecialchars($sec['title']) ?></h3><p>JPG, PNG veya WEBP; her dosya en fazla 8 MB. İlk görsel kapak olarak kullanılır.</p></div></div><div class="editor-media"><input type="file" name="media[]" accept="image/jpeg,image/png,image/webp" multiple><div class="media-list"><?php foreach($media as $image): ?><img src="/nexustraveltech/<?= htmlspecialchars($image['file_path']) ?>" alt="<?= htmlspecialchars($listing['name']) ?> görseli"><?php endforeach; ?></div></div></section>
+<?php $sec = $editorToc[$editorN++]; ?><section id="<?= $sec['id'] ?>" class="editor-section"><div class="editor-title"><span><?= $sec['no'] ?></span><div><h3><?= htmlspecialchars($sec['title']) ?></h3><p>Bu kurallar yalnızca yetkili acentelere gösterilir. Komisyon ve tahsilat modeli her fiyat planı için daha sonra ayrıca özelleştirilebilir.</p></div></div><div class="editor-fields"><label>Acente komisyonu (%)<input type="number" name="details[commission_rate]" min="0" max="100" step="0.01" value="<?= htmlspecialchars($details['commission_rate'] ?? '') ?>" placeholder="Örn. 15"></label><label>İlk rezervasyonda ön ödeme (%)<input type="number" name="details[deposit_rate]" min="0" max="100" step="0.01" value="<?= htmlspecialchars($details['deposit_rate'] ?? '') ?>" placeholder="Örn. 30"></label><label class="wide">Tahsilat modeli<select name="details[collection_model]" id="collection-model"><option value="agency_collects_deposit" <?= ($details['collection_model'] ?? '')==='agency_collects_deposit'?'selected':'' ?>>Acente yalnızca ön ödemeyi alır, kalan tutar tesiste ödenir</option><option value="agency_collects_full" <?= ($details['collection_model'] ?? '')==='agency_collects_full'?'selected':'' ?>>Acente tüm ödemeyi alır ve tedarikçiye aktarır</option><option value="property_collects_full" <?= ($details['collection_model'] ?? '')==='property_collects_full'?'selected':'' ?>>Tüm ödeme doğrudan tesiste / tedarikçide alınır</option></select></label><div class="payment-account wide" id="payment-account"><p class="field-heading">Tedarikçi ödeme hesabı</p><p class="account-note">Acente tüm ödemeyi aldığında veya ön ödemeyi tedarikçiye aktarması gerektiğinde, ödeme bu hesaba yönlendirilir.</p><div class="account-grid"><label>Hesap sahibi / ünvan<input name="details[account_holder]" value="<?= htmlspecialchars($details['account_holder'] ?? '') ?>" placeholder="Şirket ünvanı veya hesap sahibi"></label><label>Banka adı<input name="details[bank_name]" value="<?= htmlspecialchars($details['bank_name'] ?? '') ?>" placeholder="Örn. X Bankası"></label><label class="wide">IBAN<input name="details[iban]" value="<?= htmlspecialchars($details['iban'] ?? '') ?>" maxlength="34" placeholder="TR00 0000 0000 0000 0000 0000 00" autocomplete="off"></label><label class="wide">Acente için ödeme notu<textarea name="details[payment_note]" placeholder="Örn. Rezervasyon numarası açıklamaya yazılmalıdır. Ödeme vadesi ve mutabakat notları."><?= htmlspecialchars($details['payment_note'] ?? '') ?></textarea></label></div></div></div></section>
+<?php $sec = $editorToc[$editorN++]; ?><section id="<?= $sec['id'] ?>" class="editor-section"><div class="editor-title"><span><?= $sec['no'] ?></span><div><h3><?= htmlspecialchars($sec['title']) ?></h3><p>Bu koşullar fiyat planı bazında farklılaştırılabilir. Buradaki kurallar tesisin varsayılan satış koşullarıdır.</p></div></div><div class="editor-fields"><label>Ücretsiz iptal son tarihi<select name="details[free_cancellation_until]"><option value="arrival_day" <?= ($details['free_cancellation_until']??'')==='arrival_day'?'selected':'' ?>>Giriş günü</option><option value="before_arrival" <?= ($details['free_cancellation_until']??'')==='before_arrival'?'selected':'' ?>>Girişten belirli gün önce</option><option value="non_refundable" <?= ($details['free_cancellation_until']??'')==='non_refundable'?'selected':'' ?>>Ücretsiz iptal yok / iade edilemez</option></select></label><label>Ücretsiz iptal için süre (gün)<input type="number" name="details[cancellation_advance_days]" min="0" max="365" value="<?= htmlspecialchars($details['cancellation_advance_days'] ?? '') ?>" placeholder="Örn. 7"></label><label>Geç iptal kesintisi (%)<input type="number" name="details[cancellation_fee_rate]" min="0" max="100" step="0.01" value="<?= htmlspecialchars($details['cancellation_fee_rate'] ?? '') ?>" placeholder="Örn. 50"></label><label>No-show kesintisi (%)<input type="number" name="details[no_show_fee_rate]" min="0" max="100" step="0.01" value="<?= htmlspecialchars($details['no_show_fee_rate'] ?? '') ?>" placeholder="Örn. 100"></label><label>İade yöntemi<select name="details[refund_method]"><option value="" <?= empty($details['refund_method'])?'selected':'' ?>>İade yöntemi seçin</option><option value="original_payment" <?= ($details['refund_method']??'')==='original_payment'?'selected':'' ?>>Ödemenin yapıldığı karta/kanala iade</option><option value="bank_transfer" <?= ($details['refund_method']??'')==='bank_transfer'?'selected':'' ?>>Banka havalesi</option><option value="agency_settlement" <?= ($details['refund_method']??'')==='agency_settlement'?'selected':'' ?>>Acente cari mutabakatı</option><option value="voucher" <?= ($details['refund_method']??'')==='voucher'?'selected':'' ?>>Kupon / açık tarih hakkı</option></select></label><label>İade işlem süresi (iş günü)<input type="number" name="details[refund_processing_days]" min="0" max="60" value="<?= htmlspecialchars($details['refund_processing_days'] ?? '') ?>" placeholder="Örn. 7"></label><label class="wide">Özel iptal & iade notu<textarea name="details[cancellation_note]" rows="4" placeholder="Erken rezervasyon, kampanya, resmi tatil, grup rezervasyonu veya tarih değişikliği için özel şartlar."><?= htmlspecialchars($details['cancellation_note'] ?? '') ?></textarea></label></div></section>
+<div class="editor-save"><a href="/nexustraveltech/tedarikci/tesisler">Daha sonra tamamla</a><button type="submit">Tüm detayları kaydet →</button></div></form><script>document.querySelectorAll('.editor-toc nav a').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();var id=this.getAttribute('href').slice(1),el=document.getElementById(id);if(el){var y=el.getBoundingClientRect().top+window.scrollY-110;window.scrollTo({top:y,behavior:'smooth'})}})});var tocLinks=document.querySelectorAll('.editor-toc nav a'),sections=document.querySelectorAll('.editor-section');function markToc(){var pos=window.scrollY+140,current='';sections.forEach(function(s){if(s.offsetTop<=pos)current=s.id});tocLinks.forEach(function(a){a.classList.toggle('active',a.getAttribute('href')==='#'+current)})}window.addEventListener('scroll',markToc,{passive:true});markToc();</script></div><?php supply_end(); ?>

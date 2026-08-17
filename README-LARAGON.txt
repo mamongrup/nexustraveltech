@@ -175,3 +175,8 @@ AYLIK SOHBET RAPORU (E-POSTA)
 - otel-detay.php bölüm numaraları elle değil, $editorSections dizisinden türetilir (id=sec-XX, span numarası,
   sol içindekiler menüsü). Yeni bölüm eklerken yalnızca diziye satır ekleyip bölüm bloğunu aynı sayaç
   deseniyle (<?php $sec = $editorToc[$editorN++]; ?>) kopyalamak yeterlidir — numaralar bozulmaz.
+- tedarikci/villa-detay.php: villa ve yat ilanları için otel-detay ile aynı şemada detay düzenleyici
+  (otomatik numaralı 7 bölüm + içindekiler menüsü, hazırlık skoru, yayına al/duraklat, birim çoğaltma,
+  görsel yükleme, komisyon/tahsilat ve iptal/iade). Tesisler listesindeki villa/yat kartları "İlanı
+  tamamla →" ile bu sayfaya gider. Tür bazlı alanlar: villa (yatak odası, misafir, havuz, m², yapı tipi),
+  yat (kabin, kapasite, uzunluk, liman, mürettebat, yıl).

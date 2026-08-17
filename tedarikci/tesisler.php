@@ -92,7 +92,7 @@ supply_start('Tesisler & ürünler', $active_module);
         <?php endif; ?>
     </div>
     <div class="property-actions">
-        <?php if ($item['property_type'] === 'hotel'): ?><a href="/nexustraveltech/tedarikci/otel-detay?product=<?= (int) $item['id'] ?>">İlanı tamamla →</a><?php else: ?><a href="/nexustraveltech/tedarikci/yapay-zeka">AI kontrolü →</a><?php endif; ?>
+        <?php if ($item['property_type'] === 'hotel'): ?><a href="/nexustraveltech/tedarikci/otel-detay?product=<?= (int) $item['id'] ?>">İlanı tamamla →</a><?php else: ?><a href="/nexustraveltech/tedarikci/villa-detay?product=<?= (int) $item['id'] ?>">İlanı tamamla →</a><?php endif; ?>
         <?php if ($status === 'active'): ?>
         <form method="post" class="inline-form"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['supplier_csrf']) ?>"><input type="hidden" name="action" value="pause"><input type="hidden" name="property_id" value="<?= (int) $item['id'] ?>"><button class="ghost-button" onclick="return confirm('Ürün duraklatılsın mı? Acente sorgularında görünmez olur.');">Duraklat</button></form>
         <?php elseif ($readiness['ready']): ?>
