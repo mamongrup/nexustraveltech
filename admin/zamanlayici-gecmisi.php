@@ -14,6 +14,12 @@ $limit = (int) ($_GET['limit'] ?? 200);
 if (!in_array($limit, [50, 200, 500], true)) $limit = 200;
 $hours = (int) ($_GET['hours'] ?? 0);
 if (!in_array($hours, [0, 24, 72, 168], true)) $hours = 0;
+// Süre grafiğinin bağımsız görev seçici: belirtilmediyse üst filtreyi izler, seçilince ayrışır.
+if (array_key_exists('chart_job', $_GET)) {
+    $chartJob = (int) $_GET['chart_job'];
+} else {
+    $chartJob = $jobId > 0 ? $jobId : 0;
+}
 
 $pdo = db();
 
@@ -47,9 +53,9 @@ $stats['err7'] = (int) $pdo->query("SELECT COUNT(*) FROM scheduled_job_runs WHER
 $stats['avgMs'] = (int) $pdo->query("SELECT COALESCE(AVG(duration_ms),0) FROM scheduled_job_runs WHERE created_at >= now() - interval '7 days'")->fetchColumn();
 $stats['totalRuns'] = (int) $pdo->query('SELECT COUNT(*) FROM scheduled_job_runs')->fetchColumn();
 
-// Son 30 günün günlük ortalama süresi (seçili görev veya tüm görevler).
-$durWhere = $jobId > 0 ? 'WHERE job_id=? AND created_at >= CURRENT_DATE - 29' : 'WHERE created_at >= CURRENT_DATE - 29';
-$durParams = $jobId > 0 ? [$jobId] : [];
+// Son 30 günün günlük ortalama süresi (grafiğin kendi görev seçimine göre).
+$durWhere = $chartJob > 0 ? 'WHERE job_id=? AND created_at >= CURRENT_DATE - 29' : 'WHERE created_at >= CURRENT_DATE - 29';
+$durParams = $chartJob > 0 ? [$chartJob] : [];
 $durQ = $pdo->prepare("SELECT created_at::date d, COALESCE(AVG(duration_ms),0)::int avg_ms, COUNT(*) c, COUNT(*) FILTER (WHERE status='error') err FROM scheduled_job_runs $durWhere GROUP BY 1");
 $durQ->execute($durParams);
 $durMap = [];
@@ -103,8 +109,9 @@ $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başar�
 <p class="muted" style="margin:10px 0 0">Filtre: <b><?=htmlspecialchars($filterLabel)?></b> · <a href="?limit=200" style="color:#0d7a4a;font-weight:700">Temizle</a></p>
 <?php endif; ?>
 
-<section class="c"><h2>Çalışma süresi — son 30 gün <?= $jobId > 0 ? '(görev bazında)' : '(tüm görevler)' ?></h2>
-<p class="muted" style="margin:0 0 8px">Günlük <b>ortalama</b> süre (ms). Üzerine gelince gün, süre ve çalışma sayısı görünür. <?= $jobId === 0 ? 'Tek görev görmek için yukarıdan bir görev seçin.' : '' ?></p>
+<section class="c"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Çalışma süresi — son 30 gün <?= $chartJob > 0 ? '(görev bazında)' : '(tüm görevler)' ?></h2>
+<form method="get" action="/nexustraveltech/admin/zamanlayici-gecmisi" style="display:flex;gap:6px;align-items:center"><?php if ($jobId > 0): ?><input type="hidden" name="job" value="<?= (int)$jobId ?>"><?php endif; ?><?php if ($status !== ''): ?><input type="hidden" name="status" value="<?=htmlspecialchars($status)?>"><?php endif; ?><?php if ($hours > 0): ?><input type="hidden" name="hours" value="<?= (int)$hours ?>"><?php endif; ?><input type="hidden" name="limit" value="<?= (int)$limit ?>"><select name="chart_job" onchange="this.form.submit()"><option value="0">Tüm görevler</option><?php foreach ($jobs as $j): ?><option value="<?= (int) $j['id'] ?>" <?= $chartJob === (int) $j['id'] ? 'selected' : '' ?>><?= htmlspecialchars($j['name']) ?></option><?php endforeach; ?></select></form></div>
+<p class="muted" style="margin:6px 0 8px">Günlük <b>ortalama</b> süre (ms). Üzerine gelince gün, süre ve çalışma sayısı görünür; kırmızı nokta o gün hata olduğunu gösterir. Grafik seçicisi üst filtreden bağımsızdır.</p>
 <div style="display:flex;gap:2px;align-items:flex-end;max-width:820px;margin-top:8px">
 <?php foreach ($durChart as $d => $v): ?>
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;min-width:4px">
@@ -136,6 +143,7 @@ $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başar�
     <option value="500" <?= $limit === 500 ? 'selected' : '' ?>>500 kayıt</option>
   </select>
   <?php if ($hours > 0): ?><input type="hidden" name="hours" value="<?= (int)$hours ?>"><?php endif; ?>
+  <input type="hidden" name="chart_job" value="<?= (int)$chartJob ?>">
   <button>Filtrele</button>
 </form>
 <?php if (!$runs): ?>
