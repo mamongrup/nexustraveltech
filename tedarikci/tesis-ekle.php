@@ -86,6 +86,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->rollBack(); throw $exception;
     }
     $target = $type === 'hotel' ? 'otel-detay?product=' . $propertyId : ($type === 'villa' || $type === 'yacht' ? 'villa-detay?product=' . $propertyId : 'tesisler?created=1');
+    // İlk kez gelen tedarikçiyi doğrudan ilk EKSİK bölüme yönlendir (örn. görseller → #sec-05).
+    // Sıra: location → description → media (görseller) → rooms/inventory → rates; villa/yat'ta ek pool/liman/mürettebat.
+    try {
+        $pf = $pdo->prepare('SELECT * FROM properties WHERE id=?');
+        $pf->execute([$propertyId]);
+        $newProp = $pf->fetch();
+        if ($newProp && in_array($type, ['hotel', 'villa', 'yacht'], true)) {
+            $secOrder = ['location' => 'sec-01', 'description' => 'sec-02', 'media' => 'sec-05', 'rooms' => 'sec-04', 'inventory' => 'sec-04', 'rates' => 'sec-04'];
+            if ($type !== 'hotel') {
+                $secOrder['pool'] = 'sec-01';
+                $secOrder['home_port'] = 'sec-01';
+                $secOrder['crew'] = 'sec-01';
+                $secOrder['ical'] = 'sec-04';
+            }
+            $rd = listing_readiness($newProp);
+            foreach ($rd['items'] as $ri) {
+                if (empty($ri['ok']) && isset($secOrder[$ri['key']])) {
+                    $target .= '#' . $secOrder[$ri['key']];
+                    break;
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        // çapa hesabı başarısız olursa düz yönlendirme korunur
+    }
     header('Location: /nexustraveltech/tedarikci/' . $target); exit;
   }
 }
