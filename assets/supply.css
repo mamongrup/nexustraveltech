@@ -228,3 +228,6 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 /* ── Özet listeleri CSV dışa aktarma butonu ── */
 .csv-export-btn{display:inline-block;margin-left:10px;padding:3px 10px;background:#fff;border:1px solid var(--line,#d5dccf);border-radius:6px;font-size:12px;font-weight:700;color:var(--ink,#10211f);text-decoration:none;vertical-align:middle;cursor:pointer}
 .csv-export-btn:hover{background:#e3f2dc;border-color:#b7d3a8;color:#2e7d32}
+
+/* ── Oda eşleştirme onay rozeti ── */
+.map-approved-badge{display:inline-block;margin-left:6px;padding:1px 8px;background:#eef4ee;border:1px solid #bcd9c6;color:#0d7a4a;border-radius:10px;font-size:11px;font-weight:600;vertical-align:middle;white-space:nowrap}

@@ -221,7 +221,7 @@ if ($E2E) {
                     $ext = (string) ($pm['external_property_id'] ?? '');
 
                     // Test kodu için onaylı eşleştirme kur
-                    $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status) VALUES(?,?,?,?,'confirmed') ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET room_type_id=EXCLUDED.room_type_id, rate_plan_id=EXCLUDED.rate_plan_id, property_id=EXCLUDED.property_id, status='confirmed'")
+                    $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status, approved_by_type, approved_by_name, approved_at) VALUES(?,?,?,?,'confirmed','auto','auto-test',now()) ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET room_type_id=EXCLUDED.room_type_id, rate_plan_id=EXCLUDED.rate_plan_id, property_id=EXCLUDED.property_id, status='confirmed', approved_by_type='auto', approved_by_name='auto-test', approved_at=now()")
                         ->execute([(int) $conn['id'], $propId, (int) $room['id'], (int) $plan['id'], $code]);
 
                     $scopeSpecs = [

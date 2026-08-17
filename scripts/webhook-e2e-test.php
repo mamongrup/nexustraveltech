@@ -209,10 +209,10 @@ try {
                     $confirmRoom = (int) ($sugRow['room_type_id'] ?? 0);
                     $confirmPlan = (int) ($sugRow['rate_plan_id'] ?? 0);
                     if ($confirmPlan <= 0) $confirmPlan = (int) $planRow['id']; // plan ipucu yoksa ilk aktif plan
-                    $pdo->prepare("UPDATE channel_room_mappings SET status='confirmed', suggested_at=NULL, rate_plan_id=? WHERE channel_connection_id=? AND external_room_id=?")
+                    $pdo->prepare("UPDATE channel_room_mappings SET status='confirmed', suggested_at=NULL, rate_plan_id=?, approved_by_type='auto', approved_by_name='webhook-e2e-test', approved_by_user_id=NULL, approved_at=now() WHERE channel_connection_id=? AND external_room_id=?")
                         ->execute([$confirmPlan, $connId, $code]);
                     if ($planCode !== '') {
-                        $pdo->prepare("UPDATE channel_rate_plan_mappings SET status='confirmed', suggested_at=NULL, rate_plan_id=? WHERE channel_connection_id=? AND external_rate_plan_id=?")
+                        $pdo->prepare("UPDATE channel_rate_plan_mappings SET status='confirmed', suggested_at=NULL, rate_plan_id=?, approved_by_type='auto', approved_by_name='webhook-e2e-test', approved_by_user_id=NULL, approved_at=now() WHERE channel_connection_id=? AND external_rate_plan_id=?")
                             ->execute([$confirmPlan, $connId, $planCode]);
                     }
                     vok('öneri onaylandı (oda tipi #' . $confirmRoom . ' · plan #' . $confirmPlan . ($planCode !== '' ? ', plan ipucu ' . $planCode . ' dahil' : '') . ' — dağıtım merkezi bölüm 3teki onayın aynısı)');

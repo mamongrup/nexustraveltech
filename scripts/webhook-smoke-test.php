@@ -127,7 +127,7 @@ try {
                 }
 
                 // Test kodu için ONAYLI eşleştirme kur (deterministik yazma; temizlikte silinir).
-                $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status) VALUES(?,?,?,?,'confirmed') ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET room_type_id=EXCLUDED.room_type_id, rate_plan_id=EXCLUDED.rate_plan_id, property_id=EXCLUDED.property_id, status='confirmed'")
+                $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status, approved_by_type, approved_by_name, approved_at) VALUES(?,?,?,?,'confirmed','auto','webhook-smoke-test',now()) ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET room_type_id=EXCLUDED.room_type_id, rate_plan_id=EXCLUDED.rate_plan_id, property_id=EXCLUDED.property_id, status='confirmed', approved_by_type='auto', approved_by_name='webhook-smoke-test', approved_at=now()")
                     ->execute([(int) $conn['id'], $propId, (int) $roomRow['id'], (int) $planRow['id'], $code]);
 
                 $payload = [
@@ -254,7 +254,7 @@ try {
                 // ─────────────────── 2b) KANAL ÖZGÜ KAPSAMLAR ───────────────────
                 vsection('2b) KAPSAM TESTLERİ: availability / restrictions / reservations');
                 // Rates akışının temizliği eşleştirmeyi sildi — kapsam testleri için yeniden kur.
-                $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status) VALUES(?,?,?,?,'confirmed') ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET room_type_id=EXCLUDED.room_type_id, rate_plan_id=EXCLUDED.rate_plan_id, property_id=EXCLUDED.property_id, status='confirmed'")
+                $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status, approved_by_type, approved_by_name, approved_at) VALUES(?,?,?,?,'confirmed','auto','webhook-smoke-test',now()) ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET room_type_id=EXCLUDED.room_type_id, rate_plan_id=EXCLUDED.rate_plan_id, property_id=EXCLUDED.property_id, status='confirmed', approved_by_type='auto', approved_by_name='webhook-smoke-test', approved_at=now()")
                     ->execute([(int) $conn['id'], $propId, (int) $roomRow['id'], (int) $planRow['id'], $code]);
                 $scopeSpecs = [
                     ['scope' => 'availability', 'date' => date('Y-m-d', strtotime('+61 days')), 'entry' => ['allotment' => 5], 'label' => 'kontenjan (allotment=5)'],

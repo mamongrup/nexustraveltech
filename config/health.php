@@ -126,7 +126,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         'scheduled_jobs'=>['code','command','schedule','enabled','last_status','last_fail_alert_at'],
         'property_feature_catalog'=>['deleted_at','purge_at'],
         'feature_delete_backups'=>['feature_id','code','label','affected_properties'],
-        'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id','rate_plan_id','status','suggested_at','suggestion_count','suggestion_score'],
+        'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id','rate_plan_id','status','suggested_at','suggestion_count','suggestion_score','approved_by_type','approved_by_name','approved_by_user_id','approved_at'],
         'channel_property_mappings'=>['channel_connection_id','property_id','external_property_id','status'],'channel_rate_plan_mappings'=>['channel_connection_id','property_id','external_rate_plan_id','status','rate_plan_id'],
         'channel_sync_logs'=>['channel_connection_id','property_id','direction','scope','status','request_payload','response_payload','error_message','fx_audit'],
         'ical_sync_logs'=>['ical_connection_id','property_id','status','error_message','error_hash'],
@@ -560,7 +560,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                     } else {
                         $ids = array_map(fn($r) => (int) $r['id'], $staleRows);
                         $ph = implode(',', array_fill(0, count($ids), '?'));
-                        $upd = $pdo->prepare("UPDATE " . $staleTable . " SET status='confirmed', suggested_at=NULL WHERE id IN (" . $ph . ")");
+                        $upd = $pdo->prepare("UPDATE " . $staleTable . " SET status='confirmed', suggested_at=NULL, approved_by_type='auto', approved_by_name='health-check --repair', approved_by_user_id=NULL, approved_at=now() WHERE id IN (" . $ph . ")");
                         $upd->execute($ids);
                         $out .= '→ ' . count($staleRows) . ' hedefi dolmuş ' . $sspec['label'] . ' confirmed yapıldı' . "\n";
                         $staleConfirmNote .= $staleTable . ':' . count($staleRows) . ';';
