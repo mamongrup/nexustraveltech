@@ -13,7 +13,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/platform_settings.php';
 
-function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false): array
+function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false, bool $yes = false): array
 {
     $pdo = db();
     $errors = [];
@@ -366,6 +366,21 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 $dryRunDropped++;
                 $out .= "→ [dry-run] " . $table . " yabancı şemalı ve boş — DÜŞÜRÜLECEK; " . implode(', ', $migs) . " yeniden uygulanacak\n";
                 continue;
+            }
+            // Gerçek modda onay — otomasyon (cron) --yes ister; etkileşimli terminal yoksa ve
+            // --yes verilmediyse tablo düşürülmez (yalnızca raporlanır).
+            $interactive = function_exists('posix_isatty') && @posix_isatty(STDIN);
+            if (!$yes && !$interactive) {
+                $out .= "→ " . $table . " yabancı şemalı ve boş — DÜŞÜRÜLMEDİ (etkileşimli terminal yok; onay için --yes ekleyin)\n";
+                continue;
+            }
+            if (!$yes) {
+                echo "❓ " . $table . " düşürülecek (" . implode(', ', $migs) . " yeniden uygulanacak). Onaylıyor musunuz? [e/H] ";
+                $ans = strtolower(trim((string) fgets(STDIN)));
+                if (!in_array($ans, ['e', 'evet', 'y', 'yes'], true)) {
+                    $out .= "→ " . $table . " düşürme onaylanmadı — atlandı\n";
+                    continue;
+                }
             }
             try {
                 $pdo->exec('DROP TABLE IF EXISTS \"' . $table . '\" CASCADE');

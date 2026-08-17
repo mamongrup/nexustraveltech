@@ -5,7 +5,9 @@ declare(strict_types=1);
 //   /opt/plesk/php/8.5/bin/php scripts/health-check.php            → eksik migration'ları idempotent uygular ve raporlar
 //   /opt/plesk/php/8.5/bin/php scripts/health-check.php --dry-run  → hiçbir şey uygulamaz, yalnızca durumu gösterir
 //   /opt/plesk/php/8.5/bin/php scripts/health-check.php --repair   → yabancı şemalı BOŞ tabloları (örn. bozuk
-//     channel_room_mappings) otomatik düşürüp migration'larla yeniden kurar; DOLU tablolara dokunmaz
+//     channel_room_mappings) otomatik düşürüp migration'larla yeniden kurar; DOLU tablolara dokunmaz.
+//     Her tablo için ETKİLEŞİMLİ onay ister; otomasyon/cron için --yes (onaysız düşür) ekleyin.
+//     Önce --repair --dry-run ile tespiti görün — kuru mod hiçbir şey düşürmez.
 //   /opt/plesk/php/8.5/bin/php scripts/health-check.php --fix      → eksik/geçersiz/tekrarlanan kanal tokenlarını
 //     otomatik yeniler (64 hex, benzersiz); --dry-run ile yalnızca önizleme
 //
@@ -18,7 +20,8 @@ require_once __DIR__ . '/../config/health.php';
 $dryRun = in_array('--dry-run', $argv ?? [], true);
 $repair = in_array('--repair', $argv ?? [], true);
 $fix = in_array('--fix', $argv ?? [], true);
-$result = health_check_run($dryRun, $repair, $fix);
+$yes = in_array('--yes', $argv ?? [], true);
+$result = health_check_run($dryRun, $repair, $fix, $yes);
 
 echo $result['output'];
 exit($result['ok'] ? 0 : 1);
