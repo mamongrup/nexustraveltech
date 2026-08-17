@@ -130,3 +130,6 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .setup-steps li.step-link a:hover{color:#5f9008;text-decoration:underline}
 .setup-steps li.step-later{opacity:.55}
 .setup-sec{scroll-margin-top:110px}
+
+/* --- eksik kalem baglantisinda bolum ipucu (orn. Gorseller #sec-05) --- */
+.readiness-miss-link .readiness-sec-hint{font-style:normal;font-size:11px;opacity:.6;margin-left:2px;white-space:nowrap}
