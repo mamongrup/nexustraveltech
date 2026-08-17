@@ -225,3 +225,5 @@ AYLIK SOHBET RAPORU (E-POSTA)
   en az bir channel_connections bağlantısı tanımlı ama hiçbiri aktif olmayan tedarikçilere panel bildirimi
   (dağıtım merkezine bağlantılı) ve admin_alert_email'e e-posta (tedarikçi, kanallar, son senkron, son
   hatalar) gönderir. Aynı tedarikçi için 24 saatte bir kez (notifications tipi channel_inactive_{id}).
+- Tedarikçi ana sayfasında "iCal sağlık durumu" kartı: villa/yat ilanı başına aktif/pasif bağlantı sayısı,
+  iCal blok sayısı, son senkron zamanı ve son hata; durum rozeti (Aktif / ⚠ Eski senkron / Pasif).
