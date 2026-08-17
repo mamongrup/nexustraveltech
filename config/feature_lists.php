@@ -5,6 +5,39 @@ declare(strict_types=1);
 require_once __DIR__ . '/database.php';
 
 /**
+ * Onaylı çöp kutusu temizliği — yedekler + katalog satırını kalıcı siler.
+ * Temizlik görevi (cron/purge-feature-trash.php) ve onay sayfası
+ * (admin/approve-trash-purge.php) bu fonksiyonu paylaşır.
+ *
+ * @param int[] $featureIds
+ * @return array{count: int, ids: int[], names: string[]}
+ */
+function feature_trash_purge_approved(array $featureIds, PDO $pdo): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $featureIds))));
+    if (!$ids) {
+        return ['count' => 0, 'ids' => [], 'names' => []];
+    }
+    $idsSql = implode(',', $ids);
+    $names = [];
+    foreach ($pdo->query("SELECT id, label, code FROM property_feature_catalog WHERE id IN ({$idsSql})")->fetchAll() as $r) {
+        $names[(int) $r['id']] = $r['label'] . ' (' . $r['code'] . ')';
+    }
+    if (!$names) {
+        return ['count' => 0, 'ids' => [], 'names' => []];
+    }
+    $ids = array_values(array_intersect($ids, array_map('intval', array_keys($names))));
+    $idsSql = implode(',', $ids);
+    $pdo->exec("DELETE FROM feature_delete_backups WHERE feature_id IN ({$idsSql})");
+    $pdo->exec("DELETE FROM property_feature_catalog WHERE id IN ({$idsSql})");
+    $out = [];
+    foreach ($ids as $fid) {
+        $out[] = $names[$fid];
+    }
+    return ['count' => count($ids), 'ids' => $ids, 'names' => $out];
+}
+
+/**
  * Varsayılan villa/yat özellik listeleri — tablo yoksa veya boşsa kullanılır.
  *
  * @return array<string, array<int, string>>|array<int, string>

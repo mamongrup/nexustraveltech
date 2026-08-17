@@ -2,10 +2,11 @@
 declare(strict_types=1);
 
 // Çöp kutusu temizliği — geri alınabilirlik süresi (varsayılan 30 gün) dolan silinmiş
-// özellikleri kalıcı olarak siler: önce feature_delete_backups (ilan/bölüm yedekleri),
-// sonra property_feature_catalog satırı. Bu noktadan sonra restore mümkün değildir.
+// özellikler için önce yöneticiye "son şans" onay e-postası gider; yalnızca onaylananlar
+// kalıcı silinir (feature_delete_backups + property_feature_catalog). Onay bağlantısı
+// 3 gün geçerlidir; süre dolarsa bu görev yeniden ister ve e-postayı tekrar gönderir.
 // Süre platform ayarı feature_trash_ttl_days ile değiştirilebilir (en az 7 gün).
-// İşlem denetim kaydına yazılır; admin_alert_email tanımlıysa yöneticiye bilgi gider.
+// admin_alert_email tanımsızsa (e-posta gönderilemiyor) eski davranış: doğrudan temizler.
 //
 // Zamanlayıcı: nexus-feature-trash-purge (varsayılan: her gün 04:00).
 
@@ -13,9 +14,12 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/mailer.php';
 require_once __DIR__ . '/../config/platform_settings.php';
 require_once __DIR__ . '/../config/audit.php';
+require_once __DIR__ . '/../config/feature_lists.php';
 
 $pdo = db();
 $ttlDays = max(7, (int) platform_setting('feature_trash_ttl_days', 30));
+$adminEmail = trim((string) platform_setting('admin_alert_email', ''));
+$canNotify = $adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL);
 
 $stale = $pdo->query("SELECT id, code, group_label, label, deleted_at FROM property_feature_catalog WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '{$ttlDays} days' ORDER BY deleted_at")->fetchAll();
 
@@ -24,38 +28,86 @@ if (!$stale) {
     exit(0);
 }
 
-$ids = array_map(fn($r) => (int) $r['id'], $stale);
-$idsSql = implode(',', $ids);
+$existingSt = $pdo->prepare("SELECT id, token, approved_at FROM pending_trash_purges WHERE feature_id=? AND expires_at > now()");
+$insertReq = $pdo->prepare("INSERT INTO pending_trash_purges(feature_id, token, expires_at) VALUES(?,?, now() + interval '3 days')");
+$delReq = $pdo->prepare('DELETE FROM pending_trash_purges WHERE feature_id=?');
 
-// Önce yedekler (ilan/bölüm anlık görüntüleri), sonra katalog satırları.
-$pdo->exec("DELETE FROM feature_delete_backups WHERE feature_id IN ({$idsSql})");
-$pdo->exec("DELETE FROM property_feature_catalog WHERE id IN ({$idsSql})");
+$approved = [];
+$toRequest = [];
+$waiting = 0;
+foreach ($stale as $r) {
+    $fid = (int) $r['id'];
+    $existingSt->execute([$fid]);
+    $pend = $existingSt->fetch();
+    if ($pend) {
+        if ($pend['approved_at'] !== null) {
+            $approved[] = $fid;
+        } else {
+            $waiting++;
+        }
+        continue;
+    }
+    $toRequest[] = $r;
+}
 
-$names = array_map(fn($r) => $r['label'] . ' (' . $r['code'] . ')', $stale);
-$deletedAt = array_map(fn($r) => (string) $r['deleted_at'], $stale);
+// Onay e-postası gönderilemiyorsa sistem durmasın — eski davranış: doğrudan temizle.
+if (!$canNotify) {
+    $approved = array_values(array_unique(array_merge($approved, array_map(fn($r) => (int) $r['id'], $stale))));
+    $toRequest = [];
+    $waiting = 0;
+}
 
-audit_log('feature.trash_purge', 'feature_catalog', null, [
-    'count' => count($stale),
-    'ttl_days' => $ttlDays,
-    'feature_ids' => $ids,
-    'labels' => $names,
-    'deleted_at' => $deletedAt,
-]);
+$purged = ['count' => 0, 'ids' => [], 'names' => []];
+if ($approved) {
+    foreach ($approved as $fid) {
+        $delReq->execute([$fid]);
+    }
+    $purged = feature_trash_purge_approved($approved, $pdo);
+    if ($purged['count'] > 0) {
+        audit_log('feature.trash_purge', 'feature_catalog', null, [
+            'count' => $purged['count'],
+            'ttl_days' => $ttlDays,
+            'feature_ids' => $purged['ids'],
+            'labels' => $purged['names'],
+            'approved' => true,
+        ]);
+    }
+}
 
-echo 'Çöp kutusundan ' . count($stale) . ' özellik kalıcı olarak temizlendi: ' . implode(', ', $names) . ".\n";
+$emailed = 0;
+if ($toRequest && $canNotify) {
+    $rowsHtml = '';
+    foreach ($toRequest as $r) {
+        $fid = (int) $r['id'];
+        $token = bin2hex(random_bytes(32));
+        $insertReq->execute([$fid, $token]);
+        $link = 'https://nexustraveltech.com/admin/approve-trash-purge.php?token=' . $token;
+        $rowsHtml .= '<li><b>' . htmlspecialchars($r['label']) . '</b> <span style="color:#6b7774">(' . htmlspecialchars((string) $r['code']) . ' · silindi ' . htmlspecialchars(mb_substr((string) $r['deleted_at'], 0, 10)) . ')</span> — <a href="' . $link . '" style="color:#b0301a">Kalıcı silmeyi onayla →</a></li>';
+        $emailed++;
+    }
+    $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
+        . '<h2 style="margin:0 0 6px">⏳ Son şans: ' . count($toRequest) . ' özellik kalıcı silinmek üzere</h2>'
+        . '<p>' . $ttlDays . ' günlük geri alınabilirlik süresi dolan aşağıdaki özellikler onaylanırsa kalıcı silinir (geri alınamaz). Onaylamak istemiyorsanız bağlantıya tıklamayın — özellik çöp kutusunda kalır; bağlantı <b>3 gün</b> geçerlidir, süre dolunca bu e-posta yeniden istenir.</p>'
+        . '<ul>' . $rowsHtml . '</ul>'
+        . '<p><a href="https://nexustraveltech.com/admin/ozellik-listeleri" style="color:#b0301a">Katalog & sınıflandırma yönetimi →</a></p>'
+        . '</div>';
+    queue_email($adminEmail, 'Son şans: ' . count($toRequest) . ' özellik kalıcı silinmek üzere (onay gerekli)', $body, 'trash_purge_approval', count($toRequest));
+    echo 'Onay e-postası kuyruğa eklendi (' . $emailed . " bağlantı).\n";
+}
 
-$adminEmail = trim((string) platform_setting('admin_alert_email', ''));
-if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+echo 'TTL dolan özellik: ' . count($stale) . ' · onaylı silinen: ' . $purged['count'] . ' · onay bekleyen: ' . $waiting . ' · onay istenen: ' . count($toRequest) . ".\n";
+
+if ($purged['count'] > 0 && $canNotify) {
     $rows = '';
-    foreach ($names as $n) {
+    foreach ($purged['names'] as $n) {
         $rows .= '<li>' . htmlspecialchars($n) . '</li>';
     }
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
-        . '<h2 style="margin:0 0 6px">🗑 Çöp kutusu otomatik temizliği</h2>'
-        . '<p>' . $ttlDays . ' günlük geri alınabilirlik süresi dolan <b style="color:#b0301a">' . count($stale) . '</b> özellik kalıcı olarak silindi (katalog satırı + ilan/bölüm yedekleri). Bu noktadan sonra geri alınamazlar.</p>'
+        . '<h2 style="margin:0 0 6px">🗑 Çöp kutusu temizliği (onaylandı)</h2>'
+        . '<p>Onayınızla <b style="color:#b0301a">' . $purged['count'] . '</b> özellik kalıcı olarak silindi (katalog satırı + ilan/bölüm yedekleri). Bu noktadan sonra geri alınamazlar.</p>'
         . '<ul>' . $rows . '</ul>'
         . '<p><a href="https://nexustraveltech.com/admin/ozellik-listeleri" style="color:#b0301a">Katalog & sınıflandırma yönetimi →</a></p>'
         . '</div>';
-    queue_email($adminEmail, 'Çöp kutusu temizlendi: ' . count($stale) . ' özellik kalıcı olarak silindi', $body, 'feature_trash_purge', count($stale));
-    echo "Admin e-postası kuyruğa eklendi.\n";
+    queue_email($adminEmail, 'Çöp kutusu temizlendi: ' . $purged['count'] . ' özellik kalıcı olarak silindi', $body, 'feature_trash_purge', $purged['count']);
+    echo "Temizlik bilgi e-postası kuyruğa eklendi.\n";
 }

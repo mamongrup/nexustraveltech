@@ -103,6 +103,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // 1) Katalog satırını geri getir (aynı id korunur, sıralama/durum geri gelir).
         db()->prepare('UPDATE property_feature_catalog SET deleted_at=NULL, group_label=?, label=?, sort_order=?, is_active=? WHERE id=?')
             ->execute([$bk['group_label'] ?? '', $label, (int) ($bk['sort_order'] ?? 100), (bool) ($bk['is_active'] ?? true), $featureId]);
+        // Özellik çöp kutusundan çıktığı için bekleyen "son şans" onay kaydını temizle.
+        db()->prepare('DELETE FROM pending_trash_purges WHERE feature_id=?')->execute([$featureId]);
         // 2) İlanlara bölüm bazlı geri ekle (zaten varsa dokunma).
         $props = json_decode((string) ($bk['affected_properties'] ?? '[]'), true) ?: [];
         $restored = 0;
