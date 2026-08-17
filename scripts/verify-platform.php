@@ -66,6 +66,40 @@ try {
         if($orphanMappings>0)$errors[]="channel_room_mappings: {$orphanMappings} yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait).";
         echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, '.$orphanMappings." uyumsuz.\n";
     }
+    // Yeni entegrasyon kolonları özeti — 047/048/049/052 migration'larının durumu tek satırda.
+    // 047: channel_room_mappings.status/suggested_at/suggestion_count · 048: channel_sync_logs.fx_audit
+    // 049: channel_room_mappings.rate_plan_id · 052: channel_room_mappings.suggestion_score
+    $newCols = [
+        'channel_sync_logs.fx_audit' => '048',
+        'channel_room_mappings.status' => '047',
+        'channel_room_mappings.suggested_at' => '047',
+        'channel_room_mappings.suggestion_count' => '047',
+        'channel_room_mappings.rate_plan_id' => '049',
+        'channel_room_mappings.suggestion_score' => '052',
+    ];
+    $newSummary = [];
+    $newColMissing = [];
+    $colStmt2 = $pdo->prepare("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?");
+    foreach ($newCols as $colPath => $mig) {
+        [$tbl, $col] = explode('.', $colPath, 2);
+        if (in_array($tbl, $missing, true)) {
+            $newSummary[] = $colPath . ' ✗ (tablo yok) ' . $mig;
+            $newColMissing[] = $colPath . ' (migration ' . $mig . ' bekliyor) ';
+            continue;
+        }
+        $colStmt2->execute([$tbl]);
+        $colsNow = array_flip($colStmt2->fetchAll(PDO::FETCH_COLUMN));
+        if (isset($colsNow[$col])) {
+            $newSummary[] = $colPath . ' ✓';
+        } else {
+            $newSummary[] = $colPath . ' ✗ (migration ' . $mig . ' bekliyor) ';
+            $newColMissing[] = $colPath . ' (migration ' . $mig . ' bekliyor) ';
+        }
+    }
+    echo 'Yeni entegrasyon kolonları (047/048/049/052): ' . implode(' · ', $newSummary) . ' → ' . (count($newCols) - count($newColMissing)) . '/' . count($newCols) . ' hazır' . PHP_EOL;
+    if ($newColMissing) {
+        $errors[] = 'Yeni entegrasyon kolonları eksik: ' . implode(', ', $newColMissing) . '(scripts/health-check.php migration 047/048/049/052 uygular)';
+    }
     // Migration durumu — schema_migrations takibi (health-check ile aynı; burada uygulanmaz, yalnızca raporlanır).
     $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())");
     $hasCommitCol=(bool)$pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='schema_migrations' AND column_name='commit_hash'")->fetchColumn();
