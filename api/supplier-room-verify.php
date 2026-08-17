@@ -153,6 +153,54 @@ try {
         }
     }
 
+    // Hedef fiyat planı — webhook işleyicisinin kullandığı öncelikle aynı:
+    // 1) girdinin external_rate_plan_id'si onaylı bir kanal plan eşleşmesine denk geliyorsa o plan,
+    // 2) oda eşleştirmesinin rate_plan_id'si, 3) ilk aktif plan (geriye dönük varsayılan).
+    $planInfo = null;
+    $targetPlanId = 0;
+    $planSource = '';
+    $extPlanHint = $entry !== null && isset($entry['external_rate_plan_id']) && trim((string) $entry['external_rate_plan_id']) !== '' ? trim((string) $entry['external_rate_plan_id']) : '';
+    if ($extPlanHint !== '') {
+        $pm2 = $pdo->prepare("SELECT rate_plan_id FROM channel_rate_plan_mappings WHERE channel_connection_id=? AND external_rate_plan_id=? AND status='confirmed' AND rate_plan_id IS NOT NULL LIMIT 1");
+        $pm2->execute([$connId, $extPlanHint]);
+        $v = $pm2->fetchColumn();
+        if ($v !== false && $v !== null) {
+            $targetPlanId = (int) $v;
+            $planSource = 'kanal planı eşleşmesi';
+        }
+    }
+    if ($targetPlanId === 0) {
+        $mm2 = $pdo->prepare('SELECT rate_plan_id FROM channel_room_mappings WHERE channel_connection_id=? AND external_room_id=? AND status=\'confirmed\' AND rate_plan_id IS NOT NULL LIMIT 1');
+        $mm2->execute([$connId, $code]);
+        $v = $mm2->fetchColumn();
+        if ($v !== false && $v !== null) {
+            $targetPlanId = (int) $v;
+            $planSource = 'oda eşleştirmesi';
+        }
+    }
+    if ($targetPlanId === 0) {
+        $fp = $pdo->prepare("SELECT id FROM rate_plans WHERE property_id=? AND status='active' ORDER BY id LIMIT 1");
+        $fp->execute([$propId]);
+        $v = $fp->fetchColumn();
+        if ($v !== false && $v !== null) {
+            $targetPlanId = (int) $v;
+            $planSource = 'ilk aktif plan';
+        }
+    }
+    if ($targetPlanId > 0) {
+        $pp = $pdo->prepare('SELECT id, name, currency FROM rate_plans WHERE id=?');
+        $pp->execute([$targetPlanId]);
+        $pr = $pp->fetch();
+        if ($pr) {
+            $planInfo = [
+                'id' => (int) $pr['id'],
+                'name' => (string) $pr['name'],
+                'currency' => (string) ($pr['currency'] ?: 'EUR'),
+                'source' => $planSource,
+            ];
+        }
+    }
+
     echo json_encode([
         'ok' => true,
         'found' => true,
@@ -173,6 +221,7 @@ try {
         ],
         'fx_audit' => json_decode((string) ($row['fx_audit'] ?? '[]'), true) ?: [],
         'conversion' => $conversion,
+        'plan' => $planInfo,
         'series' => $seriesOut,
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
