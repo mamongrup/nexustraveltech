@@ -12,16 +12,20 @@ declare(strict_types=1);
 //               komut dosyaları diskte mi; --run-jobs ile güvenli tanı görevleri de çalıştırılır
 //   4) WEBHOOK AKIŞI — kanal + ürün seçimi, fx kapsama kontrolü, tanınmayan kod → öneri
 //               akışı (auto_map), --deep ile geçici onaylı eşleştirmeyle gerçek fiyat yazma
-//               + fx_audit kaydı, --http ile canlı HTTP ucu üzerinden kuyruğa alma.
+//               + fx_audit kaydı, --http ile canlı HTTP ucu üzerinden kuyruğa alma
+//               (gerçek curl ikilisi önceliklidir, yoksa PHP file_get_contents yedeği)
+//   5) KİLİT  — zamanlayıcı advisory kilidi (424242) serbest mi; --run-jobs ile tick.php
+//               gerçekten çalıştırılıp {"locked":false,"ran":[...]} doğrulanır
 //
 // Test verisi işlem içi testlerde tek transaction içinde yürütülüp rollback edilir
 // (hiçbir kalıntı kalmaz); --http kuyruk satırı ise hemen silinir.
 //
 // Kullanım:
 //   php scripts/verify-all.php                      # yapı + şema + görev kaydı + webhook (salt)
-//   php scripts/verify-all.php --run-jobs           # güvenli tanı görevlerini de çalıştırır (e-posta kuyruğuna yazabilir)
+//   php scripts/verify-all.php --run-jobs           # güvenli tanı görevleri + tick + kilit doğrulaması
 //   php scripts/verify-all.php --deep               # geçici onaylı eşleştirmeyle fiyat yazma + fx testi
-//   php scripts/verify-all.php --http               # webhook'u canlı HTTP ucu üzerinden de dener
+//   php scripts/verify-all.php --http               # webhook'u canlı HTTP ucu üzerinden (curl) dener
+//   php scripts/verify-all.php --run-jobs --deep --http   # tam uçtan uca koşu
 // Çıkış kodu: 0 = tüm kontroller geçti, 1 = en az bir hata.
 
 require_once __DIR__ . '/../config/database.php';
@@ -326,13 +330,24 @@ try {
                 $ext = (string) ($em->fetchColumn() ?: '');
                 $codeC = 'VER-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
                 $body = json_encode(['scope' => 'rates', 'external_property_id' => $ext, 'currency' => 'USD', 'entries' => [['external_room_id' => $codeC, 'date' => $testDate, 'price' => 100.0]]]);
-                $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/json\r\n", 'content' => $body, 'ignore_errors' => true, 'timeout' => 15]]);
-                $resp = @file_get_contents('https://nexustraveltech.com/api/channel-webhook?token=' . (string) $conn['access_token'], false, $ctx);
+                $url = 'https://nexustraveltech.com/api/channel-webhook?token=' . (string) $conn['access_token'];
+                $curlBin = trim((string) @shell_exec('command -v curl 2>/dev/null'));
+                if ($curlBin !== '') {
+                    $tmp = tempnam(sys_get_temp_dir(), 'vhk');
+                    file_put_contents($tmp, $body);
+                    $resp = (string) shell_exec(escapeshellarg($curlBin) . ' -s -X POST -H "Content-Type: application/json" --data-binary @' . escapeshellarg($tmp) . ' ' . escapeshellarg($url) . ' 2>&1');
+                    @unlink($tmp);
+                    $transport = 'curl';
+                } else {
+                    $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/json\r\n", 'content' => $body, 'ignore_errors' => true, 'timeout' => 15]]);
+                    $resp = @file_get_contents($url, false, $ctx);
+                    $transport = 'file_get_contents (curl bulunamadı)';
+                }
                 $dec = is_string($resp) ? json_decode($resp, true) : null;
                 if (is_array($dec) && ($dec['ok'] ?? false) && ($dec['queued'] ?? false)) {
-                    vok("HTTP webhook: kuyruğa alındı (scope=" . ($dec['scope'] ?? '?') . ')');
+                    vok("HTTP webhook ($transport): kuyruğa alındı (scope=" . ($dec['scope'] ?? '?') . ')');
                 } else {
-                    vbad('HTTP webhook başarısız: ' . (is_string($resp) ? mb_substr($resp, 0, 160) : 'yanıt yok'));
+                    vbad("HTTP webhook ($transport) başarısız: " . (is_string($resp) ? mb_substr($resp, 0, 160) : 'yanıt yok'));
                 }
                 // Kuyruk satırını ve (işleyici araya girerse) oluşabilecek öneriyi temizle.
                 $del = $pdo->prepare("DELETE FROM channel_sync_logs WHERE channel_connection_id=? AND request_payload::text LIKE ? AND created_at > now() - interval '10 minutes'");
@@ -342,6 +357,31 @@ try {
                 vnote("HTTP test kalıntıları temizlendi ('$codeC')");
             }
         }
+    }
+
+    // ───────────────────────────────────────────── 5) ZAMANLAYICI KİLİDİ ─────────────────────────────────────────────
+    vsection('5) ZAMANLAYICI KİLİDİ — advisory lock (424242) + tick');
+    $lockRows = $pdo->query("SELECT pid, coalesce(to_char(now() - xact_start, 'HH24:MI:SS'), '?') AS age FROM pg_stat_activity WHERE pid IN (SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted AND (classid=424242 OR objid=424242))")->fetchAll();
+    if ($lockRows) {
+        vbad('advisory kilit (424242) TAKILI: ' . implode(', ', array_map(fn($r) => 'pid=' . $r['pid'] . ' (' . $r['age'] . ')', $lockRows)) . ' — fix-server.sh veya pg_terminate_backend ile serbest bırakın');
+    } else {
+        vok('advisory kilit (424242) serbest — zamanlayıcı çalışabilir');
+    }
+    if ($runJobs) {
+        [$tk, $tkOut] = vproc([PHP_BINARY, __DIR__ . '/../cron/tick.php']);
+        $tkDec = json_decode(trim((string) $tkOut), true);
+        if (is_array($tkDec) && ($tkDec['locked'] ?? true) === false) {
+            $ran = (array) ($tkDec['ran'] ?? []);
+            $ran === []
+                ? vbad('tick.php kilit serbest ama hiç görev çalıştırmadı (ran boş) — zamanlayıcı kayıtlarını inceleyin')
+                : vok('tick.php: ' . count($ran) . ' görev çalıştı: ' . implode(', ', array_slice($ran, 0, 5)) . (count($ran) > 5 ? ' …' : ''));
+        } elseif (is_array($tkDec) && ($tkDec['locked'] ?? true) === true) {
+            vbad('tick.php: kilit TAKILI — hiçbir görev koşmuyor');
+        } else {
+            vbad('tick.php beklenen JSON çıktısı değil: ' . mb_substr(trim((string) $tkOut), 0, 140));
+        }
+    } else {
+        vnote('tick.php çalıştırmak için: --run-jobs (kilidin gerçekten serbest olduğunu uçtan uca doğrular)');
     }
 
     // ───────────────────────────────────────────── SONUÇ ─────────────────────────────────────────────
