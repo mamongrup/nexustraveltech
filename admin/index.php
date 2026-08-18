@@ -41,6 +41,30 @@ try {
 } catch (Throwable $e) {}
 
 
+// Tüm tedarikçilerdeki toplam yetim eşleştirme sayısı.
+$orphanTotal = 0;
+$orphanBreakdown = [];
+try {
+    $pdo = db();
+    $orphanQueries = [
+        ['channel_room_mappings', 'Oda', "m.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))",
+            'LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id'],
+        ['channel_rate_plan_mappings', 'Plan', '(m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL',
+            'LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id'],
+        ['channel_property_mappings', 'Ürün', 'p.id IS NULL OR c.id IS NULL',
+            'LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id'],
+        ['ical_connections', 'iCal', 'p.id IS NULL', 'LEFT JOIN properties p ON p.id=c.property_id'],
+    ];
+    foreach ($orphanQueries as [$tbl, $label, $where, $join]) {
+        $tblOk = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='$tbl'")->fetchColumn();
+        if (!$tblOk) continue;
+        try {
+            $cnt = (int) $pdo->query("SELECT COUNT(*) FROM $tbl m $join WHERE $where")->fetchColumn();
+            if ($cnt > 0) { $orphanTotal += $cnt; $orphanBreakdown[] = $label . ': ' . $cnt; }
+        } catch (Throwable $e) {}
+    }
+} catch (Throwable $e) {}
+
 // Sohbet ayarları özeti.
 $chatMinLen = max(1, (int) platform_setting('chat_min_length', 5));
 $chatRequireSpace = (bool) platform_setting('chat_require_space', true);
@@ -125,7 +149,7 @@ $timerAvg7 = (int) db()->query("SELECT COALESCE(AVG(duration_ms),0) FROM schedul
     <div class="ip-stats">
       <a class="ip-chip ip-block" href="/nexustraveltech/admin/ziyaretci-sohbet" title="Kötü niyetli trafik için engellenen IP'ler">🚫 Engelli IP: <b><?= (int)$blockCount ?></b></a>
       <a class="ip-chip ip-flag" href="/nexustraveltech/admin/ziyaretci-sohbet" title="İzlemeye alınan (bayraklı) IP'ler">⚠ Bayraklı IP: <b><?= (int)$flagCount ?></b></a>
-      <?php if ($adminPending['total'] > 0): ?><span class="badge-hover"><a class="ip-chip" style="background:#fff6ef;border:1px solid #e0c9a3" href="/nexustraveltech/admin/tedarikci-ilanlari" title="Tüm tedarikçilerin onay bekleyen oda/fiyat planı eşleştirme önerileri — onay tedarikçi panelinde (dağıtım merkezi → bölüm 3)">⏳ Bekleyen öneri: <b><?= (int)$adminPending['total'] ?></b></a><span class="badge-hover-pop"><?= admin_mapping_suggestions_hover_html($adminPending) ?></span></span><?php if ($upcomingPurge["count"] > 0): ?><span class="badge-hover"><a class="ip-chip" style="background:#fff3f1;border:1px solid #f3c4ba" href="/nexustraveltech/admin/ozellik-listeleri#trash" title="3 gun icinde kalici silinecek ozellikler">&#x23F3; Yaklasan silme: <b><?= (int)$upcomingPurge["count"] ?></b></a><span class="badge-hover-pop"><div class="hover-list-title">&#x26A0; Yaklasan kalici silme (3 gun)</div><div style="margin-top:6px"><a href="/nexustraveltech/admin/ozellik-listeleri#trash" style="color:#d9f0b4;font-weight:bold;text-decoration:none">Cöp kutusuna git →</a></div></span></span><?php endif; ?>
+      <?php if ($adminPending['total'] > 0): ?><span class="badge-hover"><a class="ip-chip" style="background:#fff6ef;border:1px solid #e0c9a3" href="/nexustraveltech/admin/tedarikci-ilanlari" title="Tüm tedarikçilerin onay bekleyen oda/fiyat planı eşleştirme önerileri — onay tedarikçi panelinde (dağıtım merkezi → bölüm 3)">⏳ Bekleyen öneri: <b><?= (int)$adminPending['total'] ?></b></a><span class="badge-hover-pop"><?= admin_mapping_suggestions_hover_html($adminPending) ?></span></span><?php if ($upcomingPurge["count"] > 0): ?><span class="badge-hover"><a class="ip-chip" style="background:#fff3f1;border:1px solid #f3c4ba" href="/nexustraveltech/admin/ozellik-listeleri#trash" title="3 gun icinde kalici silinecek ozellikler">&#x23F3; Yaklasan silme: <b><?= (int)$upcomingPurge["count"] ?></b></a><span class="badge-hover-pop"><div class="hover-list-title">&#x26A0; Yaklasan kalici silme (3 gun)</div><div style="margin-top:6px"><a href="/nexustraveltech/admin/ozellik-listeleri#trash" style="color:#d9f0b4;font-weight:bold;text-decoration:none">Cöp kutusuna git →</a></div></span></span><?php endif; ?><?php if ($orphanTotal > 0): ?><span class="badge-hover"><a class="ip-chip" style="background:#ffe2de;border:1px solid #e8b4b0" href="/nexustraveltech/admin/orphan-mappings" title="Silinmiş oda/plan/kanal/ürüne ait bozuk eşleştirme satırları">🧹 Yetim: <b><?= (int)$orphanTotal ?></b></a><span class="badge-hover-pop"><div class="hover-list-title">⚠ Yetim eşleştirmeler (<?= (int)$orphanTotal ?>)</div><?php foreach ($orphanBreakdown as $ob): ?><div class="hover-list-row">· <?= htmlspecialchars($ob) ?></div><?php endforeach; ?><div style="margin-top:6px"><a href="/nexustraveltech/admin/orphan-mappings" style="color:#d9f0b4;font-weight:bold;text-decoration:none">Yönetim sayfasına git →</a></div></span></span><?php endif; ?>
 <?php endif; ?>
     </div>
 
