@@ -41,6 +41,7 @@ function scheduler_seed_defaults(): void
         ['nexus-verify-all', 'Günlük uçtan uca doğrulama (verify-all)', 'cron/verify-all-alert.php', '10 7 * * *'],
         ['nexus-verify-platform', 'Günlük platform doğrulaması (verify-platform)', 'cron/verify-platform-alert.php', '25 7 * * *'],
         ['nexus-admin-alert-test', 'Admin uyarı e-postası hazırlık kontrolü (kuru)', 'cron/test-admin-alerts.php', '0 7 * * 1'],
+        ['nexus-daily-auto-test', 'Günlük otomatik modül testi', 'cron/daily-auto-test.php', '30 7 * * *'],
         ['nexus-alert-test-delivery', 'Test e-postası teslimat doğrulaması', 'cron/verify-alert-test-delivery.php', '*/30 * * * *'],
         ['nexus-room-mapping-audit', 'Oda eşleştirme tutarlılık denetimi', 'cron/audit-room-mappings.php', '30 5 * * *'],
         ['nexus-suggestion-cleanup', 'Onay bekleyen öneri TTL temizliği (30 gün)', 'cron/clean-expired-suggestions.php', '0 5 * * *'],
