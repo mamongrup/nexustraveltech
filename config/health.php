@@ -732,12 +732,14 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $rebuiltTables = []; // gerçekten düşürülen tablolar — onarım sonrası doğrulama (3b) bunları kontrol eder
         $backupFile = null; // --backup-schema: düşürülecek tabloların canlı şeması bu dosyaya yazılır
         $backedUp = [];
+        $repairChanges = []; // --json: tablo bazlı karar kaydı (ok/skipped_nonempty/dropped/...)
         foreach ($repairMap as $table => $spec) {
             [$expected, $migs] = $spec;
             $expectedCols = is_array($expected) ? $expected : [$expected];
             $exists = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='" . $table . "'")->fetchColumn();
             if (!$exists) {
                 $out .= "· " . $table . " yok — atlanıyor (migration kurar)\n";
+                $repairChanges[$table] = ['status' => 'missing', 'note' => 'tablo yok — migration kuracak'];
                 continue;
             }
             $missingCols = [];
@@ -749,18 +751,21 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             }
             if ($missingCols === []) {
                 $out .= "✓ " . $table . " beklenen şemada (" . count($expectedCols) . " kolon) — onarım gerekmiyor\n";
+                $repairChanges[$table] = ['status' => 'ok', 'columns' => count($expectedCols), 'note' => 'beklenen şemada — onarım gerekmiyor'];
                 continue;
             }
             $count = (int) $pdo->query("SELECT COUNT(*) FROM \"" . $table . "\"")->fetchColumn();
             if ($count > 0) {
                 $skippedNonEmpty[] = $table . " (" . $count . " satır — eksik kolon: " . implode(', ', $missingCols) . ")";
                 $out .= "⚠ " . $table . " yabancı şemada ama DOLU (" . $count . " satır) — DÜŞÜRÜLMEDİ, elle inceleyin (eksik: " . implode(', ', $missingCols) . ")\n";
+                $repairChanges[$table] = ['status' => 'skipped_nonempty', 'rows' => $count, 'missing_columns' => $missingCols, 'note' => 'DOLU tablo — düşürülmedi, elle veri taşıma gerekir'];
                 continue;
             }
             if ($migs === []) {
                 // Zincir güvenli değil (ek kolonlar başka migration'larda veya dosya bulunamadı):
                 // düşürmek şemayı tam kuramaz — yalnızca raporlanır, elle müdahale önerilir.
                 $out .= "⚠ " . $table . " yabancı şemada ama migration zinciri güvenli değil (ek kolonlar başka migration'larda) — DÜŞÜRÜLMEDİ, elle inceleyin (eksik: " . implode(', ', $missingCols) . ")\n";
+                $repairChanges[$table] = ['status' => 'unsafe_chain', 'missing_columns' => $missingCols, 'note' => 'migration zinciri güvenli değil — düşürülmedi, elle inceleyin'];
                 continue;
             }
             foreach ($migs as $mig) {
@@ -769,6 +774,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             if ($dryRun) {
                 $dryRunDropped++;
                 $out .= "→ [dry-run] " . $table . " yabancı şemalı ve boş — DÜŞÜRÜLECEK; " . implode(', ', $migs) . " yeniden uygulanacak" . ($backupSchema ? ' (--backup-schema: düşürmeden önce canlı şema yedeklenecek)' : '') . "\n";
+                $repairChanges[$table] = ['status' => 'drop_candidate', 'missing_columns' => $missingCols, 'migrations' => $migs, 'backup_schema' => $backupSchema, 'note' => 'dry-run — düşürülecek (gerçek modda bu karar uygulanır)'];
                 continue;
             }
             // Gerçek modda onay — otomasyon (cron) --yes ister; etkileşimli terminal yoksa ve
@@ -776,6 +782,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             $interactive = function_exists('posix_isatty') && @posix_isatty(STDIN);
             if (!$yes && !$interactive) {
                 $out .= "→ " . $table . " yabancı şemalı ve boş — DÜŞÜRÜLMEDİ (etkileşimli terminal yok; onay için --yes ekleyin)\n";
+                $repairChanges[$table] = ['status' => 'skipped_no_confirm', 'missing_columns' => $missingCols, 'migrations' => $migs, 'note' => 'etkileşimli terminal yok ve --yes verilmedi — düşürülmedi'];
                 continue;
             }
             if (!$yes) {
@@ -783,6 +790,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 $ans = strtolower(trim((string) fgets(STDIN)));
                 if (!in_array($ans, ['e', 'evet', 'y', 'yes'], true)) {
                     $out .= "→ " . $table . " düşürme onaylanmadı — atlandı\n";
+                    $repairChanges[$table] = ['status' => 'declined', 'missing_columns' => $missingCols, 'migrations' => $migs, 'note' => 'etkileşimli onay reddedildi'];
                     continue;
                 }
             }
@@ -814,11 +822,13 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 $out .= "→ " . $table . " yabancı şemalı ve boş — düşürüldü; " . implode(', ', $migs) . " zinciriyle yeniden kurulacak\n";
                 $dropped++;
                 $rebuiltTables[$table] = ['cols' => $expectedCols, 'migs' => $migs]; // 3b doğrulaması + denetimi için kaydet
+                $repairChanges[$table] = ['status' => 'dropped', 'missing_columns' => $missingCols, 'migrations' => $migs, 'backed_up' => in_array($table, $backedUp, true), 'note' => 'tablo düşürüldü; ' . implode(', ', $migs) . ' zinciriyle yeniden kurulacak'];
                 // Onarım denetimi: ne zaman, hangi tablo, hangi migration zinciri yeniden kurulacak.
                 audit_log('health.repair_drop', 'schema', null, ['table' => $table, 'migrations' => $migs, 'missing_columns' => $missingCols, 'backup' => $backupFile !== null ? basename((string) $backupFile) : null, 'note' => 'yabancı şema düşürüldü; migration zinciri tabloyu yeniden kuracak'], 'health-check');
             } catch (Throwable $e) {
                 $out .= "✗ " . $table . " düşürülemedi: " . $e->getMessage() . "\n";
                 $errors[] = $table . ' onarılamadı: ' . $e->getMessage();
+                $repairChanges[$table] = ['status' => 'drop_failed', 'missing_columns' => $missingCols, 'error' => $e->getMessage(), 'note' => 'düşürme başarısız — elle müdahale gerekir'];
             }
         }
         // Yetim eşleştirmeleri temizle — paylaşılan health_orphan_cleanup() (aynı mantık
@@ -1054,6 +1064,24 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 $out .= "⚠ Onarım özeti e-postası kuyruğa alınamadı: " . $e->getMessage() . "\n";
             }
         }
+        // --json: onarım değişiklik özeti — hangi tablo düşürüldü/atlandı, tekrar uygulanacak
+        // migration zinciri, yedek durumu ve ek işlemler (yetim/öneri/sahiplik). İnsan çıktısıyla
+        // birebir aynı kararları makinece okunabilir yapıda taşır.
+        $checks['repair'] = [
+            'status' => ($dryRun ? $dryRunDropped : $dropped) > 0 || $skippedNonEmpty !== [] ? ($dryRun ? 'dry_run_pending' : 'done') : 'clean',
+            'dry_run' => (bool) $dryRun,
+            'summary' => [
+                'dropped' => $dropped,
+                'dry_run_dropped' => $dryRunDropped,
+                'skipped_nonempty' => count($skippedNonEmpty),
+                'orphans_removed' => (int) ($orphanRes['removed'] ?? 0),
+                'stale_confirmations' => $staleConfirmNote !== '' ? count(array_filter(explode(';', rtrim($staleConfirmNote, ';')))) : 0,
+                'ownership_transferred' => (int) ($ownershipTransferred ?? 0),
+                'backed_up' => $backedUp,
+                'backup_file' => $backupFile !== null ? basename((string) $backupFile) : null,
+            ],
+            'tables' => $repairChanges,
+        ];
     }
 
     // --- 3) Migration durumu ---
@@ -1300,6 +1328,14 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         } else {
             $out .= "✓ Onarım sonrası doğrulama başarılı — düşürülen tabloların tümü beklenen kolonlarla yeniden kuruldu.\n";
         }
+        // --json: onarım sonrası doğrulama sonucu — her yeniden kurulan tablonun beklenen
+        // kolonları karşılayıp karşılamadığı makinece okunabilir (checks.repair.verify).
+        $checks['repair']['verify'] = [
+            'status' => $postFail === [] ? 'ok' : 'error',
+            'rebuilt' => count($rebuiltTables),
+            'failed' => $postFail,
+            'tables' => array_keys($rebuiltTables),
+        ];
     }
 
     // --- 4) Operasyonel uyarılar (son 24 saat) ---
