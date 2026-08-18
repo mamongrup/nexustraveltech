@@ -8,6 +8,7 @@ require __DIR__ . '/../config/platform_settings.php';
 require __DIR__ . '/../config/ai_settings.php';
 require __DIR__ . '/../config/chat_topics.php';
 require __DIR__ . '/../config/scheduler.php';
+require __DIR__ . '/../config/mapping_suggestions.php';
 
 require_admin();
 
@@ -19,6 +20,7 @@ $total = (int) db()->query('SELECT COUNT(*) FROM early_access_leads')->fetchColu
 $identityAlerts = (int) db()->query("SELECT COUNT(*) FROM admin_alerts WHERE is_read=false AND alert_type='identity_verification_failed'")->fetchColumn();
 $blockCount = (int) db()->query("SELECT COUNT(*) FROM blocked_ips WHERE action='block'")->fetchColumn();
 $flagCount = (int) db()->query("SELECT COUNT(*) FROM blocked_ips WHERE action='flag'")->fetchColumn();
+$adminPending = admin_pending_mapping_suggestions(db());
 
 // Sohbet ayarları özeti.
 $chatMinLen = max(1, (int) platform_setting('chat_min_length', 5));
@@ -84,6 +86,7 @@ $timerAvg7 = (int) db()->query("SELECT COALESCE(AVG(duration_ms),0) FROM schedul
   <title>NEXUS Admin Panel</title>
   <style>
     body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1160px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.pill{display:inline-block;background:#d7ff48;padding:10px 14px;font-weight:800}.logout{color:#10211f}table{width:100%;border-collapse:collapse;margin-top:28px;background:#fff}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:13px;font-size:14px}th{font-size:12px;text-transform:uppercase;color:#64716d}tr:hover td{background:#fbfcf8}.empty{padding:30px;background:#fff;margin-top:28px}.muted{color:#64716d}.ip-stats{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.ip-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;font-size:13px;font-weight:700;text-decoration:none;border-radius:6px}.ip-chip b{font-size:17px}.ip-block{background:#ffe2de;color:#8e2410}.ip-flag{background:#fdf0d8;color:#8a5a10}.ip-chip:hover{opacity:.85}.chat-card{background:#fff;border:1px solid #e1e5de;padding:14px 16px;margin:18px 0;display:flex;flex-wrap:wrap;gap:16px 28px;align-items:flex-start}.chat-card h3{margin:0 0 8px;font-size:14px;flex-basis:100%}.chat-card .item{font-size:12px;color:#64716d}.chat-card .item b{font-size:16px;display:block;color:#10211f;margin-top:2px}.chat-card .ok{color:#0d7a4a}.chat-card .warn{color:#a86026}.chat-card .edit{margin-left:auto;font-size:13px;font-weight:700;color:#0d7a4a;text-decoration:none;align-self:center}.chat-card .week{display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:5px}.chat-card .week i{flex:1;background:#e8a33d;border-radius:2px 2px 0 0;display:block;min-width:5px}.tchip{display:inline-block;background:#f2f4ef;border:1px solid #e1e5de;padding:3px 10px;border-radius:13px;font-size:12px;margin:4px 6px 0 0;color:#10211f}.tchip b{display:inline;font-size:12px;color:#0d7a4a}
+    .badge-hover{position:relative;display:inline-block;cursor:default}.badge-hover .badge-hover-pop{display:none;position:absolute;z-index:60;left:50%;bottom:calc(100% + 9px);transform:translateX(-50%);min-width:280px;max-width:380px;background:#10211f;color:#eef3ee;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.55;box-shadow:0 6px 18px rgba(16,33,31,.28);white-space:normal;text-align:left}.badge-hover .badge-hover-pop::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#10211f}.badge-hover:hover .badge-hover-pop,.badge-hover:focus-within .badge-hover-pop{display:block}.badge-hover .hover-list-title{margin:6px 0 4px;font-weight:700;color:#d9c48a}.badge-hover .hover-list-title:first-child{margin-top:0}.badge-hover .hover-list-row{padding:2px 0;word-break:break-word}.badge-hover .hover-list-row code{background:rgba(255,255,255,.12);border-radius:4px;padding:0 4px;font-family:monospace}.badge-hover .hover-list-row small{color:#9fb3ad}
   </style>
 </head>
 <body>
@@ -103,6 +106,7 @@ $timerAvg7 = (int) db()->query("SELECT COALESCE(AVG(duration_ms),0) FROM schedul
     <div class="ip-stats">
       <a class="ip-chip ip-block" href="/nexustraveltech/admin/ziyaretci-sohbet" title="Kötü niyetli trafik için engellenen IP'ler">🚫 Engelli IP: <b><?= (int)$blockCount ?></b></a>
       <a class="ip-chip ip-flag" href="/nexustraveltech/admin/ziyaretci-sohbet" title="İzlemeye alınan (bayraklı) IP'ler">⚠ Bayraklı IP: <b><?= (int)$flagCount ?></b></a>
+      <?php if ($adminPending['total'] > 0): ?><span class="badge-hover"><a class="ip-chip" style="background:#fff6ef;border:1px solid #e0c9a3" href="/nexustraveltech/admin/tedarikci-ilanlari" title="Tüm tedarikçilerin onay bekleyen oda/fiyat planı eşleştirme önerileri — onay tedarikçi panelinde (dağıtım merkezi → bölüm 3)">⏳ Bekleyen öneri: <b><?= (int)$adminPending['total'] ?></b></a><span class="badge-hover-pop"><?= admin_mapping_suggestions_hover_html($adminPending) ?></span></span><?php endif; ?>
     </div>
 
     <div class="chat-card">
