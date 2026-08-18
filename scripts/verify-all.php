@@ -23,7 +23,7 @@ declare(strict_types=1);
 // Kullanım:
 //   php scripts/verify-all.php                      # yapı + şema + görev kaydı + webhook (salt)
 //   php scripts/verify-all.php --run-jobs           # güvenli tanı görevleri + tick + kilit doğrulaması
-//   php scripts/verify-all.php --deep               # geçici onaylı eşleştirmeyle fiyat yazma + fx testi
+//   php scripts/verify-all.php --deep               # geçici onaylı eşleştirmeyle fiyat yazma + fx testi + plan ipucu (oda+plan önerisi)
 //   php scripts/verify-all.php --http               # webhook'u canlı HTTP ucu üzerinden (curl) dener
 //   php scripts/verify-all.php --run-jobs --deep --http   # tam uçtan uca koşu
 // Çıkış kodu: 0 = tüm kontroller geçti, 1 = en az bir hata.
@@ -301,6 +301,71 @@ try {
                 }
             } finally {
                 $pdo->rollBack();
+            }
+
+            // Test A2 (--deep) — plan ipucu çözümü: tanınmayan ODA + FİYAT PLANI kodlu webhook,
+            // oda önerisiyle birlikte fiyat planı önerisi de oluşturmalı; oda önerisinin planı
+            // ipucuyla (external_rate_plan_id) çözülen planla aynı olmalı (tek transaction, rollback).
+            // Oda/plan kodları gerçek adlardan türetilir (benzerlik ~1.0, eşiği garantili aşar)
+            // ama zaten eşleştirilmemiş olmaları garanti edilir — öneri akışı tetiklenir.
+            if ($deep) {
+                $rSel = $pdo->prepare("SELECT id, name FROM room_types WHERE property_id=? AND status='active' ORDER BY id LIMIT 1");
+                $rSel->execute([$propId]);
+                $rRow = $rSel->fetch();
+                $pSel = $pdo->prepare("SELECT id, name FROM rate_plans WHERE property_id=? AND status='active' ORDER BY id LIMIT 1");
+                $pSel->execute([$propId]);
+                $pRow = $pSel->fetch();
+                if (!$rRow || !$pRow) {
+                    vnote('--deep (plan ipucu): aktif oda tipi / fiyat planı yok — test atlandı.');
+                } elseif (!$autoMap) {
+                    vnote('--deep (plan ipucu): channel_webhook_auto_map kapalı — öneri akışı atlandı.');
+                } else {
+                    $codeBase = function (string $name): string { return trim(strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '-', $name)), '-'); };
+                    $codeA2 = $codeBase((string) $rRow['name']);
+                    $occupied = $pdo->prepare('SELECT 1 FROM channel_room_mappings WHERE channel_connection_id=? AND external_room_id=? LIMIT 1');
+                    $occPlan = $pdo->prepare('SELECT 1 FROM channel_rate_plan_mappings WHERE channel_connection_id=? AND external_rate_plan_id=? LIMIT 1');
+                    $tries = 0;
+                    do {
+                        $occupied->execute([(int) $conn['id'], $codeA2]);
+                        if (!$occupied->fetchColumn()) break;
+                        $codeA2 .= '-' . strtoupper(substr(bin2hex(random_bytes(1)), 0, 2));
+                        $tries++;
+                    } while ($tries < 5);
+                    $planCodeA2 = $codeBase((string) $pRow['name']);
+                    $tries = 0;
+                    do {
+                        $occPlan->execute([(int) $conn['id'], $planCodeA2]);
+                        if (!$occPlan->fetchColumn()) break;
+                        $planCodeA2 .= '-' . strtoupper(substr(bin2hex(random_bytes(1)), 0, 2));
+                        $tries++;
+                    } while ($tries < 5);
+                    $pdo->beginTransaction();
+                    try {
+                        $logA2 = ['channel_connection_id' => (int) $conn['id'], 'property_id' => $propId];
+                        $payloadA2 = ['scope' => 'rates', 'currency' => 'USD', 'entries' => [['external_room_id' => $codeA2, 'external_rate_plan_id' => $planCodeA2, 'date' => $testDate, 'price' => 100.0]]];
+                        $resA2 = channel_webhook_apply($logA2, $payloadA2);
+                        $sug2 = $pdo->prepare('SELECT status, rate_plan_id FROM channel_room_mappings WHERE channel_connection_id=? AND external_room_id=?');
+                        $sug2->execute([(int) $conn['id'], $codeA2]);
+                        $sug2Row = $sug2->fetch();
+                        $psug2 = $pdo->prepare('SELECT status, rate_plan_id FROM channel_rate_plan_mappings WHERE channel_connection_id=? AND external_rate_plan_id=?');
+                        $psug2->execute([(int) $conn['id'], $planCodeA2]);
+                        $psug2Row = $psug2->fetch();
+                        $roomOk2 = $resA2['ok'] && $sug2Row && $sug2Row['status'] === 'suggested' && (int) ($resA2['applied'] ?? 0) === 0;
+                        $roomOk2
+                            ? vok("plan ipucu: '$codeA2' oda önerisi oluştu (applied=0)")
+                            : vbad("plan ipucu: '$codeA2' oda önerisi oluşmadı (ok=" . var_export($resA2['ok'], true) . ', applied=' . (int) ($resA2['applied'] ?? 0) . ')');
+                        $planOk2 = $psug2Row && $psug2Row['status'] === 'suggested' && (int) $psug2Row['rate_plan_id'] > 0;
+                        $planOk2
+                            ? vok("plan ipucu: '$planCodeA2' → plan #" . (int) ($psug2Row['rate_plan_id'] ?? 0) . ' önerisi oluştu (onay bekliyor)')
+                            : vbad("plan ipucu: '$planCodeA2' beklenen plan önerisi oluşmadı (status=" . var_export($psug2Row['status'] ?? null, true) . ', rate_plan_id=' . var_export($psug2Row['rate_plan_id'] ?? null, true) . ')');
+                        $hintOk2 = $sug2Row && $psug2Row && (int) ($sug2Row['rate_plan_id'] ?? 0) > 0 && (int) $sug2Row['rate_plan_id'] === (int) $psug2Row['rate_plan_id'];
+                        $hintOk2
+                            ? vok('plan ipucu çözümü: oda önerisi plan #' . (int) ($sug2Row['rate_plan_id'] ?? 0) . ' ipucuyla çözüldü — plan önerisiyle aynı')
+                            : vbad('plan ipucu çözümü: oda önerisi planı plan önerisiyle eşleşmedi');
+                    } finally {
+                        $pdo->rollBack();
+                    }
+                }
             }
 
             // Test B (--deep) — geçici onaylı eşleştirmeyle gerçek fiyat yazma + fx_audit (rollback).
