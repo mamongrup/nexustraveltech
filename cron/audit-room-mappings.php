@@ -16,7 +16,7 @@ require_once __DIR__ . '/../config/platform_settings.php';
 $pdo = db();
 $adminEmail = trim((string) platform_setting('admin_alert_email', ''));
 
-// 3 tablonun tarama tanımı — birbirine paralel.
+// 3 tablonun tarama tanımı.
 $tableSpecs = [
     'channel_room_mappings' => [
         'label'       => 'Oda eşleştirmesi',
@@ -57,7 +57,6 @@ function orphanReason(array $o, string $fn): string {
         if ($o['channel_name'] === null) return 'kanal silinmiş';
         return 'uyumsuz';
     }
-    // property
     if ($o['property_name'] === null) return 'ürün silinmiş';
     if ($o['channel_name'] === null) return 'kanal silinmiş';
     return 'uyumsuz';
@@ -116,21 +115,43 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
 
     foreach ($allOrphans as $tbl => $rows) {
         $spec = $tableSpecs[$tbl];
-        $body .= '<h3 style="margin:16px 0 6px;font-size:13px">' . htmlspecialchars($spec['label']) . ' — ' . count($rows) . ' yetim</h3>';
-        $body .= '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px">';
-        $body .= '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">ID</th>'
-            . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Dış kod</th>'
-            . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Kanal</th>'
-            . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Sorun</th></tr>';
+        // Kanal/ürün bazında grupla — dağıtım merkezi bağlantısı için.
+        $groups = [];
         foreach ($rows as $o) {
-            $body .= '<tr>'
-                . '<td style="padding:7px 12px;border:1px solid #e1e5de">#' . (int) $o['id'] . '</td>'
-                . '<td style="padding:7px 12px;border:1px solid #e1e5de"><code>' . htmlspecialchars((string) $o['code']) . '</code></td>'
-                . '<td style="padding:7px 12px;border:1px solid #e1e5de">' . htmlspecialchars((string) ($o['channel_name'] ?? '—')) . '</td>'
-                . '<td style="padding:7px 12px;border:1px solid #e1e5de;color:#8e2410">' . htmlspecialchars(orphanReason($o, $spec['reasonFn'])) . '</td>'
-                . '</tr>';
+            $key = (int) $o['channel_connection_id'] . '|' . (int) $o['property_id'];
+            if (!isset($groups[$key])) {
+                $groups[$key] = [
+                    'channel'    => trim((string) ($o['channel_name'] ?? '')) !== '' ? (string) $o['channel_name'] : ('#kanal ' . (int) $o['channel_connection_id']),
+                    'property'   => trim((string) ($o['property_name'] ?? '')) !== '' ? (string) $o['property_name'] : ('#ürün ' . (int) $o['property_id']),
+                    'conn_id'    => (int) $o['channel_connection_id'],
+                    'prop_id'    => (int) $o['property_id'],
+                    'count'      => 0,
+                    'codes'      => [],
+                ];
+            }
+            $groups[$key]['count']++;
+            $groups[$key]['codes'][] = htmlspecialchars((string) $o['code']) . ' — ' . htmlspecialchars(orphanReason($o, $spec['reasonFn']));
         }
-        $body .= '</table>';
+        uasort($groups, fn($a, $b) => $b['count'] - $a['count']);
+
+        $body .= '<h3 style="margin:16px 0 6px;font-size:13px">' . htmlspecialchars($spec['label']) . ' — ' . count($rows) . ' yetim (' . count($groups) . ' kanal/ürün)</h3>';
+
+        // Kanal/ürün grupları — her biri dağıtım merkezi bağlantısıyla.
+        foreach ($groups as $g) {
+            $distUrl = 'https://nexustraveltech.com/tedarikci/dagitim-merkezi?connection_id=' . $g['conn_id'] . '&property_id=' . $g['prop_id'] . '#sec-room-map';
+            $body .= '<div style="margin:8px 0;padding:8px 12px;background:#fdf9f2;border:1px solid #e0c9a3;border-radius:6px">';
+            $body .= '<b style="font-size:12px"><a href="' . $distUrl . '" style="color:#405b13;text-decoration:none">' . htmlspecialchars($g['channel']) . ' → ' . htmlspecialchars($g['property']) . '</a></b>';
+            $body .= ' — <span style="color:#b0301a;font-weight:bold">' . $g['count'] . ' yetim</span>';
+            $body .= ' <a href="' . $distUrl . '" style="font-size:11px;color:#405b13;text-decoration:underline;margin-left:6px">dağıtım merkezi →</a>';
+            $body .= '<ul style="margin:4px 0 0;padding-left:18px;font-size:12px;color:#64716d">';
+            foreach (array_slice($g['codes'], 0, 5) as $c) {
+                $body .= '<li><code>' . $c . '</code></li>';
+            }
+            if (count($g['codes']) > 5) {
+                $body .= '<li style="color:#999">… +' . (count($g['codes']) - 5) . ' daha</li>';
+            }
+            $body .= '</ul></div>';
+        }
     }
 
     $body .= '<p style="margin-top:18px;font-size:12px;color:#64716d">Tek tablo denetimi: <code>php scripts/verify-platform.php</code> · Onarım: <code>php scripts/health-check.php --repair</code></p>';
