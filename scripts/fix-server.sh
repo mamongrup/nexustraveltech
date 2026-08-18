@@ -1,26 +1,31 @@
 #!/bin/bash
 # NEXUS sunucu onarım betiği — tek komutla tam zincir:
-#   1) origin remote'unu doğrular (gerçek GitHub'a bakmıyorsa düzeltir — sunucuların
-#      en sık takıldığı nokta: eski remote yüzünden fetch hep aynı eski commit'i getirir)
+#   1) origin remote'u doğrular (gerçek GitHub'a bakmıyorsa düzeltir)
 #   2) En son kodu çeker (git fetch + reset --hard origin/main)
 #   3) Zamanlayıcı advisory kilidini (424242) tutan oturumu sonlandırır
 #   4) App DB kullanıcısını secrets.php'den OKUR ve tüm public şema sahipliğini
-#      (tablo + dizi + görünüm + schema) o kullanıcıya devreder
-#   5) health-check: bekleyen migration'ları uygular — 'must be owner' olursa
-#      sahipliği otomatik devredip SQL'i bir kez yeniden dener
-#   6) health-check --repair --backup-schema --yes: yabancı şemalı BOŞ tabloları
-#      önce şemasını yedekleyip düşürür, migration zinciriyle yeniden kurar
-#   7) health-check (onarım sonrası doğrulama) + verify-platform + verify-all
+#      o kullanıcıya devreder
+#   5) health-check: bekleyen migration'ları uygular
+#   6) health-check --repair --backup-schema --yes: yabancı şemalı tabloları yeniden kurar
+#   7) health-check + verify-platform + verify-all (doğrulama)
 #
-# Kök (root) olarak TEK KOMUT:
-#   bash scripts/fix-server.sh
+# Kullanım:
+#   bash scripts/fix-server.sh                 # tam onarım + doğrulama
+#   bash scripts/fix-server.sh --verify-only   # hi285cir degisiklik yapmadan sadece dogrulama
 #
-# Tek satır kopyala-yapıştır:
+# Tek satır:
 #   cd /var/www/vhosts/nexustraveltech.com/httpdocs && bash scripts/fix-server.sh
-#
-# Not: Sahiplik devri, sunucunun postgres OS kullanıcısı üzerinden sudo gerektirir
-# (root + `sudo -u postgres`). Betik hiçbir şeyi onaysız silmez; DOLU tablolara
-# dokunmaz (raporlar).
+
+# --verify-only: hicbir sey degistirmeden yalnizca dogrulama modu
+VERIFY_ONLY=0
+for arg in "$@"; do
+  case "$arg" in
+    --verify-only) VERIFY_ONLY=1 ;;
+  esac
+done
+if [ "$VERIFY_ONLY" -eq 1 ]; then
+  echo "--> --verify-only: degisiklik yapilmayacak, yalnizca dogrulama"
+fi
 
 set -e
 cd "$(dirname "$0")/.." || exit 1
@@ -30,6 +35,8 @@ APP_DB_USER=$("$PHP_BIN" -r '$c=require "config/secrets.php"; echo $c["db_user"]
 APP_DB_NAME=$("$PHP_BIN" -r '$c=require "config/secrets.php"; echo $c["db_name"] ?? "nexus_traveltech";')
 REPO_URL=$(git remote get-url origin 2>/dev/null || echo "")
 echo "→ DB: $APP_DB_NAME · Sahip: $APP_DB_USER · PHP: $PHP_BIN"
+
+if [ "$VERIFY_ONLY" -eq 0 ]; then
 
 echo
 echo "=== 1) ORIGIN REMOTE DOĞRULAMA ==="
@@ -70,13 +77,15 @@ SQL
 sudo -u postgres psql -d "$APP_DB_NAME" -c "SELECT tableowner, count(*) FROM pg_tables WHERE schemaname='public' GROUP BY tableowner;"
 
 echo
-echo "=== 5) MİGRASYON (health-check — 'must be owner' otomatik çözülür) ==="
+echo "=== 5) MİGRASYON (health-check) ==="
 "$PHP_BIN" scripts/health-check.php || true
 
 echo
-echo "=== 6) ONARIM (yabancı şemalı BOŞ tablolar; önce şema yedeği) ==="
+echo "=== 6) ONARIM (yabancı şemalı tablolar; önce şema yedeği) ==="
 "$PHP_BIN" scripts/health-check.php --repair --dry-run || true
 "$PHP_BIN" scripts/health-check.php --repair --backup-schema --yes || true
+
+fi # --verify-only: Steps 1-6 bitti
 
 echo
 echo "=== 7) DOĞRULAMA ==="
@@ -85,8 +94,6 @@ echo "=== 7) DOĞRULAMA ==="
 "$PHP_BIN" scripts/verify-platform.php || true
 "$PHP_BIN" scripts/verify-all.php || true
 
-echo
-echo "=== BİTTİ — üstte 'SONUÇ: ... sorun' veya '✗' satırı kalmadıysa sunucu sağlıklı ==="
 echo
 # ─── ÖZET: tek satır durum raporu ───
 ERRORS=0
