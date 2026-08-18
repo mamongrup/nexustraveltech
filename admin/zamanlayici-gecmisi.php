@@ -169,6 +169,31 @@ try {
         $orphanByDay[$d] += $t;
     }
 } catch (Throwable $e) {}
+// Kuyruk durumu trendi — channel_sync_logs'tan son 30 günün günlük queued/failed/success sayıları.
+$qDays = 30;
+$qByDay = [];
+try {
+    $qQ = $pdo->query("SELECT created_at::date d, status, COUNT(*) c FROM channel_sync_logs WHERE created_at >= CURRENT_DATE - " . ($qDays - 1) . " AND status IN ('queued','failed','success') GROUP BY 1, 2");
+    foreach ($qQ->fetchAll() as $qr) {
+        $qd = (string) $qr['d'];
+        if (!isset($qByDay[$qd])) $qByDay[$qd] = ['queued' => 0, 'failed' => 0, 'success' => 0];
+        $qByDay[$qd][(string) $qr['status']] = (int) $qr['c'];
+    }
+} catch (Throwable $e) {}
+$qChart = [];
+$qMax = 1;
+$qTotalQueued = 0; $qTotalFailed = 0; $qTotalSuccess = 0;
+for ($i = $qDays - 1; $i >= 0; $i--) {
+    $d = date('Y-m-d', time() - $i * 86400);
+    $info = $qByDay[$d] ?? ['queued' => 0, 'failed' => 0, 'success' => 0];
+    $total = $info['queued'] + $info['failed'] + $info['success'];
+    $qMax = max($qMax, $total);
+    $qTotalQueued += $info['queued'];
+    $qTotalFailed += $info['failed'];
+    $qTotalSuccess += $info['success'];
+    $qChart[] = ['d' => $d, 'queued' => $info['queued'], 'failed' => $info['failed'], 'success' => $info['success'], 'total' => $total];
+}
+
 $orphanChart = [];
 $orphanTotal = 0;
 $orphanMax = 1;
@@ -283,6 +308,26 @@ $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başar�
 <?php endforeach; ?>
 </div>
 <p class="muted" style="margin:6px 0 0"><b><?= $orphanTotal ?></b> satır temizlendi · <?= $orphanActiveDays ?>/<?= $orphanDays ?> günde temizlik yapıldı · en yüksek gün <?= $orphanMax ?> satır <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#b26a00;vertical-align:middle"></span></p>
+</section>
+
+<section class="c"><h2>📦 Kuyruk durumu — günlük trend (son <?= $qDays ?> gün)</h2>
+<p class="muted" style="margin:6px 0 8px">Webhook + e-posta kuyruğunun <b style="color:#0d7a4a">başarılı</b> / <b style="color:#b0301a">başarısız</b> / <b style="color:#8a6100">bekleyen</b> günlük kırılımı. Turuncu bantlar kuyruk birikmesini, kırmızı bantlar kök neden sorunlarını gösterir.</p>
+<div style="display:flex;gap:1px;align-items:flex-end;max-width:820px;margin-top:8px">
+<?php foreach ($qChart as $qc): $sH = $qMax > 0 ? max(1, (int) round($qc['success'] / $qMax * 56)) : 1; $fH = $qMax > 0 ? max(1, (int) round($qc['failed'] / $qMax * 56)) : 1; $qH = $qMax > 0 ? max(1, (int) round($qc['queued'] / $qMax * 56)) : 1; ?>
+  <div title="<?= htmlspecialchars($qc['d']) ?>: <?= $qc['success'] ?> başarılı · <?= $qc['failed'] ?> başarısız · <?= $qc['queued'] ?> bekleyen (toplam <?= $qc['total'] ?>)" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:1px;min-width:4px">
+    <?php if ($qc['success'] > 0): ?><i style="display:block;width:100%;background:#0d7a4a;border-radius:2px 2px 0 0;height:<?= $sH ?>px" title="başarılı: <?= $qc['success'] ?>"></i><?php endif; ?>
+    <?php if ($qc['failed'] > 0): ?><i style="display:block;width:100%;background:#b0301a;height:<?= $fH ?>px" title="başarısız: <?= $qc['failed'] ?>"></i><?php endif; ?>
+    <?php if ($qc['queued'] > 0): ?><i style="display:block;width:100%;background:#8a6100;height:<?= $qH ?>px" title="bekleyen: <?= $qc['queued'] ?>"></i><?php endif; ?>
+    <?php if ($qc['total'] === 0): ?><i style="display:block;width:100%;background:#e1e5de;border-radius:2px 2px 0 0;height:3px" title="işlem yok"></i><?php endif; ?>
+  </div>
+<?php endforeach; ?>
+</div>
+<div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
+  <span class="muted"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0d7a4a;vertical-align:middle"></span> Başarılı: <b><?= number_format($qTotalSuccess) ?></b></span>
+  <span class="muted"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#b0301a;vertical-align:middle"></span> Başarısız: <b style="color:#b0301a"><?= number_format($qTotalFailed) ?></b></span>
+  <span class="muted"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#8a6100;vertical-align:middle"></span> Bekleyen: <b style="color:#8a6100"><?= number_format($qTotalQueued) ?></b></span>
+  <span class="muted">· en yüksek gün <?= number_format($qMax) ?> işlem · <?= $qTotalQueued > 0 ? '<b style="color:#8a6100">kuyrukta birikme var</b>' : 'kuyruk temiz' ?></span>
+</div>
 </section>
 
 <section class="c">
