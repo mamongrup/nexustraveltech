@@ -118,6 +118,37 @@ $orphanHistory[$week] = $orphanTotal;
 if (count($orphanHistory) > 26) $orphanHistory = array_slice($orphanHistory, -26, null, true);
 save_platform_setting('distribution_health_orphan_history', $orphanHistory);
 
+// --- 6) Otomatik duraklatılmış iCal bağlantıları: alert-ical-repeat tarafından auto_pause ile durdurulan veya hata durumundaki.
+$pausedIcalRows = [];
+$errorIcalRows = [];
+try {
+    $pausedIcalRows = $pdo->query("
+        SELECT c.id, c.label, c.last_error, c.last_sync_at, c.created_at,
+               p.id AS property_id, p.name AS property_name, p.property_type,
+               s.company_name, s.id AS supplier_id
+        FROM ical_connections c
+        JOIN properties p ON p.id=c.property_id
+        JOIN suppliers s ON s.id=p.supplier_id
+        WHERE c.status='paused' AND c.direction='import'
+        ORDER BY s.company_name, p.name, c.created_at
+    ")->fetchAll();
+    $errorIcalRows = $pdo->query("
+        SELECT c.id, c.label, c.last_error, c.last_sync_at, c.created_at,
+               p.id AS property_id, p.name AS property_name, p.property_type,
+               s.company_name, s.id AS supplier_id
+        FROM ical_connections c
+        JOIN properties p ON p.id=c.property_id
+        JOIN suppliers s ON s.id=p.supplier_id
+        WHERE c.status='error' AND c.direction='import'
+        ORDER BY s.company_name, p.name, c.created_at
+    ")->fetchAll();
+} catch (Throwable $e) {
+    $pausedIcalRows = [];
+    $errorIcalRows = [];
+}
+$pausedTotal = count($pausedIcalRows);
+$errorTotal = count($errorIcalRows);
+
 $problems = [];
 
 // iCal satırları: yalnızca sorunlu olanları topla.
@@ -161,7 +192,7 @@ foreach ($channelRows as $r) {
     }
 }
 
-if ($problems === [] && $pendingTotal === 0 && $planMissingRows === [] && $orphanTotal === 0) {
+if ($problems === [] && $pendingTotal === 0 && $planMissingRows === [] && $orphanTotal === 0 && $pausedTotal === 0 && $errorTotal === 0) {
     save_platform_setting('distribution_health_week', $week);
     echo "Sorunlu dağıtım kaydı yok — özet gönderilmedi. (" . count($icalRows) . " villa/yat, " . count($channelRows) . " otel sahibi tedarikçi)\n";
     exit(0);
@@ -289,6 +320,41 @@ if ($locGroups) {
     }
 }
 
+// Otomatik duraklatılmış iCal bağlantıları bölümü.
+$pausedIcalHtml = '';
+if ($pausedTotal > 0 || $errorTotal > 0) {
+    $pausedIcalHtml .= '<div style="margin-top:14px;padding:10px 14px;background:#fdecea;border:1px solid #f0c4bc;border-radius:8px">'
+        . '<h3 style="margin:0 0 4px;font-size:13px;color:#b0301a">⏸ Duraklatılmış iCal bağlantıları: <b>' . ($pausedTotal + $errorTotal) . '</b> (' . $pausedTotal . ' duraklatıldı + ' . $errorTotal . ' hata)</h3>';
+    if ($pausedTotal > 0) {
+        $pausedIcalHtml .= '<p style="margin:6px 0 0;font-size:12px;color:#64716d">Otomatik duraklatılan bağlantılar (aynı hata tekrar sayısını aştı, <code>alert-ical-repeat</code>tetikledi). Yeniden etkinleştirmek için tedarikçi panelinden iCal takvimler sayfasına gidin.</p>';
+        $pausedIcalHtml .= '<table style="border-collapse:collapse;width:100%;max-width:680px;margin-top:8px">';
+        $pausedIcalHtml .= '<tr><th style="text-align:left;padding:5px 8px;background:#fdecea;font-size:10px;color:#b0301a">İlan / Tedarikçi</th><th style="text-align:left;padding:5px 8px;background:#fdecea;font-size:10px;color:#b0301a">Bağlantı</th><th style="text-align:left;padding:5px 8px;background:#fdecea;font-size:10px;color:#b0301a">Neden</th><th style="text-align:left;padding:5px 8px;background:#fdecea;font-size:10px;color:#b0301a">Duraklatma tarihi</th></tr>';
+        foreach ($pausedIcalRows as $pc) {
+            $ageSincePause = $pc['last_sync_at'] !== null ? (int) floor((time() - strtotime((string) $pc['last_sync_at'])) / 86400) : null;
+            $ageTxt = $ageSincePause !== null ? $ageSincePause . ' gün' : 'hiç senkron yok';
+            $reasonShort = mb_substr(trim((string) ($pc['last_error'] ?? '')), 0, 120);
+            $supplierLink = 'https://nexustraveltech.com/admin/tedarikci-ilanlari?supplier_id=' . (int) $pc['supplier_id'];
+            $pausedIcalHtml .= '<tr>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #f0c4bc;font-size:12px"><b>' . htmlspecialchars((string) $pc['property_name']) . '</b><br><small style="color:#64716d"><a href="' . $supplierLink . '" style="color:#0d7a4a;text-decoration:none;border-bottom:1px dotted #9cc2ae">' . htmlspecialchars((string) $pc['company_name']) . '</a></small></td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #f0c4bc;font-size:12px">' . htmlspecialchars((string) $pc['label']) . '</td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #f0c4bc;font-size:12px;color:#b0301a"><b>' . htmlspecialchars($reasonShort) . '</b></td>'
+                . '<td style="padding:5px 8px;border-bottom:1px solid #f0c4bc;font-size:12px">' . $ageTxt . '</td>'
+                . '</tr>';
+        }
+        $pausedIcalHtml .= '</table>';
+    }
+    if ($errorTotal > 0) {
+        $pausedIcalHtml .= '<p style="margin:10px 0 0;font-size:12px;color:#8a6100">⚠ Hata durumundaki bağlantılar: <b>' . $errorTotal . '</b> — henüz otomatik olarak duraklatılmadı ama senkron başarısız. <code>alert-ical-repeat</code>eşiği aşarsa otomatik duraklatılacak.</p>';
+        $pausedIcalHtml .= '<ul style="margin:4px 0 0;padding-left:18px;font-size:12px;color:#64716d">';
+        foreach ($errorIcalRows as $er) {
+            $errShort = mb_substr(trim((string) ($er['last_error'] ?? '')), 0, 80);
+            $pausedIcalHtml .= '<li><b>' . htmlspecialchars((string) $er['property_name']) . '</b> — ' . htmlspecialchars((string) $er['company_name']) . ' · ' . htmlspecialchars($errShort) . '</li>';
+        }
+        $pausedIcalHtml .= '</ul>';
+    }
+    $pausedIcalHtml .= '<p style="margin:8px 0 0;font-size:11px;color:#b0301a">Tedarikçiler otomatik duraklatma e-postasıyla ayrıca bilgilendirilir. iCal takvimler sayfasından bağlantı yeniden etkinleştirilebilir; hata devam ederse tekrar duraklatılır.</p></div>';
+}
+
 $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '<h2 style="margin:0 0 6px">📡 Dağıtım sağlığı · haftalık özet</h2>'
     . '<p style="color:#64716d;margin:0 0 10px">Bu hafta <b>' . count($problems) . '</b> sorun tespit edildi — iCal <b style="color:#b0301a">' . $icalCount . '</b> · Kanal <b style="color:#b0301a">' . $channelCount . '</b>. (7+ gün eski senkron sarı, 30+ gün veya pasif bağlantı kırmızı.)</p>'
@@ -299,6 +365,7 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . $locHtml
     . $pendingHtml
     . $planHtml
+    . $pausedIcalHtml
     . $orphanHtml
     . '<p style="margin:14px 0 0;font-size:12px;color:#64716d">Gerçek zamanlı uyarılar (15 dk) tedarikçi panellerine ayrıca gider. Kırmızı durumlar için ilgili tedarikçiyle iletişime geçin veya iCal takvimler / Dağıtım & kanal merkezi sayfalarını denetleyin.</p>'
     . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/tedarikci-onaylari" style="color:#0d7a4a">Tedarikçi yönetimi →</a></p>'
@@ -317,7 +384,7 @@ if ($locGroups) {
     }
 }
 $pdf = pdf_build('<h2>Dağıtım sağlığı haftalık özeti — ' . date('d.m.Y') . '</h2>'
-    . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . ($pendingTotal > 0 ? '. Onay bekleyen öneri: ' . $pendingTotal . ' (' . $pendingRoom . ' oda + ' . $pendingPlan . ' plan)' : '') . ($planMissingRows ? '. Planı eksik eşleştirme: ' . count($planMissingRows) : '') . ($orphanTotal > 0 ? '. Yetim eşleştirme: ' . $orphanTotal . ($orphanPrev !== null ? ' (geçen hafta ' . $orphanPrev . ')' : '') : '') . '</p>'
+    . '<p style="color:#64716d">' . count($problems) . ' sorun — iCal ' . $icalCount . ', kanal ' . $channelCount . ($pendingTotal > 0 ? '. Onay bekleyen öneri: ' . $pendingTotal . ' (' . $pendingRoom . ' oda + ' . $pendingPlan . ' plan)' : '') . ($planMissingRows ? '. Planı eksik eşleştirme: ' . count($planMissingRows) : '') . (($pausedTotal + $errorTotal) > 0 ? '. Duraklatılmış iCal: ' . ($pausedTotal + $errorTotal) : '') . ($orphanTotal > 0 ? '. Yetim eşleştirme: ' . $orphanTotal . ($orphanPrev !== null ? ' (geçen hafta ' . $orphanPrev . ')' : '') : '') . '</p>'
     . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:10px">'
     . '<tr style="background:#f2f4ef"><th align="left">İlan / Tedarikçi</th><th align="left">Tip</th><th align="left">Durum</th><th align="left">Son senkron</th></tr>'
     . $pdfRows
@@ -328,7 +395,7 @@ if ($pdf !== null) {
     $attBase64 = base64_encode($pdf);
 }
 
-$subject = 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')' . ($pendingTotal > 0 ? ' · ⏳ ' . $pendingTotal . ' öneri' : '') . ($planMissingRows ? ' · ⚠ ' . count($planMissingRows) . ' planı eksik' : '') . ($orphanTotal > 0 ? ' · 🧹 ' . $orphanTotal . ' yetim' : '');
+$subject = 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')' . ($pendingTotal > 0 ? ' · ⏳ ' . $pendingTotal . ' öneri' : '') . ($planMissingRows ? ' · ⚠ ' . count($planMissingRows) . ' planı eksik' : '') . (($pausedTotal + $errorTotal) > 0 ? ' · ⏸ ' . ($pausedTotal + $errorTotal) . ' iCal duraklatıldı' : '') . ($orphanTotal > 0 ? ' · 🧹 ' . $orphanTotal . ' yetim' : '');
 queue_email($to, $subject, $body, 'distribution_health_digest', (int) str_replace('-', '', $week), $attName, $attBase64);
 save_platform_setting('distribution_health_week', $week);
-echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($pendingTotal > 0 ? ", ⏳ {$pendingTotal} onay bekleyen öneri" : '') . ($planMissingRows ? ', ⚠ ' . count($planMissingRows) . ' planı eksik eşleştirme' : '') . ($orphanTotal > 0 ? ', 🧹 ' . $orphanTotal . ' yetim eşleştirme' : '') . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
+echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($pendingTotal > 0 ? ", ⏳ {$pendingTotal} onay bekleyen öneri" : '') . ($planMissingRows ? ', ⚠ ' . count($planMissingRows) . ' planı eksik eşleştirme' : '') . (($pausedTotal + $errorTotal) > 0 ? ', ⏸ ' . $pausedTotal . ' duraklatıldı + ' . $errorTotal . ' hata' : '') . ($orphanTotal > 0 ? ', 🧹 ' . $orphanTotal . ' yetim eşleştirme' : '') . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
