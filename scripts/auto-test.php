@@ -35,20 +35,48 @@ try {
     fwrite(STDERR, "Veritabanına bağlanılamadı: " . $e->getMessage() . "\nSunucuda çalıştırın: /opt/plesk/php/8.5/bin/php scripts/auto-test.php\n");
     exit(1);
 }
-$results = [];   // [modul => [ [ad, durum(ok/warn/fail), detay], ... ] ]
+$results = [];   // [modul => [ [ad, durum(ok/warn/fail), detay, ref], ... ] ]
 $moduleOrder = [];
 $fails = 0; $warns = 0; $oks = 0;
 
-function rec(string $mod, string $name, string $status, string $detail = ''): void {
-    global $results, $moduleOrder, $fails, $warns, $oks, $VERBOSE;
+// KULLANIM.md §8 sorun giderme bölümü referansları.
+$REFS = [
+    'veritabani.gerekli_tablo' => '§8.1',
+    'veritabani.kritik_kolon' => '§8.1',
+    'migration.durum' => '§8.1',
+    'migration.bekleyen' => '§8.1',
+    'zamanlayici.kilit' => '§8.2',
+    'zamanlayici.gorevler' => '§8.2',
+    'kanal-webhook.baglantilar' => '§8.3',
+    'kanal-webhook.token' => '§8.3',
+    'kanal-webhook.urun_eslesme' => '§8.6',
+    'kanal-webhook.oda_eslesme' => '§8.6',
+    'kanal-webhook.yetim' => '§8.6',
+    'kanal-webhook.webhook_isleri' => '§8.3',
+    'kur.ciftler' => '§8.4',
+    'kur.denetim' => '§8.4',
+    'ical.baglantilar' => '§8.5',
+    'ical.senkron' => '§8.5',
+    'eposta.admin_email' => '§8.7',
+    'eposta.kuyruk' => '§8.7',
+    'eposta.test' => '§8.7',
+    'e2e-webhook.POST' => '§8.3',
+    'e2e-webhook.uygula' => '§8.6',
+    'e2e-webhook.takvim' => '§8.3',
+];
+
+function rec(string $mod, string $name, string $status, string $detail = '', string $ref = ''): void {
+    global $results, $moduleOrder, $fails, $warns, $oks, $VERBOSE, $REFS;
     if (!isset($results[$mod])) { $results[$mod] = []; $moduleOrder[] = $mod; }
-    $results[$mod][] = [$name, $status, $detail];
+    if ($ref === '') $ref = $REFS[$mod] ?? '';
+    $results[$mod][] = [$name, $status, $detail, $ref];
     if ($status === 'fail') $fails++;
     elseif ($status === 'warn') $warns++;
     else $oks++;
     if ($VERBOSE) {
         $icon = $status === 'ok' ? '✓' : ($status === 'warn' ? '⚠' : '✗');
-        echo "  $icon $name" . ($detail !== '' ? ' — ' . $detail : '') . "\n";
+        $refTxt = ($ref !== '' && ($status === 'fail' || $status === 'warn')) ? '  → ' . $ref : '';
+        echo "  $icon $name" . ($detail !== '' ? ' — ' . $detail : '') . $refTxt . "\n";
     }
 }
 
@@ -329,15 +357,21 @@ if ($JSON) {
         $mWarns = count(array_filter($results[$m], fn($r) => $r[1] === 'warn'));
         $mOks = count($results[$m]) - $mFails - $mWarns;
         $checks = [];
-        foreach ($results[$m] as [$name, $status, $detail]) {
-            $checks[] = ['name' => $name, 'status' => $status, 'detail' => $detail];
+        foreach ($results[$m] as [$name, $status, $detail, $ref]) {
+            $chk = ['name' => $name, 'status' => $status, 'detail' => $detail];
+            if ($ref !== '') $chk['ref'] = $ref;
+            $checks[] = $chk;
         }
         $modules[$m] = ['ok' => $mOks, 'warn' => $mWarns, 'fail' => $mFails, 'total' => count($results[$m]), 'checks' => $checks];
     }
     $errors = [];
     foreach ($results as $mod => $items) {
-        foreach ($items as [$name, $status, $detail]) {
-            if ($status === 'fail') $errors[] = ['module' => $mod, 'check' => $name, 'detail' => mb_substr($detail, 0, 300)];
+        foreach ($items as [$name, $status, $detail, $ref]) {
+            if ($status === 'fail') {
+                $err = ['module' => $mod, 'check' => $name, 'detail' => mb_substr($detail, 0, 300)];
+                if ($ref !== '') $err['ref'] = $ref;
+                $errors[] = $err;
+            }
         }
     }
     echo json_encode([
@@ -382,9 +416,11 @@ foreach ($moduleOrder as $m) {
     $icon = $modFails > 0 ? '✗' : ($modWarns > 0 ? '⚠' : '✓');
     echo "  $icon $m — " . count($results[$m]) . ' kontrol (' . $modFails . ' hata · ' . $modWarns . ' uyarı)' . "\n";
     if (!$VERBOSE) {
-        foreach ($results[$m] as [$name, $status, $detail]) {
+        foreach ($results[$m] as [$name, $status, $detail, $ref]) {
             if ($status === 'fail' || $status === 'warn') {
-                echo '      ' . ($status === 'fail' ? '✗' : '⚠') . ' ' . $name . ($detail !== '' ? ' — ' . $detail : '') . "\n";
+                echo '      ' . ($status === 'fail' ? '✗' : '⚠') . ' ' . $name . ($detail !== '' ? ' — ' . $detail : '');
+                if ($ref !== '') echo '  → ' . $ref;
+                echo "\n";
             }
         }
     }

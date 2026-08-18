@@ -129,7 +129,7 @@ $tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' .
   <div style="margin-top:10px;background:#f8f6f4;border:1px solid #e1e5de;border-radius:8px;padding:8px 12px">
     <div style="font-size:11px;font-weight:700;color:#b0301a;margin-bottom:4px">Hatalar</div>
     <?php foreach (array_slice($atErrs, 0, 8) as $e): ?>
-    <div style="padding:2px 0;font-size:12px;color:#b0301a">✗ <b><?= htmlspecialchars($e['module'] ?? '') ?></b> · <?= htmlspecialchars($e['check'] ?? '') ?> — <?= htmlspecialchars(mb_substr($e['detail'] ?? '', 0, 120)) ?></div>
+    <div style="padding:2px 0;font-size:12px;color:#b0301a">✗ <b><?= htmlspecialchars($e['module'] ?? '') ?></b> · <?= htmlspecialchars($e['check'] ?? '') ?> — <?= htmlspecialchars(mb_substr($e['detail'] ?? '', 0, 120)) ?><?php if (!empty($e['ref'])): ?> <a href="/nexustraveltech/admin/kullanim-kilavuzu" style="color:#0d7a4a;font-size:11px" title="Kullanım kılavuzu <?= htmlspecialchars($e['ref']) ?>"><?= htmlspecialchars($e['ref']) ?></a><?php endif; ?></div>
     <?php endforeach; ?>
     <?php if (count($atErrs) > 8): ?><div style="font-size:11px;color:#64716d">… +<?= count($atErrs) - 8 ?> daha</div><?php endif; ?>
   </div>

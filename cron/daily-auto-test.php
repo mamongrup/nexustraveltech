@@ -63,7 +63,9 @@ if ($hasProblems && $adminEmail !== '') {
     foreach ($errors as $err) {
         $icon = ($err['status'] ?? 'fail') === 'fail' ? '✗' : '⚠';
         $color = $icon === '✗' ? '#b0301a' : '#8a6100';
-        $sorunSatirlari .= '<div style="padding:4px 0;font-size:13px;color:' . $color . '">' . $icon . ' <b>' . htmlspecialchars($err['module'] ?? '') . '</b> · ' . htmlspecialchars($err['check'] ?? '') . ' — ' . htmlspecialchars($err['detail'] ?? '') . '</div>';
+        $ref = $err['ref'] ?? '';
+        $refHtml = $ref !== '' ? ' <a href="https://nexustraveltech.com/admin/kullanim-kilavuzu" style="color:#0d7a4a;font-size:12px">' . htmlspecialchars($ref) . '</a>' : '';
+        $sorunSatirlari .= '<div style="padding:4px 0;font-size:13px;color:' . $color . '">' . $icon . ' <b>' . htmlspecialchars($err['module'] ?? '') . '</b> · ' . htmlspecialchars($err['check'] ?? '') . ' — ' . htmlspecialchars($err['detail'] ?? '') . $refHtml . '</div>';
     }
 
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'

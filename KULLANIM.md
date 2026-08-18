@@ -351,6 +351,96 @@ sudo -u postgres psql -d nexus_traveltech -x -c "SELECT id, scope, attempt_count
 
 ---
 
+### 8.4 Kur çifti eksik veya bayat
+
+**Belirti:** Auto-test'te `kur` modülünde FAIL/WARN; webhook yükü EUR/USD ile geldiğinde `fx_rate_missing` hatası; fiyat takvimine yazım yapılamıyor.
+
+**Tanı:**
+```bash
+sudo -u postgres psql -d nexus_traveltech -c "SELECT base_currency, quote_currency, rate_date, rate FROM fx_rates ORDER BY rate_date DESC LIMIT 10;"
+sudo -u postgres psql -d nexus_traveltech -c "SELECT audit_date, missing_count, stale_count FROM fx_audit_daily ORDER BY audit_date DESC LIMIT 3;"
+```
+
+**Çözüm:**
+1. Admin → Kur yönetimi → "Eksik çiftleri TCMB'den doldur" butonuna tıklayın
+2. Tek çift için: `Admin → Kur yönetimi` sayfasından elle girin
+3. Bayat kur (>7 gün): Aynı sayfadan yenileyin; otomatik denetim (`nexus-fx-missing-audit`) günde 2 kez tarar
+
+**Kök neden:** Kur XML'inde çift henüz yayınlanmamış olabilir (hafta sonları / tatiller). Kalıcı çözüm: `fx_rates` tablosuna en azından EUR→TRY ve USD→TRY çiftlerini girin.
+
+---
+
+### 8.5 iCal senkron hataları
+
+**Belirti:** Auto-test'te `ical` modülünde FAIL/WARN; iCal bağlantıları pasif; 24 saat içinde başarısız senkron.
+
+**Tanı:**
+```bash
+/opt/plesk/php/8.5/bin/php scripts/verify-platform.php | grep -i ical
+```
+
+**Çözüm (sıralı):**
+1. iCal connection URL'sini doğrulayın (tarayıcıda açın, `.ics` yüklenmeli)
+2. URL değiştiyse: Tedarikçi → iCal takvimleri → ilgili bağlantıyı düzenleyin
+3. Otomatik duraklatılmışsa (`auto_pause`): Kontrol merkezinden eşiği artırın veya bağlantıyı elle etkinleştirin
+4. Tekrar deneme: Tedarikçi panelinden "Senkronize et" butonuna tıklayın
+
+---
+
+### 8.6 Eşleşme sorunları (property_not_mapped, no_rooms, yetim)
+
+**Belirti:** Auto-test'te `kanal-webhook` modülünde property/oda eşleştirmesi hataları; dağıtım merkezinde "onay bekleyen" öneriler; yetim eşleştirmeler.
+
+**Tanı:**
+```bash
+/opt/plesk/php/8.5/bin/php scripts/verify-platform.php | grep -i "eşleş"
+/opt/plesk/php/8.5/bin/php scripts/health-check.php --orphans
+```
+
+**Çözüm:**
+1. **Eşleşme yok (öneri bekliyor):** Dağıtım merkezi Bölüm 3'ten önerileri onaylayın veya elle eşleştirin
+2. **property_not_mapped:** Dağııtmda Bölüm 2'den ürün eşleştirmesi yapın
+3. **no_rooms:** Oda tipi/fiyat planı oluşturun (Tedarikçi → ilan detay → oda tipi ekle)
+4. **Yetim eşleştirme:** `health-check --repair --yes` ile otomatik temizleyin
+
+---
+
+### 8.7 E-posta kuyruk sorunları
+
+**Belirti:** Auto-test'te `eposta` modülünde WARN/FAIL; e-postalar gitmiyor; `email_outbox` tablosundaqueued/failedsatırları.
+
+**Tanı:**
+```bash
+sudo -u postgres psql -d nexus_traveltech -c "SELECT status, count(*) FROM email_outbox GROUP BY status;"
+sudo -u postgres psql -d nexus_traveltech -c "SELECT subject, status, error, created_at FROM email_outbox WHERE status='failed' ORDER BY id DESC LIMIT 5;"
+```
+
+**Çözüm:**
+1. `admin_alert_email` tanımsızsa: Kontrol merkezinden ayarlayın
+2. Kuyruk birikiyorsa: `nexus-process-emails` görevinin çalıştığını kontrol edin (Zamanlayıcılar sayfası)
+3. SMTP hatası: Gönderim ayarlarını kontrol edin (`config/mailer.php`)
+4. Başarısız e-postaları yeniden dene: `UPDATE email_outbox SET status='queued' WHERE status='failed';`
+
+---
+
+### 8.8 Webhook otomatik eşleşme ve döngü uyarıları
+
+**Belirti:** Tanınmayan oda kodu geldiğinde öneri oluşmuyor; aynı yük tekrar tekrar başarısız oluyor (döngü uyarısı).
+
+**Tanı:**
+```bash
+/opt/plesk/php/8.5/bin/php scripts/verify-platform.php | grep -i "hata sınıflandırması"
+sudo -u postgres psql -d nexus_traveltech -c "SELECT failure_category, count(*) FROM channel_sync_logs WHERE created_at > now() - interval '24 hours' GROUP BY failure_category;"
+```
+
+**Çözüm:**
+1. **Öneri oluşmuyor:** Kontrol merkezinden `channel_webhook_auto_map` → `true`
+2. **Benzerlik eşiği düşük:** `channel_webhook_similarity_threshold` değerini artırın (varsayılan 45, 60-75 önerilir)
+3. **Döngü uyarısı:** `channel_webhook_loop_threshold` değerini artırın veya karalisteye alın (`channel_mapping_blacklist`)
+4. **Kalıcı hatalar:** `permanent` kategorisindeki yükler yapısal — eşleştirmeyi düzeltin, retry işe yaramaz
+
+---
+
 ## 9) Sık kullanılan psql kontrolleri
 
 ```bash
