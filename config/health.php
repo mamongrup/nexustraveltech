@@ -760,10 +760,27 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     if (!in_array('ical_connections', $missingTables, true) && !in_array('properties', $missingTables, true)) {
         $consistencyChecks++;
         try {
-            $orphan = (int) $pdo->query("SELECT COUNT(*) FROM ical_connections c LEFT JOIN properties p ON p.id=c.property_id WHERE p.id IS NULL")->fetchColumn();
+            $orphanRows = $pdo->query("SELECT c.id, c.label, c.status, c.direction, c.supplier_id,
+                su.full_name AS supplier_name, c.created_at,
+                (SELECT MAX(l.created_at) FROM ical_sync_logs l WHERE l.ical_connection_id=c.id) AS last_sync_at
+                FROM ical_connections c
+                LEFT JOIN properties p ON p.id=c.property_id
+                LEFT JOIN supplier_users su ON su.supplier_id=c.supplier_id
+                WHERE p.id IS NULL ORDER BY c.id")->fetchAll();
+            $orphan = count($orphanRows);
             if ($orphan > 0) {
                 $out .= "⚠ ical_connections: " . $orphan . " yetim bağlantı (silinmiş ürün)" . "\n";
                 $consistencyErrors[] = 'ical_connections: ' . $orphan . ' yetim bağlantı (silinmiş ürün)';
+                if ($orphans) {
+                    $out .= "— Ayrıntı (ID · etiket · durum · yön · tedarikçi · son senkron):\n";
+                    foreach ($orphanRows as $or) {
+                        $out .= '  #' . (int) $or['id'] . ' · ' . htmlspecialchars((string) $or['label'])
+                            . ' · ' . htmlspecialchars((string) $or['status'])
+                            . ' · ' . htmlspecialchars((string) $or['direction'])
+                            . ' · ' . htmlspecialchars((string) ($or['supplier_name'] ?? 'tedarikçi #' . (int) $or['supplier_id']))
+                            . ' · ' . ($or['last_sync_at'] ? htmlspecialchars((string) $or['last_sync_at']) : 'hiç yok') . "\n";
+                    }
+                }
             } else {
                 $out .= "✓ Yetim iCal bağlantısı yok (tümü geçerli ürüne bağlı)." . "\n";
             }
@@ -774,10 +791,23 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     if (!in_array('ical_sync_logs', $missingTables, true) && !in_array('ical_connections', $missingTables, true)) {
         $consistencyChecks++;
         try {
-            $orphan = (int) $pdo->query("SELECT COUNT(*) FROM ical_sync_logs l LEFT JOIN ical_connections c ON c.id=l.ical_connection_id WHERE c.id IS NULL")->fetchColumn();
+            $orphanRows = $pdo->query("SELECT l.id, l.status, l.error_message, l.created_at, l.ical_connection_id
+                FROM ical_sync_logs l
+                LEFT JOIN ical_connections c ON c.id=l.ical_connection_id
+                WHERE c.id IS NULL ORDER BY l.id")->fetchAll();
+            $orphan = count($orphanRows);
             if ($orphan > 0) {
                 $out .= "⚠ ical_sync_logs: " . $orphan . " yetim satır (iCal bağlantısı yok)" . "\n";
                 $consistencyErrors[] = 'ical_sync_logs: ' . $orphan . ' yetim satır';
+                if ($orphans) {
+                    $out .= "— Ayrıntı (ID · durum · hata · tarih · bağlantı #):\n";
+                    foreach ($orphanRows as $or) {
+                        $out .= '  #' . (int) $or['id'] . ' · ' . htmlspecialchars((string) $or['status'])
+                            . ' · ' . htmlspecialchars(mb_substr((string) ($or['error_message'] ?? ''), 0, 60))
+                            . ' · ' . htmlspecialchars((string) $or['created_at'])
+                            . ' · #' . (int) $or['ical_connection_id'] . "\n";
+                    }
+                }
             } else {
                 $out .= "✓ Yetim iCal senkron günlüğü satırı yok." . "\n";
             }
