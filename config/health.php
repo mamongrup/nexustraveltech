@@ -767,8 +767,20 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $out .= "\n=== 2d) ONARIM MODU ===\n";
         $dropped = 0;
         $dryRunDropped = 0;
+        $migrated = 0; // DOLU eski şemalı tabloda düşürme yerine veri taşıma (ör. channel_property_mapping_id → channel_connection_id/property_id)
+        $dryRunMigrated = 0;
         $skippedNonEmpty = [];
         $rebuiltTables = []; // gerçekten düşürülen tablolar — onarım sonrası doğrulama (3b) bunları kontrol eder
+        // Eski şemadan yeni şemaya GÜVENLİ veri taşıma haritaları — DOLU tabloda düşürme
+        // yerine satırları korur. legacy_col → kaynak tablonun id'si; map: yeni kolon → kaynak kolon.
+        // Yalnızca kanıtlanmış eşlemeler buraya eklenir (yeni bir eski şema bulunursa elle eklenir).
+        $legacyMigrateMap = [
+            'channel_room_mappings' => [
+                'legacy_col' => 'channel_property_mapping_id',
+                'source' => 'channel_property_mappings',
+                'map' => ['channel_connection_id' => 'channel_connection_id', 'property_id' => 'property_id'],
+            ],
+        ];
         $backupFile = null; // --backup-schema: düşürülecek tabloların canlı şeması bu dosyaya yazılır
         $backedUp = [];
         $repairChanges = []; // --json: tablo bazlı karar kaydı (ok/skipped_nonempty/dropped/...)
@@ -795,6 +807,58 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             }
             $count = (int) $pdo->query("SELECT COUNT(*) FROM \"" . $table . "\"")->fetchColumn();
             if ($count > 0) {
+                // --- Güvenli otomatik geçiş: DOLU eski şemalı tabloda düşürme yerine veri taşı ---
+                // Eski channel_room_mappings channel_property_mapping_id (FK -> channel_property_mappings.id)
+                // kullanır; yeni şema channel_connection_id + property_id ister. Tablo doluysa ve eski
+                // kolon + kaynak tablo mevcutsa satırlar taşınır (migration zinciri yine de uygulanır).
+                $legacySpec = $legacyMigrateMap[$table] ?? null;
+                $canMigrate = false;
+                if ($legacySpec !== null) {
+                    $legacyColOk = (bool) $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='" . $table . "' AND column_name='" . $legacySpec['legacy_col'] . "'")->fetchColumn();
+                    $srcOk = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='" . $legacySpec['source'] . "'")->fetchColumn();
+                    $targetMissing = array_values(array_filter(array_keys($legacySpec['map']), fn($tc) => in_array($tc, $missingCols, true)));
+                    $canMigrate = $legacyColOk && $srcOk && $targetMissing !== [];
+                }
+                if ($canMigrate) {
+                    $mappable = (int) $pdo->query("SELECT COUNT(*) FROM \"" . $table . "\" m JOIN \"" . $legacySpec['source'] . "\" s ON s.id = m.\"" . $legacySpec['legacy_col'] . "\"")->fetchColumn();
+                    if ($dryRun) {
+                        $dryRunMigrated++;
+                        $out .= "→ [dry-run] " . $table . " DOLU (" . $count . " satır) — otomatik geçiş MÜMKÜN: " . $mappable . "/" . $count . " satır " . $legacySpec['legacy_col'] . " → " . implode(', ', array_keys($legacySpec['map'])) . " taşınacak (" . $legacySpec['source'] . " üzerinden); düşürme GEREKMEZ\n";
+                        $repairChanges[$table] = ['status' => 'migrate_candidate', 'rows' => $count, 'mappable' => $mappable, 'missing_columns' => $missingCols, 'from' => $legacySpec['legacy_col'], 'to' => array_keys($legacySpec['map']), 'note' => 'dry-run — otomatik veri taşıma önerisi'];
+                        continue;
+                    }
+                    // Gerçek mod: transaction içinde kolonları ekle, veriyi taşı, eksik kalanları raporla.
+                    try {
+                        $pdo->beginTransaction();
+                        foreach (array_keys($legacySpec['map']) as $newCol) {
+                            $pdo->exec('ALTER TABLE "' . $table . '" ADD COLUMN IF NOT EXISTS "' . $newCol . '" BIGINT');
+                        }
+                        $setParts = [];
+                        foreach ($legacySpec['map'] as $newCol => $srcCol) {
+                            $setParts[] = '"' . $newCol . '" = s."' . $srcCol . '"';
+                        }
+                        $pdo->exec('UPDATE "' . $table . '" m SET ' . implode(', ', $setParts) . ' FROM "' . $legacySpec['source'] . '" s WHERE s.id = m."' . $legacySpec['legacy_col'] . '" AND m."' . array_key_first($legacySpec['map']) . '" IS NULL');
+                        $stillNull = (int) $pdo->query('SELECT COUNT(*) FROM "' . $table . '" WHERE "' . array_key_first($legacySpec['map']) . '" IS NULL')->fetchColumn();
+                        $pdo->commit();
+                        if ($stillNull === 0) {
+                            $migrated++;
+                            $out .= "✓ " . $table . " DOLU (" . $count . " satır) — otomatik geçiş tamamlandı: " . $mappable . " satır " . $legacySpec['legacy_col'] . " → " . implode(', ', array_keys($legacySpec['map'])) . " taşındı; migration zinciri kalan kolonları ekler\n";
+                            $repairChanges[$table] = ['status' => 'migrated', 'rows' => $count, 'transferred' => $mappable, 'missing_columns' => $missingCols, 'note' => 'DOLU tablo düşürülmedi; eski kolondan veri taşındı'];
+                            try { audit_log('health.repair_migrate', 'schema', null, ['table' => $table, 'rows' => $count, 'transferred' => $mappable, 'from' => $legacySpec['legacy_col'], 'to' => array_keys($legacySpec['map']), 'note' => 'eski şemalı DOLU tabloda düşürme yerine otomatik veri taşıma'], 'health-check'); } catch (Throwable $ae) {}
+                        } else {
+                            $skippedNonEmpty[] = $table . " (" . $count . " satır — " . $stillNull . " satır " . $legacySpec['legacy_col'] . " eşleşmedi, elle inceleyin)";
+                            $out .= "⚠ " . $table . " DOLU (" . $count . " satır) — otomatik geçiş KISMİ: " . ($count - $stillNull) . " taşındı, " . $stillNull . " satır " . $legacySpec['legacy_col'] . " kaynakta yok; kalan elle inceleyin\n";
+                            $repairChanges[$table] = ['status' => 'migrate_partial', 'rows' => $count, 'unmapped' => $stillNull, 'missing_columns' => $missingCols, 'note' => 'bazı satırlar kaynak tabloda eşleşmedi — elle müdahale gerekir'];
+                        }
+                        continue;
+                    } catch (Throwable $e) {
+                        if ($pdo->inTransaction()) { try { $pdo->rollBack(); } catch (Throwable $re) {} }
+                        $out .= "✗ " . $table . " otomatik geçiş BAŞARISIZ: " . $e->getMessage() . " — elle inceleyin (düşürülmedi)\n";
+                        $errors[] = $table . ' otomatik geçiş başarısız: ' . $e->getMessage();
+                        $repairChanges[$table] = ['status' => 'migrate_failed', 'rows' => $count, 'error' => $e->getMessage(), 'note' => 'otomatik veri taşıma başarısız — elle müdahale gerekir'];
+                        continue;
+                    }
+                }
                 $skippedNonEmpty[] = $table . " (" . $count . " satır — eksik kolon: " . implode(', ', $missingCols) . ")";
                 $out .= "⚠ " . $table . " yabancı şemada ama DOLU (" . $count . " satır) — DÜŞÜRÜLMEDİ, elle inceleyin (eksik: " . implode(', ', $missingCols) . ")\n";
                 $repairChanges[$table] = ['status' => 'skipped_nonempty', 'rows' => $count, 'missing_columns' => $missingCols, 'note' => 'DOLU tablo — düşürülmedi, elle veri taşıma gerekir'];
@@ -932,12 +996,12 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             $out .= "· --backup-schema etkin ama düşürülecek tablo yok — yedek dosyası oluşturulmadı.\n";
         }
         $out .= $dryRun
-            ? ($dryRunDropped === 0 && $skippedNonEmpty === []
-                ? "✓ (dry-run) Düşürülecek tablo yok.\n"
-                : "Özet (dry-run): " . $dryRunDropped . " tablo DÜŞÜRÜLECEK" . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . " — hiçbir değişiklik yapılmadı\n")
-            : ($dropped === 0 && $skippedNonEmpty === []
+            ? ($dryRunDropped === 0 && $dryRunMigrated === 0 && $skippedNonEmpty === []
+                ? "✓ (dry-run) Düşürülecek/taşınacak tablo yok.\n"
+                : "Özet (dry-run): " . $dryRunDropped . " tablo DÜŞÜRÜLECEK" . ($dryRunMigrated > 0 ? ' · ' . $dryRunMigrated . ' DOLU tabloda veri TAŞINACAK' : '') . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . " — hiçbir değişiklik yapılmadı\n")
+            : ($dropped === 0 && $migrated === 0 && $skippedNonEmpty === []
                 ? "✓ Onarım gerektiren boş tablo yok.\n"
-                : "Özet: " . $dropped . " tablo düşürüldü" . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . "\n");
+                : "Özet: " . $dropped . " tablo düşürüldü" . ($migrated > 0 ? ' · ' . $migrated . ' DOLU tabloda veri taşındı' : '') . ($skippedNonEmpty ? '; elle müdahale: ' . implode('; ', $skippedNonEmpty) : '') . "\n");
 
         // --- 2d-1) Sahiplik devri — app kullanıcısı tablo sahibi değilse ÖNCE devret ---
         // Migration'lar app kullanıcısıyla uygulanır; tablolar postgres sahibindeyse
@@ -1050,11 +1114,13 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         // migration zinciri, yedek durumu ve ek işlemler (yetim/öneri/sahiplik). İnsan çıktısıyla
         // birebir aynı kararları makinece okunabilir yapıda taşır.
         $checks['repair'] = [
-            'status' => ($dryRun ? $dryRunDropped : $dropped) > 0 || $skippedNonEmpty !== [] ? ($dryRun ? 'dry_run_pending' : 'done') : 'clean',
+            'status' => ($dryRun ? $dryRunDropped : $dropped) > 0 || ($dryRun ? $dryRunMigrated : $migrated) > 0 || $skippedNonEmpty !== [] ? ($dryRun ? 'dry_run_pending' : 'done') : 'clean',
             'dry_run' => (bool) $dryRun,
             'summary' => [
                 'dropped' => $dropped,
                 'dry_run_dropped' => $dryRunDropped,
+                'migrated' => $migrated,
+                'dry_run_migrated' => $dryRunMigrated,
                 'skipped_nonempty' => count($skippedNonEmpty),
                 'orphans_removed' => (int) ($orphanRes['removed'] ?? 0),
                 'stale_confirmations' => $staleConfirmNote !== '' ? count(array_filter(explode(';', rtrim($staleConfirmNote, ';')))) : 0,
@@ -1327,11 +1393,16 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     // düşürülen tabloların gerçekten yeniden kurulup kurulmadığı (✓/✗) e-postaya yansır.
     // İçerik: düşürülen + yeniden kurulan tablolar, DOLU (elle müdahale) tablolar,
     // yetim temizliği, otomatik öneri onayları, yedek, sahiplik devri.
-    if (!$dryRun && ($dropped > 0 || $skippedNonEmpty !== [] || (int) ($orphanRes['removed'] ?? 0) > 0 || $staleConfirmNote !== '' || $ownershipTransferred > 0)) {
+    if (!$dryRun && ($dropped > 0 || $migrated > 0 || $skippedNonEmpty !== [] || (int) ($orphanRes['removed'] ?? 0) > 0 || $staleConfirmNote !== '' || $ownershipTransferred > 0)) {
         try {
             $adminEmail = trim((string) platform_setting('admin_alert_email', ''));
             if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
                 $rows = '';
+                foreach ($repairChanges as $mcTable => $mcInfo) {
+                    if (($mcInfo['status'] ?? '') === 'migrated') {
+                        $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">' . htmlspecialchars((string) $mcTable) . '</td><td style="padding:7px 12px;border:1px solid #e1e5de"><b style="color:#2e7d32">DOLU — otomatik veri taşındı ✓</b></td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">' . (int) ($mcInfo['transferred'] ?? 0) . ' satır (' . htmlspecialchars(implode(', ', (array) ($mcInfo['to'] ?? []))) . ')</td></tr>';
+                    }
+                }
                 if ($dropped > 0) {
                     foreach ($rebuiltTables as $rt => $rspec) {
                         // 3b doğrulaması: tablo beklenen kolonlarla kuruldu mu? ($postFail listesinde mi?)
@@ -1361,13 +1432,13 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 }
                 if ($ownershipTransferred > 0) {
                     $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">Sahiplik devri</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . $ownershipTransferred . ' nesne</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">tablo/dizi/görünüm → ' . htmlspecialchars((string) $curUser) . '</td></tr>';
-                }
-                $summary = $dropped . ' tablo düşürülüp yeniden kuruldu'
-                    . ($postFail ? ' · ' . count($postFail) . ' KURULAMADI' : '')
-                    . ($skippedNonEmpty !== [] ? ' · ' . count($skippedNonEmpty) . ' DOLU tablo elle müdahale bekliyor' : '')
-                    . ($orphanN > 0 ? ' · ' . $orphanN . ' yetim temizlendi' : '')
-                    . ($staleConfirmNote !== '' ? ' · öneri onayları otomatik tamamlandı' : '')
-                    . ($ownershipTransferred > 0 ? ' · ' . $ownershipTransferred . ' nesnenin sahipliği devredildi' : '');
+                }                    $summary = $dropped . ' tablo düşürülüp yeniden kuruldu'
+                        . ($migrated > 0 ? ' · ' . $migrated . ' DOLU tabloda veri taşındı' : '')
+                        . ($postFail ? ' · ' . count($postFail) . ' KURULAMADI' : '')
+                        . ($skippedNonEmpty !== [] ? ' · ' . count($skippedNonEmpty) . ' DOLU tablo elle müdahale bekliyor' : '')
+                        . ($orphanN > 0 ? ' · ' . $orphanN . ' yetim temizlendi' : '')
+                        . ($staleConfirmNote !== '' ? ' · öneri onayları otomatik tamamlandı' : '')
+                        . ($ownershipTransferred > 0 ? ' · ' . $ownershipTransferred . ' nesnenin sahipliği devredildi' : '');
                 queue_email($adminEmail,
                     'NEXUS: sağlık onarımı tamamlandı — ' . $summary,
                     '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto">'
