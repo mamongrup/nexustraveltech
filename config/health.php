@@ -1572,6 +1572,42 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         'curl' => extension_loaded('curl'),
     ];
 
+    // --- 5b) ZAMANLAYICI CRON DURUMU ---
+    $out .= "\n=== 5b) CRON DURUMU ===\n";
+    $cronOk = true;
+    // 1) tick.php heartbeat
+    $crontab = (string) shell_exec("crontab -l 2>/dev/null || true");
+    $hasTick = (bool) preg_match("/tick\.php/", $crontab);
+    $out .= ($hasTick ? "✓" : "✗") . " tick.php nabzi (crontab)\n";
+    if (!$hasTick) { $errors[] = "tick.php nabzi crontab-da yok"; $cronOk = false; }
+    // 2) Eski URL tabanli satirlar
+    $oldLines = [];
+    foreach (explode("\n", $crontab) as $cl) {
+        $cl = trim($cl);
+        if ($cl === "" || $cl[0] === "#") continue;
+        if (preg_match("/Request a URL|wget.*cron|curl.*http|http.*tick/i", $cl)) $oldLines[] = $cl;
+    }
+    if ($oldLines) {
+        $out .= "⚠ " . count($oldLines) . " eski URL tabanli cron satiri:\n";
+        foreach (array_slice($oldLines, 0, 5) as $ol) $out .= "   " . htmlspecialchars($ol) . "\n";
+        $cronOk = false;
+    } else {
+        $out .= "✓ Eski URL tabanli cron satiri yok\n";
+    }
+    // 3) scheduled_jobs sayisi
+    try {
+        $jobCount = (int) db()->query("SELECT COUNT(*) FROM scheduled_jobs")->fetchColumn();
+        $out .= ($jobCount >= 20 ? "✓" : "⚠") . " scheduled_jobs: " . $jobCount . " gorev\n";
+        if ($jobCount < 20) { $out .= "   ⚠ " . (20 - $jobCount) . " gorev eksik\n"; }
+    } catch (Throwable $e) { $out .= "✗ scheduled_jobs tablosu okunamadi\n"; $cronOk = false; }
+    // 4) Son tick calismasi
+    try {
+        $recentTicks = (int) db()->query("SELECT COUNT(*) FROM scheduled_job_runs WHERE started_at >= now()-interval '5 minutes'")->fetchColumn();
+        $out .= ($recentTicks > 0 ? "✓" : "⚠") . " Son 5 dkda " . $recentTicks . " gorev baslatildi\n";
+        if ($recentTicks === 0) $out .= "   ⚠ tick.php son 5 dkda calismamis olabilir\n";
+    } catch (Throwable $e) { $out .= "   (scheduled_job_runs yok)\n"; }
+    $checks["cron"] = ["status" => $cronOk ? "ok" : "warning", "has_tick" => $hasTick, "old_lines" => count($oldLines), "job_count" => $jobCount ?? 0];
+
     $out .= "\n";
     if ($errors) {
         $out .= 'SONUÇ: ' . count($errors) . ' sorun — ' . implode('; ', array_slice($errors, 0, 10)) . "\n";
