@@ -3,6 +3,17 @@
 -- Eski tablolar farklı şemayla oluşturulmuş olabilir (CREATE TABLE IF NOT EXISTS
 -- yeni kolon EKLEMEZ) — bu dosya her iki durumu da kapsar.
 
+-- Eski şemalı tabloyu güvenle düşür (varsa, boşsa)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='channel_rate_plan_mappings') THEN
+        IF (SELECT COUNT(*) FROM channel_rate_plan_mappings) = 0 THEN
+            DROP TABLE IF EXISTS channel_rate_plan_mappings CASCADE;
+        END IF;
+    END IF;
+END
+$$;
+
 -- Tablo oluştur (yeni kurulumlarda)
 CREATE TABLE IF NOT EXISTS channel_rate_plan_mappings (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

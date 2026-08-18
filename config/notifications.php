@@ -51,14 +51,22 @@ function notify_supplier_users_with_email(int $supplierId, string $type, string 
     notify_supplier_users($supplierId, $type, $message, $link);
     try {
         if (!(bool) platform_setting('supplier_notify_email', false)) return;
-        $q = db()->prepare('SELECT id, full_name, email FROM supplier_users WHERE supplier_id=? AND email<>?');
-        $q->execute([$supplierId, '']);
+        // Yalnızca owner rolündeki tedarikçi kullanıcılarına e-posta gönderilir.
+        $q = db()->prepare('SELECT id, full_name, email FROM supplier_users WHERE supplier_id=? AND email<>? AND role=?');
+        $q->execute([$supplierId, '', 'owner']);
         $linkAbs = $link !== null ? 'https://nexustraveltech.com' . $link : 'https://nexustraveltech.com/tedarikci';
-        $subj = $subject !== null ? $subject : 'NEXUS bildirimi — ' . mb_substr(strip_tags($message), 0, 60);
-        $body = '<p>Merhaba,</p><p>' . nl2br(htmlspecialchars($message)) . '</p>'
-            . '<p><a href="' . htmlspecialchars($linkAbs) . '">Panele git →</a></p><p>NEXUS TravelTech</p>';
+        $tplCode = 'supplier_' . str_replace('.', '_', $type);
         foreach ($q->fetchAll() as $row) {
-            queue_email((string) $row['email'], $subj, $body, 'supplier_notify', (int) $row['id']);
+            $usedTpl = queue_email_with_template(
+                (string) $row['email'],
+                $tplCode,
+                ['ad' => (string) ($row['full_name'] ?? ''), 'mesaj' => $message, 'link' => $linkAbs],
+                $subject ?? ('NEXUS bildirimi — ' . mb_substr(strip_tags($message), 0, 60)),
+                '<p>Merhaba,</p><p>' . nl2br(htmlspecialchars($message)) . '</p>'
+                    . '<p><a href="' . htmlspecialchars($linkAbs) . '">Panele git →</a></p><p>NEXUS TravelTech</p>',
+                'supplier_notify',
+                (int) $row['id']
+            );
         }
     } catch (Throwable $e) {
         // Best-effort.
