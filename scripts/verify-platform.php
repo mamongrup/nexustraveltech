@@ -34,7 +34,7 @@ $requiredColumns=[
     'scheduled_jobs'=>['code','command','schedule','enabled','last_status','last_fail_alert_at'],
     'property_feature_catalog'=>['deleted_at'],
     'feature_delete_backups'=>['feature_id','code','label','affected_properties'],
-    'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id','rate_plan_id','status','suggested_at','suggestion_count','suggestion_score'],'channel_property_mappings'=>['channel_connection_id','property_id','external_property_id','status'],'channel_rate_plan_mappings'=>['channel_connection_id','property_id','external_rate_plan_id','status','rate_plan_id'],
+    'channel_room_mappings'=>['channel_connection_id','property_id','room_type_id','external_room_id','rate_plan_id','status','suggested_at','suggestion_count','suggestion_score','approved_by_type','approved_by_name','approved_by_user_id','approved_at'],'channel_property_mappings'=>['channel_connection_id','property_id','external_property_id','status'],'channel_rate_plan_mappings'=>['channel_connection_id','property_id','external_rate_plan_id','status','rate_plan_id'],
     'channel_sync_logs'=>['channel_connection_id','property_id','direction','scope','status','request_payload','response_payload','error_message','fx_audit'],
     'ical_sync_logs'=>['ical_connection_id','property_id','status','error_message','error_hash'],
     'pending_trash_purges'=>['feature_id','token','expires_at','approved_at'],
@@ -79,9 +79,11 @@ try {
             echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, '.$orphanMappings." uyumsuz.\n";
         }
     }
-    // Yeni entegrasyon kolonları özeti — 047/048/049/052 migration'larının durumu tek satırda.
+    // Yeni entegrasyon kolonları özeti — 047-055 migration'larının durumu tek satırda.
     // 047: channel_room_mappings.status/suggested_at/suggestion_count · 048: channel_sync_logs.fx_audit
     // 049: channel_room_mappings.rate_plan_id · 052: channel_room_mappings.suggestion_score
+    // 053: product_type_catalog.step_targets · 054: channel_rate_plan_mappings (tablo/kolon)
+    // 055: fx_audit_daily (tablo/kolon) · 061: channel_room_mappings.approved_by_* (onay izi)
     $newCols = [
         'channel_sync_logs.fx_audit' => '048',
         'channel_room_mappings.status' => '047',
@@ -89,6 +91,11 @@ try {
         'channel_room_mappings.suggestion_count' => '047',
         'channel_room_mappings.rate_plan_id' => '049',
         'channel_room_mappings.suggestion_score' => '052',
+        'product_type_catalog.step_targets' => '053',
+        'channel_rate_plan_mappings.external_rate_plan_id' => '054',
+        'fx_audit_daily.audit_date' => '055',
+        'channel_room_mappings.approved_by_type' => '061',
+        'channel_room_mappings.approved_at' => '061',
     ];
     $newSummary = [];
     $newColMissing = [];
@@ -109,9 +116,9 @@ try {
             $newColMissing[] = $colPath . ' (migration ' . $mig . ' bekliyor) ';
         }
     }
-    echo 'Yeni entegrasyon kolonları (047/048/049/052): ' . implode(' · ', $newSummary) . ' → ' . (count($newCols) - count($newColMissing)) . '/' . count($newCols) . ' hazır' . PHP_EOL;
+    echo 'Yeni entegrasyon kolonları (047-055/061): ' . implode(' · ', $newSummary) . ' → ' . (count($newCols) - count($newColMissing)) . '/' . count($newCols) . ' hazır' . PHP_EOL;
     if ($newColMissing) {
-        $errors[] = 'Yeni entegrasyon kolonları eksik: ' . implode(', ', $newColMissing) . '(scripts/health-check.php migration 047/048/049/052 uygular)';
+        $errors[] = 'Yeni entegrasyon kolonları eksik: ' . implode(', ', $newColMissing) . '(scripts/health-check.php migration 047-055/061 uygular)';
     }
     // Veri denetimi — channel_room_mappings / channel_rate_plan_mappings onarımı sonrası eski
     // kayıtların yeni şemaya nasıl taşındığını gösterir. Onarım yalnızca BOŞ tabloları düşürür
