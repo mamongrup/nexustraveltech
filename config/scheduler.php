@@ -177,9 +177,42 @@ function scheduler_tick(): array
 {
     $pdo = db();
     // PostgreSQL boolean 't'/'f' dizesi döner — (bool) cast güvenilmezdir.
+    // Advisory lock'u deneyin. Zaten tutuluyorsa sahibini denetleyin.
     $locked = $pdo->query('SELECT pg_try_advisory_lock(' . SCHEDULER_LOCK_KEY . ')')->fetchColumn() === 't';
     if (!$locked) {
-        return ['locked' => true, 'ran' => []];
+        // Kilit başkası tarafından tutuluyor — bayatlık kontrolü (10 dk).
+        $STALE_SECONDS = 600;
+        try {
+            $holder = $pdo->query("SELECT l.pid, a.state, a.query_start, a.state_change
+                FROM pg_locks l
+                JOIN pg_stat_activity a ON a.pid = l.pid
+                WHERE l.locktype = 'advisory' AND l.classid = 0 AND l.objid = " . SCHEDULER_LOCK_KEY . "
+                AND l.granted = true
+                ORDER BY l.pid
+                LIMIT 1")->fetch();
+            if ($holder) {
+                $stateChange = strtotime((string) ($holder['state_change'] ?? ''));
+                $stateAge = $stateChange > 0 ? time() - $stateChange : 0;
+                if ($stateAge >= $STALE_SECONDS) {
+                    $pid = (int) $holder['pid'];
+                    $pdo->exec("SELECT pg_terminate_backend($pid)");
+                    // Kilit artık serbest — yeniden dene.
+                    $locked = $pdo->query('SELECT pg_try_advisory_lock(' . SCHEDULER_LOCK_KEY . ')')->fetchColumn() === 't';
+                    if ($locked) {
+                        // Kilit alındı — bayat kilit kırıldı.
+                    } else {
+                        return ['locked' => true, 'ran' => [], 'stale_broken' => false];
+                    }
+                } else {
+                    return ['locked' => true, 'ran' => [], 'holder_age' => $stateAge];
+                }
+            } else {
+                // pg_locks'ta kilit görünmüyor ama pg_try_advisory_lock başarısız — race condition.
+                return ['locked' => true, 'ran' => []];
+            }
+        } catch (Throwable $e) {
+            return ['locked' => true, 'ran' => []];
+        }
     }
     try {
         scheduler_seed_defaults();
