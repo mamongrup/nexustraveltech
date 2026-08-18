@@ -123,6 +123,22 @@ $orphanPrev = array_key_exists($prevWeek, $orphanHistory) ? (int) $orphanHistory
 $orphanHistory[$week] = $orphanTotal;
 if (count($orphanHistory) > 26) $orphanHistory = array_slice($orphanHistory, -26, null, true);
 save_platform_setting('distribution_health_orphan_history', $orphanHistory);
+// Onay bekleyen öneri tarihçesi
+$pendingHistory = platform_setting('distribution_health_pending_history', []);
+if (!is_array($pendingHistory)) $pendingHistory = [];
+$pendingPrev = array_key_exists($prevWeek, $pendingHistory) ? (int) $pendingHistory[$prevWeek] : null;
+$pendingHistory[$week] = $pendingTotal;
+if (count($pendingHistory) > 26) $pendingHistory = array_slice($pendingHistory, -26, null, true);
+save_platform_setting('distribution_health_pending_history', $pendingHistory);
+
+// Planı eksik eşleştirme tarihçesi
+$planMissingCount = count($planMissingRows);
+$planMissingHistory = platform_setting('distribution_health_plan_missing_history', []);
+if (!is_array($planMissingHistory)) $planMissingHistory = [];
+$planMissingPrev = array_key_exists($prevWeek, $planMissingHistory) ? (int) $planMissingHistory[$prevWeek] : null;
+$planMissingHistory[$week] = $planMissingCount;
+if (count($planMissingHistory) > 26) $planMissingHistory = array_slice($planMissingHistory, -26, null, true);
+save_platform_setting('distribution_health_plan_missing_history', $planMissingHistory);
 
 // --- 6) Otomatik duraklatılmış iCal bağlantıları: alert-ical-repeat tarafından auto_pause ile durdurulan veya hata durumundaki.
 $pausedIcalRows = [];
@@ -230,8 +246,15 @@ foreach ($problems as $p) {
 // Onay bekleyen öneri satırı: özet e-postasında tedarikçi bazında listelenir.
 $pendingHtml = '';
 if ($pendingTotal > 0) {
+    $pendingTrend = '';
+    if ($pendingPrev !== null) {
+        $pDiff = $pendingTotal - $pendingPrev;
+        if ($pDiff > 0) $pendingTrend = ' · <span style="color:#b0301a">▲ +' . $pDiff . ' vs geçen hafta (' . $pendingPrev . ')</span>';
+        elseif ($pDiff < 0) $pendingTrend = ' · <span style="color:#0d7a4a">▼ ' . $pDiff . ' vs geçen hafta (' . $pendingPrev . ')</span>';
+        else $pendingTrend = ' · geçen haftayla aynı (' . $pendingPrev . ')';
+    }
     $pendingHtml .= '<div style="margin-top:14px;padding:10px 14px;background:#fff8e6;border:1px solid #ead9a8;border-radius:8px">'
-        . '<h3 style="margin:0 0 4px;font-size:13px;color:#8a6100">⏳ Onay bekleyen eşleştirme önerileri: <b>' . $pendingTotal . '</b> (' . $pendingRoom . ' oda + ' . $pendingPlan . ' fiyat planı)</h3>';
+        . '<h3 style="margin:0 0 4px;font-size:13px;color:#8a6100">⏳ Onay bekleyen eşleştirme önerileri: <b>' . $pendingTotal . '</b> (' . $pendingRoom . ' oda + ' . $pendingPlan . ' fiyat planı)' . $pendingTrend . '</h3>';
     foreach ($pendingRows as $pr) {
         $prt = (int) $pr['room_sug'] + (int) $pr['plan_sug'];
         $supplierLink = 'https://nexustraveltech.com/admin/tedarikci-ilanlari?supplier_id=' . (int) $pr['id'];
@@ -299,8 +322,15 @@ if ($orphanTotal > 0) {
 // Planı eksik eşleştirmeler bölümü — e-posta gövdesine eklenir.
 $planHtml = '';
 if ($planMissingRows) {
+    $planMissingTrend = '';
+    if ($planMissingPrev !== null) {
+        $pmDiff = $planMissingCount - $planMissingPrev;
+        if ($pmDiff > 0) $planMissingTrend = ' · <span style="color:#b0301a">▲ +' . $pmDiff . ' vs geçen hafta (' . $planMissingPrev . ')</span>';
+        elseif ($pmDiff < 0) $planMissingTrend = ' · <span style="color:#0d7a4a">▼ ' . $pmDiff . ' vs geçen hafta (' . $planMissingPrev . ')</span>';
+        else $planMissingTrend = ' · geçen haftayla aynı (' . $planMissingPrev . ')';
+    }
     $planHtml .= '<div style="margin-top:14px;padding:10px 14px;background:#fdecea;border:1px solid #f0c4bc;border-radius:8px">'
-        . '<h3 style="margin:0 0 4px;font-size:13px;color:#b0301a">⚠ Planı eksik eşleştirmeler: <b>' . count($planMissingRows) . '</b></h3>'
+        . '<h3 style="margin:0 0 4px;font-size:13px;color:#b0301a">⚠ Planı eksik eşleştirmeler: <b>' . count($planMissingRows) . '</b>' . $planMissingTrend . '</h3>'
         . '<p style="margin:3px 0;font-size:12px;color:#64716d">Planı silinen veya pasifleştirilen eşleştirmeler webhook verisini <b>ilk aktif plana</b> yazar — yanlış plana yazma riski. Dağıtım & kanal merkezi → bölüm 3, her eşleştirmeye plan atayın.</p>';
     $byConn = [];
     foreach ($planMissingRows as $pm) {
