@@ -47,7 +47,8 @@ foreach ($rows as $r) {
     $purgeTs = $custom ? (strtotime((string) $r['purge_at']) ?: 0) : 0;
     if ($purgeTs <= 0) $purgeTs = $delTs + $ttlDays * 86400;
     $diff = $purgeTs - time();
-    if ($diff <= 0 || $diff > 3 * 86400) continue; // yalnızca önümüzdeki 3 gün
+    $warnDays = max(1, (int) platform_setting('trash_upcoming_warning_days', 3));
+    if ($diff <= 0 || $diff > $warnDays * 86400) continue; // yalnızca önümüzdeki $warnDays gün
     $upcoming[] = [
         'id' => (int) $r['id'],
         'label' => (string) $r['label'],

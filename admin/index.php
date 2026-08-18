@@ -33,7 +33,8 @@ try {
     $pTs = $custom ? (strtotime((string)$ur['purge_at']) ?: 0) : 0;
     if ($pTs <= 0) $pTs = $dTs + $ttlTmp * 86400;
     $diff = $pTs - time();
-    if ($diff <= 0 || $diff > 3 * 86400) continue;
+    $upWarnDays = max(1, (int) platform_setting('trash_upcoming_warning_days', 3));
+    if ($diff <= 0 || $diff > $upWarnDays * 86400) continue;
     $upcomingPurge['count']++;
     $upcomingPurge['items'][] = ['label'=>(string)$ur['label'],'purge_date'=>date('Y-m-d',$pTs),'remain'=>max(1,(int)ceil($diff/86400))];
   }
