@@ -65,14 +65,31 @@ foreach ($rows as $r) {
         if ((string) ($f['last_date'] ?? '') > $pairs[$key]['last_date']) {
             $pairs[$key]['last_date'] = (string) ($f['last_date'] ?? '');
         }
-        // Gün bazında ortalama kur zaman çizelgesi için.
-        $day = substr((string) ($r['created_at'] ?? ''), 0, 10);
-        if ($day === '') continue;
-        if (!isset($dayPair[$day])) $dayPair[$day] = [];
-        if (!isset($dayPair[$day][$key])) $dayPair[$day][$key] = ['count' => 0, 'converted' => 0.0, 'rate_acc' => 0.0];
-        $dayPair[$day][$key]['count'] += $cnt;
-        $dayPair[$day][$key]['converted'] += $conv;
-        $dayPair[$day][$key]['rate_acc'] += $rate * $cnt;
+        // Gün bazında ortalama kur zaman çizelgesi için. Girdi bazlı kur kaydı
+        // (rates_by_date) varsa her tarih için O tarihte kullanılan kur dikkate alınır;
+        // yoksa logun oluşturulduğu gün + ortalama kur ile geriye dönük uyum korunur.
+        $rbd = (array) ($f['rates_by_date'] ?? []);
+        if ($rbd !== []) {
+            foreach ($rbd as $rd => $rv) {
+                $rd = (string) $rd;
+                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $rd)) continue;
+                $day = $rd;
+                if (!isset($dayPair[$day])) $dayPair[$day] = [];
+                if (!isset($dayPair[$day][$key])) $dayPair[$day][$key] = ['count' => 0, 'converted' => 0.0, 'rate_acc' => 0.0];
+                // Aynı gün içinde birden çok satır varsa kur ortalaması üzerinden işlenir.
+                $dayPair[$day][$key]['count'] += $cnt;
+                $dayPair[$day][$key]['converted'] += $conv;
+                $dayPair[$day][$key]['rate_acc'] += (float) $rv * $cnt;
+            }
+        } else {
+            $day = substr((string) ($r['created_at'] ?? ''), 0, 10);
+            if ($day === '') continue;
+            if (!isset($dayPair[$day])) $dayPair[$day] = [];
+            if (!isset($dayPair[$day][$key])) $dayPair[$day][$key] = ['count' => 0, 'converted' => 0.0, 'rate_acc' => 0.0];
+            $dayPair[$day][$key]['count'] += $cnt;
+            $dayPair[$day][$key]['converted'] += $conv;
+            $dayPair[$day][$key]['rate_acc'] += $rate * $cnt;
+        }
     }
 }
 ksort($pairs);

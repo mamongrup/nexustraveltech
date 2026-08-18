@@ -420,12 +420,24 @@ function channel_webhook_apply(array $log, array $payload): array
                     // Denetim: orijinal ve dönüştürülmüş birim + kullanılan kur ve tutarlar.
                     $fxKey = $inCur . '->' . $targetCurrency;
                     if (!isset($fxAudit[$fxKey])) {
-                        $fxAudit[$fxKey] = ['from' => $inCur, 'to' => $targetCurrency, 'rate' => $rate, 'count' => 0, 'original_total' => 0.0, 'converted_total' => 0.0, 'first_date' => $date, 'last_date' => $date];
+                        $fxAudit[$fxKey] = ['from' => $inCur, 'to' => $targetCurrency, 'rate' => $rate, 'count' => 0, 'original_total' => 0.0, 'converted_total' => 0.0, 'first_date' => $date, 'last_date' => $date, 'rates_by_date' => [], 'rate_dates' => 0];
                     }
                     $fxAudit[$fxKey]['count']++;
                     $fxAudit[$fxKey]['original_total'] += $rawPrice;
                     $fxAudit[$fxKey]['converted_total'] += $base['base_price'];
-                    $fxAudit[$fxKey]['rate'] = $rate;
+                    // Girdi bazlı kur kaydı: aynı yükte farklı tarihlerde farklı kur
+                    // kullanıldıysa her tarih için ayrı kur saklanır (rate_dates = kaç
+                    // farklı tarihte dönüşüm yapıldı). Özet 'rate' fiyat sayısıyla
+                    // ağırlıklı ortalamadır — tek kur kullanıldıysa birebir o kur olur.
+                    $fxAudit[$fxKey]['rates_by_date'][$date] = $rate;
+                    $fxAudit[$fxKey]['rate_dates'] = count($fxAudit[$fxKey]['rates_by_date']);
+                    $rateSum = 0.0;
+                    $rateCnt = 0;
+                    foreach ($fxAudit[$fxKey]['rates_by_date'] as $rd => $rv) {
+                        $rateSum += $rv;
+                        $rateCnt++;
+                    }
+                    $fxAudit[$fxKey]['rate'] = $rateCnt > 0 ? round($rateSum / $rateCnt, 6) : $rate;
                     if ($date < $fxAudit[$fxKey]['first_date']) $fxAudit[$fxKey]['first_date'] = $date;
                     if ($date > $fxAudit[$fxKey]['last_date']) $fxAudit[$fxKey]['last_date'] = $date;
                 } else {
