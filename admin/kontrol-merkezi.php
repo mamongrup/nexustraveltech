@@ -129,11 +129,14 @@ try {
     $critItems[] = ['icon'=>'🛏','label'=>'Onay bekleyen öneri','value'=>$totalPending.' öneri'.($pendingMap > 0 ? ' ('.$pendingMap.' oda)' : '').($pendingPlan > 0 ? ' ('.$pendingPlan.' plan)' : ''),'ok'=>$totalPending === 0];
 } catch (Throwable $e) { $critItems[] = ['icon'=>'🛏','label'=>'Onay bekleyen öneri','Tablo yok','ok'=>true]; }
 
-// 10) Trash fill
-$trashCount = 0;
+// 10) Trash fill + pending purge approvals
+$trashCount = 0; $trashPendingCount = 0;
 try {
     $trashCount = (int) db()->query("SELECT COUNT(*) FROM property_feature_catalog WHERE deleted_at IS NOT NULL")->fetchColumn();
-    $critItems[] = ['icon'=>'🗑','label'=>'Çöp kutusu','value'=>$trashCount.' özellik','ok'=>$trashCount === 0];
+    $trashPendingCount = (int) db()->query("SELECT COUNT(*) FROM pending_trash_purges WHERE approved_at IS NULL AND expires_at > now()")->fetchColumn();
+    $trashVal = $trashCount . ' özellik';
+    if ($trashPendingCount > 0) $trashVal .= ' · ' . $trashPendingCount . ' onay bekliyor';
+    $critItems[] = ['icon'=>'🗑','label'=>'Çöp kutusu','value'=>$trashVal,'ok'=>$trashCount === 0 && $trashPendingCount === 0];
 } catch (Throwable $e) { $critItems[] = ['icon'=>'🗑','label'=>'Çöp kutusu','Tablo yok','ok'=>true]; }
 
 // Render
