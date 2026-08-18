@@ -8,7 +8,7 @@ declare(strict_types=1);
 // takibi, yalnızca *-postgres.sql; legacy MySQL dosyaları atlanır)   4) ortam
 // (app_encryption_key, PDO PostgreSQL, cURL).
 //
-// @return array{ok: bool, output: string, errors: list<string>}
+// @return array{ok: bool, output: string, errors: list<string>, checks: array<string, mixed>, ran_at: string}
 
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/platform_settings.php';
@@ -317,6 +317,9 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     $pdo = db();
     $errors = [];
     $out = '';
+    $checks = []; // --json: her bölümün makinece okunabilir sonucu burada toplanır
+    $appliedMigs = [];
+    $pendingMigs = [];
 
     // --repair: yabancı/hatalı şemalı tabloları otomatik tespit edip, BOŞSA düşürür;
     // ardından migration bölümü tabloyu TAM migration zinciriyle yeniden kurar.
@@ -431,6 +434,12 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     $q->execute(['{' . implode(',', $requiredTables) . '}']);
     $found = array_flip($q->fetchAll(PDO::FETCH_COLUMN));
     $missingTables = array_values(array_diff($requiredTables, array_keys($found)));
+    $checks['tables'] = [
+        'status' => $missingTables === [] ? 'ok' : 'error',
+        'total' => count($requiredTables),
+        'found' => count($found),
+        'missing' => $missingTables,
+    ];
 
     $out .= "=== 1) TABLOLAR (" . count($requiredTables) . ") ===\n";
     foreach ($requiredTables as $t) {
@@ -453,6 +462,10 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             $errors[] = "$table eksik kolon(lar): " . implode(', ', $missingCols);
         }
     }
+    $checks['columns'] = [
+        'status' => $colErrors === [] ? 'ok' : 'error',
+        'missing' => $colErrors,
+    ];
     $out .= "\n=== 2) KRİTİK KOLONLAR ===\n";
     $out .= $colErrors === []
         ? "✓ Tüm kritik kolonlar mevcut.\n"
@@ -491,6 +504,11 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             } else {
                 $out .= "✓ Oda eşleştirme durumu: " . $mappingCount . " kayıt, 0 uyumsuz.\n";
             }
+            $checks['room_mappings'] = [
+                'status' => $orphanMappings === 0 ? 'ok' : 'error',
+                'count' => $mappingCount,
+                'orphans' => $orphanMappings,
+            ];
             // Hedefi dolmuş öneriler: aynı kanal + aynı dış kod için confirmed eşleşme varken
             // hâlâ 'suggested' kalan satırlar — gereksiz bekleme; --repair otomatik confirmed yapar.
             try {
@@ -508,6 +526,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             } catch (Throwable $e) {}
         } catch (Throwable $e) {
             $out .= "⚠ Oda eşleştirme taraması yapılamadı: " . $e->getMessage() . "\n";
+            $checks['room_mappings'] = ['status' => 'error', 'error' => $e->getMessage()];
         }
     }
 
@@ -566,9 +585,11 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             if ($nProb > 0) {
                 $errors[] = 'kanal token sorunu: ' . implode('; ', $probText);
             }
+            $checks['tokens'] = ['status' => $nProb === 0 ? 'ok' : 'error', 'problems' => $nProb];
         }
     } catch (Throwable $e) {
         $out .= "⚠ Token denetimi yapılamadı: " . $e->getMessage() . "\n";
+        $checks['tokens'] = ['status' => 'error', 'error' => $e->getMessage()];
     }
 
     // --- 2c) Tablo satır sayıları / tutarlılık denetimi — yarım kalan işler, yetim satırlar,
@@ -696,6 +717,11 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     } elseif ($consistencyChecks > 0) {
         $out .= "✓ Tüm satır sayısı/tutarlılık kontrolleri temiz.\n";
     }
+    $checks['consistency'] = [
+        'status' => $consistencyErrors === [] ? 'ok' : 'error',
+        'errors' => $consistencyErrors,
+        'checks' => $consistencyChecks,
+    ];
 
     // --- 2d) Onarım — yabancı şemalı boş tabloları düşür (migration bölümü yeniden kurar).
     if ($repair) {
@@ -1121,8 +1147,14 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             $errDetail = array_merge(array_slice($ownList, 0, 5), array_slice($ownOwnerless, 0, 5));
             $errors[] = 'Sahiplik ön kontrolü: ' . ($ownMismatch + count($ownOwnerless)) . ' nesne sorunlu (' . implode('; ', $errDetail) . ($ownMismatch + count($ownOwnerless) > 5 ? ' …' : '') . ')';
         }
+        $checks['ownership_precheck'] = [
+            'status' => ($ownMismatch === 0 && $ownOwnerless === []) ? 'ok' : 'error',
+            'mismatch' => $ownMismatch,
+            'ownerless' => $ownOwnerless,
+        ];
     } catch (Throwable $e) {
         $out .= "⚠ Sahiplik ön kontrolü yapılamadı: " . $e->getMessage() . "\n";
+        $checks['ownership_precheck'] = ['status' => 'error', 'error' => $e->getMessage()];
     }
     $pendingCount = 0;
     $failedMigs = [];
@@ -1142,11 +1174,13 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         }
         if ($ownershipBlocked) {
             $out .= '⏳ ' . $base . ' (sahiplik devri bekleniyor — atlandı)' . "\n";
+            $pendingMigs[] = $base;
             continue;
         }
         if ($dryRun) {
             $out .= ($forceReapply ? '♻ ' : '⏳ ') . $base . ($forceReapply ? ' (onarım sonrası yeniden uygulanacak)' : ' (bekliyor)') . "\n";
             $pendingCount++;
+            $pendingMigs[] = $base;
             continue;
         }
         $sql = (string) file_get_contents($file);
@@ -1164,10 +1198,12 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                     $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
                 }
                 $out .= '♻ ' . $base . ' yeniden uygulandı' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : '') . "\n";
+                $appliedMigs[] = $base;
                 audit_log('health.repair_rebuild', 'schema', null, ['migration' => $base, 'commit' => $commitNow !== '' ? substr($commitNow, 0, 7) : null, 'reapplied' => true, 'note' => 'onarım sonrası tablo yeniden kuruldu'], 'health-check');
             } else {
                 $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
                 $out .= '→ ' . $base . ' uygulandı' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : ' (commit hash bulunamadı)') . "\n";
+                $appliedMigs[] = $base;
             }
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -1189,6 +1225,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                             $pdo->commit();
                             $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
                             $out .= '→ ' . $base . ' uygulandı (sahiplik devri sonrası)' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : '') . "\n";
+                            $appliedMigs[] = $base;
                             continue;
                         } catch (Throwable $e2) {
                             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -1214,6 +1251,13 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     if ($failedMigs) {
         $out .= "Başarısız migration'lar: " . implode(', ', $failedMigs) . "\n";
     }
+    $checks['migrations'] = [
+        'status' => $failedMigs === [] && $pendingMigs === [] ? 'ok' : ($failedMigs !== [] ? 'error' : 'pending'),
+        'commit' => $commitNow !== '' ? substr($commitNow, 0, 7) : '',
+        'applied' => $appliedMigs,
+        'pending' => $pendingMigs,
+        'failed' => $failedMigs,
+    ];
 
     // --- 3b) Onarım sonrası doğrulama — düşürülüp yeniden kurulan tabloların beklenen
     // kolonları tekrar kontrol edilir. Migration bölümü az önce bittiği için tablolar
@@ -1298,6 +1342,20 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $out .= "⚠ ical_sync_logs okunamadı: " . $e->getMessage() . "\n";
         $warnCount++;
     }
+    $checks['operational'] = [
+        'status' => $warnCount === 0 ? 'ok' : 'warn',
+        'warnings' => $warnCount,
+        'error_logs' => (int) ($errCount ?? 0),
+        'email_queue' => (int) ($emailQ ?? 0),
+        'webhook_fail' => (int) ($failWebhook ?? 0),
+        'ical_fail' => (int) ($failIcal ?? 0),
+        'thresholds' => [
+            'error_logs' => $warnLogThreshold,
+            'email_queue' => $warnEmailThreshold,
+            'webhook_fail' => $warnWebhookThreshold,
+            'ical_fail' => $warnIcalThreshold,
+        ],
+    ];
     $out .= $warnCount === 0 ? "✓ Operasyonel uyarı yok.\n" : "⚠ " . $warnCount . " operasyonel uyarı (kritik değil — sağlık durumunu bozmaz).\n";
 
     // --- 5) Ortam ---
@@ -1314,6 +1372,12 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $out .= ($ok ? '✓' : '✗') . ' ' . $label . "\n";
         if (!$ok) $errors[] = $label . ' etkin değil';
     }
+    $checks['env'] = [
+        'status' => strlen((string) ($config['app_encryption_key'] ?? '')) >= 32 && extension_loaded('pdo_pgsql') && extension_loaded('curl') ? 'ok' : 'error',
+        'app_encryption_key' => strlen((string) ($config['app_encryption_key'] ?? '')) >= 32,
+        'pdo_pgsql' => extension_loaded('pdo_pgsql'),
+        'curl' => extension_loaded('curl'),
+    ];
 
     $out .= "\n";
     if ($errors) {
@@ -1322,5 +1386,5 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $out .= 'SONUÇ: Tüm kontroller başarılı — ' . count($requiredTables) . " tablo, kritik kolonlar ve " . count($migrationFiles) . " migration hazır.\n";
     }
 
-    return ['ok' => $errors === [], 'output' => $out, 'errors' => $errors];
+    return ['ok' => $errors === [], 'output' => $out, 'errors' => $errors, 'checks' => $checks, 'ran_at' => gmdate('c')];
 }
