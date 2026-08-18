@@ -295,11 +295,17 @@ function panel_chat_weekly_html(array $d, string $panelLink, string $company = '
             . '<table style="border-collapse:collapse;width:100%;max-width:560px;margin-top:6px"><tr><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Kod</th><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Tür</th><th style="text-align:center;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Tekrar</th><th style="text-align:left;padding:5px 8px;background:#fdf3e3;font-size:10px;color:#8a6100">Son görülme</th></tr>' . $rows . '</table></div>';
     }
     $pendingTotal = $pendingRoom + $pendingPlan;
+    // Bekleyen kalıcı silme onayları
+    $pendingPurgeCount = 0;
+    try { $pendingPurgeCount = (int) db()->query("SELECT COUNT(*) FROM pending_trash_purges WHERE approved_at IS NULL AND expires_at > now()")->fetchColumn(); } catch (Throwable $e) {}
     $pendingHtml = '';
-    if ($pendingTotal > 0) {
+    if ($pendingTotal > 0 || $pendingPurgeCount > 0) {
         $pendingHtml = '<div style="margin:14px 0 4px;padding:10px 14px;background:#fff8e6;border:1px solid #ead9a8;border-radius:8px">'
-            . '<h3 style="margin:0 0 4px;font-size:13px;color:#8a6100">⏳ Onay bekleyen eşleştirme önerileri: <b>' . $pendingTotal . '</b> (' . $pendingRoom . ' oda + ' . $pendingPlan . ' fiyat planı)</h3>'
-            . '<p style="margin:0;font-size:12px;color:#64716d">Webhook bildirimlerinden gelen dış oda/plan kodları öneri olarak bekliyor — onaylanana kadar veri yazılmaz. Onaylamak için Dağıtım & kanal merkezi → bölüm 3 (Oda eşleştirmesi) sayfasını açın.</p></div>';
+            . '<h3 style="margin:0 0 4px;font-size:13px;color:#8a6100">⏳ Onay bekleyen işlemler</h3>'
+            . '<ul style="margin:4px 0 0;padding-left:18px;font-size:12px;color:#64716d">'
+            . ($pendingTotal > 0 ? '<li><b>' . $pendingTotal . '</b> eşleştirme önerisi (' . $pendingRoom . ' oda + ' . $pendingPlan . ' fiyat planı) — Dağıtım merkezi bölüm 3</li>' : '')
+            . ($pendingPurgeCount > 0 ? '<li><b>' . $pendingPurgeCount . '</b> özellik kalıcı silme onayı bekliyor — <a href="https://nexustraveltech.com/admin/ozellik-listeleri#trash" style="color:#8a6100;font-weight:bold">Çöp kutusu</a></li>' : '')
+            . '</ul></div>';
     }
     // Son 7 gün eşleştirme işlemleri (onay/red) — denetim kayıtlarından.
     $weekTotal = $weekRoomAppr + $weekRoomRej + $weekPlanAppr + $weekPlanRej;

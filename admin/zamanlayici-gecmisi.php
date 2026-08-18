@@ -53,6 +53,7 @@ $stats['err24'] = (int) $pdo->query("SELECT COUNT(*) FROM scheduled_job_runs WHE
 $stats['err7'] = (int) $pdo->query("SELECT COUNT(*) FROM scheduled_job_runs WHERE status='error' AND created_at >= now() - interval '7 days'")->fetchColumn();
 $stats['avgMs'] = (int) $pdo->query("SELECT COALESCE(AVG(duration_ms),0) FROM scheduled_job_runs WHERE created_at >= now() - interval '7 days'")->fetchColumn();
 $stats['totalRuns'] = (int) $pdo->query('SELECT COUNT(*) FROM scheduled_job_runs')->fetchColumn();
+try { $stats['pendingPurge'] = (int) $pdo->query("SELECT COUNT(*) FROM pending_trash_purges WHERE approved_at IS NULL AND expires_at > now()")->fetchColumn(); } catch (Throwable $e) { $stats['pendingPurge'] = 0; }
 
 // Son 30 günün günlük ortalama süresi (grafiğin kendi görev seçimine göre).
 $durWhere = $chartJob > 0 ? 'WHERE job_id=? AND created_at >= CURRENT_DATE - 29' : 'WHERE created_at >= CURRENT_DATE - 29';
@@ -187,6 +188,7 @@ $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başar�
   <a class="stat <?= $stats['err24'] > 0 ? 'danger' : '' ?>" href="<?=htmlspecialchars($filterUrl('error', 24))?>"><span>Hata — son 24 saat</span><b><?= (int)$stats['err24'] ?></b></a>
   <a class="stat <?= $stats['err7'] > 0 ? 'warn' : '' ?>" href="<?=htmlspecialchars($filterUrl('error', 168))?>"><span>Hata — son 7 gün</span><b><?= (int)$stats['err7'] ?></b></a>
   <div class="stat"><span>Ort. süre (7 gün)</span><b><?= number_format((int)$stats['avgMs']) ?> ms</b></div>
+  <a class="stat <?= ($stats['pendingPurge'] ?? 0) > 0 ? 'danger' : '' ?>" href="/nexustraveltech/admin/ozellik-listeleri#trash"><span>Onay bekleyen silme</span><b><?= (int)($stats['pendingPurge'] ?? 0) ?></b></a>
 </div>
 <?php if ($hasFilter): ?>
 <p class="muted" style="margin:10px 0 0">Filtre: <b><?=htmlspecialchars($filterLabel)?></b> · <a href="?limit=200" style="color:#0d7a4a;font-weight:700">Temizle</a></p>
