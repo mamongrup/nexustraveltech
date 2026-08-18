@@ -171,6 +171,32 @@ foreach ($stale as $key => $info) {
     echo '  [BAYAT] ' . $key . ' — ' . $info . "\n";
 }
 
+// 4b) Bayat kurla yapılan tahmini dönüşüm tutarı — son 7 günde o çiftle dönüştürülen
+// toplam tutar ve günlük ortalama (channel_sync_logs.fx_audit JSONB'den). Bayat kur
+// kullanılmaya devam ettiği için bu tutar, kur güncellenmezse risk altındaki değeri gösterir.
+$fx7d = [];
+$fx7dKey = function (string $from, string $to): string {
+    return $from . '->' . $to;
+};
+try {
+    $fxRows = $pdo->query(
+        "SELECT fx->>'from' AS f, fx->>'to' AS t,
+                COALESCE(SUM((fx->>'converted_total')::numeric), 0) AS total,
+                COUNT(DISTINCT l.created_at::date) AS days
+         FROM channel_sync_logs l, jsonb_array_elements(l.fx_audit) fx
+         WHERE l.created_at >= now() - interval '7 days'
+         GROUP BY 1, 2"
+    )->fetchAll();
+    foreach ($fxRows as $fxr) {
+        $fx7d[$fx7dKey((string) $fxr['f'], (string) $fxr['t'])] = [
+            'total' => (float) $fxr['total'],
+            'days' => (int) $fxr['days'],
+        ];
+    }
+} catch (Throwable $e) {
+    // fx_audit kolonu/tablo yoksa sessizce geç — e-posta yine gider, tutar sütunu '—' olur.
+}
+
 if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
     $rowsHtml = '';
     foreach ($missing as $key => $info) {
@@ -185,19 +211,27 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
         }
     }
     foreach ($stale as $key => $info) {
+        $fxInfo = $fx7d[$key] ?? null;
+        $fxCell = '—';
+        if ($fxInfo !== null) {
+            $fxCell = number_format($fxInfo['total'], 2, ',', '.') . ' ' . (string) explode('->', $key)[1]
+                . ($fxInfo['days'] > 0 ? ' · günlük ort. ' . number_format($fxInfo['total'] / $fxInfo['days'], 2, ',', '.') : '');
+        }
         $rowsHtml .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de"><b>' . htmlspecialchars($key) . '</b></td>'
             . '<td style="padding:7px 12px;border:1px solid #e1e5de;color:#8a6d00">bayat — ' . htmlspecialchars($info) . '</td>'
-            . '<td style="padding:7px 12px;border:1px solid #e1e5de">en eski kayıt</td></tr>';
+            . '<td style="padding:7px 12px;border:1px solid #e1e5de">en eski kayıt</td>'
+            . '<td style="padding:7px 12px;border:1px solid #e1e5de">' . $fxCell . '</td></tr>';
     }
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
         . '<h2 style="margin:0 0 6px">💱 Kur denetimi: ' . count($missing) . ' eksik · ' . count($stale) . ' bayat çift</h2>'
         . '<p style="color:#64716d;margin:0 0 10px">Webhook fiyat dönüşümünde ihtiyaç duyulan para birimi çiftleri. '
         . '<b style="color:#b0301a">Eksik</b> = fx_rates\'te bulunmayan çift (<b>kanıt</b>: son 24 saatte bu yüzden başarısız işlem — fiyat satırı yazılmadı; <b>önleyici</b>: aktif planlar / görülen gelen birimler nedeniyle bugün gereken); '
-        . '<b style="color:#8a6d00">bayat</b> = kur kaydı var ama 7+ gün önce (eski kurla dönüşüm devam ediyor). Kur eklenene kadar eksik çiftte fiyat satırı yazılmaz (yanlış birim engellenir).</p>'
-        . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px">'
+        . '<b style="color:#8a6d00">bayat</b> = kur kaydı var ama 7+ gün önce (eski kurla dönüşüm devam ediyor). Bayat çiftteki dönüşüm tutarı, son 7 günde o çiftle dönüştürülen toplam ve günlük ortalamadır — kur güncellenmezse bu değer eski kurla işlenmeye devam eder.</p>'
+        . '<table style="border-collapse:collapse;width:100%;max-width:680px;font-size:13px">'
         . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Çift</th>'
         . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Neden</th>'
-        . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Son görülme</th></tr>'
+        . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Son görülme</th>'
+        . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Son 7 gün dönüşüm</th></tr>'
         . $rowsHtml
         . '</table>'
         . '<p style="margin-top:18px">Kur eklemek için: <a href="https://nexustraveltech.com/admin/kur-yonetimi" style="color:#b0301a">Kur yönetimi →</a> '
