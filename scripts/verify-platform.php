@@ -113,6 +113,65 @@ try {
     if ($newColMissing) {
         $errors[] = 'Yeni entegrasyon kolonları eksik: ' . implode(', ', $newColMissing) . '(scripts/health-check.php migration 047/048/049/052 uygular)';
     }
+    // Veri denetimi — channel_room_mappings / channel_rate_plan_mappings onarımı sonrası eski
+    // kayıtların yeni şemaya nasıl taşındığını gösterir. Onarım yalnızca BOŞ tabloları düşürür
+    // (health.repair_drop); dolu tablolara dokunmaz ve elle veri taşıma için raporlanır. Zincir:
+    //   health.repair_drop           → tablo düşürüldü (o anda 0 kayıt; eski satır taşınacak veri yok)
+    //   health.repair_verify         → migration zinciriyle yeniden kuruldu + kolon doğrulaması
+    //   health.repair_orphan_cleanup → silinmiş hedefe işaret eden yetim satırlar temizlendi
+    //   sonrası kayıtlar             → yeni şemaya webhook/panel akışıyla yazılan satırlar
+    $auditTables = ['channel_room_mappings', 'channel_rate_plan_mappings'];
+    $repairLogs = [];
+    try {
+        $repairQ = $pdo->prepare("SELECT action, details, admin_username, created_at FROM admin_audit_logs WHERE action IN ('health.repair_drop','health.repair_verify','health.repair_orphan_cleanup','health.repair_stale_confirm') AND created_at > now() - interval '90 days' ORDER BY id");
+        $repairQ->execute();
+        foreach ($repairQ->fetchAll() as $rl) {
+            $d = json_decode((string) $rl['details'], true) ?: [];
+            $tbl = (string) ($d['table'] ?? '');
+            if ($tbl !== '' && !in_array($tbl, $auditTables, true)) continue;
+            $repairLogs[] = [
+                'action' => (string) $rl['action'],
+                'table' => $tbl !== '' ? $tbl : '—',
+                'migrations' => implode(', ', array_map('strval', (array) ($d['migrations'] ?? []))),
+                'missing' => implode(', ', array_map('strval', (array) ($d['missing_columns'] ?? []))),
+                'ok' => $d['ok'] ?? null,
+                'total' => (int) ($d['total'] ?? 0),
+                'at' => (string) $rl['created_at'],
+            ];
+        }
+    } catch (Throwable $e) {
+        $repairLogs = [];
+    }
+    echo 'Onarım veri denetimi (son 90 gün — admin_audit_logs):' . PHP_EOL;
+    if ($repairLogs === []) {
+        echo '  · Bu dönemde channel_room_mappings / channel_rate_plan_mappings onarım kaydı yok — eski şemadan taşınacak veri denetimi bulunamadı.' . PHP_EOL;
+    } else {
+        foreach ($repairLogs as $rl) {
+            if ($rl['action'] === 'health.repair_drop') {
+                $verdict = 'tablo BOŞTU → düşürüldü; eski satır yok (0 kayıt taşındı)' . ($rl['migrations'] !== '' ? ' · zincir: ' . $rl['migrations'] : ' · zincir belirtilmemiş');
+            } elseif ($rl['action'] === 'health.repair_verify') {
+                $verdict = $rl['ok'] ? 'yeniden kuruldu ✓ — beklenen kolonlar mevcut (sonraki satırlar yeni şemaya yazıldı)' : 'yeniden kurulamadı ✗ — eksik kolonlar kaldı: ' . ($rl['missing'] !== '' ? $rl['missing'] : '—');
+            } elseif ($rl['action'] === 'health.repair_orphan_cleanup') {
+                $verdict = $rl['total'] . ' yetim satır temizlendi (silinmiş oda tipi/plan/kanal bağlantıları)';
+            } else {
+                $verdict = 'hedefi dolmuş öneriler confirmed yapıldı: ' . ($rl['table'] !== '—' ? $rl['table'] : 'detay: ' . $rl['missing']);
+            }
+            echo '  · ' . $rl['at'] . ' — ' . str_replace('health.repair_', '', $rl['action']) . ' [' . $rl['table'] . '] → ' . $verdict . PHP_EOL;
+        }
+    }
+    // Güncel veri durumu — onarım sonrası yeni şemaya yazılan satırlar (webhook/panel akışı).
+    foreach ($auditTables as $at) {
+        if (in_array($at, $missing, true)) continue;
+        try {
+            $count = (int) $pdo->query('SELECT COUNT(*) FROM "' . $at . '"')->fetchColumn();
+            $conf = (int) $pdo->query('SELECT COUNT(*) FROM "' . $at . '" WHERE status=' . $pdo->quote('confirmed'))->fetchColumn();
+            $sugg = (int) $pdo->query('SELECT COUNT(*) FROM "' . $at . '" WHERE status=' . $pdo->quote('suggested'))->fetchColumn();
+            $latest = (string) ($pdo->query('SELECT MAX(created_at) FROM "' . $at . '"')->fetchColumn() ?: '—');
+            echo '  · ' . $at . ' güncel: ' . $count . ' kayıt (' . $conf . ' confirmed · ' . $sugg . ' suggested) · son ekleme ' . $latest . PHP_EOL;
+        } catch (Throwable $e) {
+            echo '  · ' . $at . ' güncel durumu okunamadı: ' . $e->getMessage() . PHP_EOL;
+        }
+    }
     // Migration durumu — schema_migrations takibi (health-check ile aynı; burada uygulanmaz, yalnızca raporlanır).
     $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())");
     $hasCommitCol=(bool)$pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='schema_migrations' AND column_name='commit_hash'")->fetchColumn();
