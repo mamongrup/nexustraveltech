@@ -230,6 +230,7 @@ $describeAction = function (array $r): string {
         case 'channel.room_mapping_reject': return 'Oda eşleştirme önerisi reddedildi' . ((string) ($details['code'] ?? '') !== '' ? ': ' . htmlspecialchars((string) $details['code']) : '') . ((string) ($details['channel'] ?? '') !== '' ? ' (' . htmlspecialchars((string) $details['channel']) . ')' : '');
         case 'channel.plan_mapping_approve': return 'Plan eşleştirme önerisi onaylandı' . ((string) ($details['code'] ?? '') !== '' ? ': ' . htmlspecialchars((string) $details['code']) : '') . ((string) ($details['channel'] ?? '') !== '' ? ' (' . htmlspecialchars((string) $details['channel']) . ')' : '');
         case 'channel.plan_mapping_reject': return 'Plan eşleştirme önerisi reddedildi' . ((string) ($details['code'] ?? '') !== '' ? ': ' . htmlspecialchars((string) $details['code']) : '') . ((string) ($details['channel'] ?? '') !== '' ? ' (' . htmlspecialchars((string) $details['channel']) . ')' : '');
+        case 'channel.quick_match': return 'Hızlı eşleştirme başlatıldı' . ((string) ($details['code'] ?? '') !== '' ? ': ' . htmlspecialchars((string) $details['code']) : '') . ((string) ($details['room_name'] ?? '') !== '' ? ' → ' . htmlspecialchars((string) $details['room_name']) : '') . ((string) ($details['channel'] ?? '') !== '' ? ' (' . htmlspecialchars((string) $details['channel']) . ')' : '');
         default: return (string) $r['action'] . ($label !== '' ? ': ' . $label : '');
     }
 };
