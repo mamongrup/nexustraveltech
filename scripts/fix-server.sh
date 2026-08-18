@@ -51,6 +51,30 @@ fi
 echo
 echo "=== 2) EN SON KOD ==="
 git fetch origin --prune --tags
+
+# origin/main'in geçerli bir commit'e işaret ettiğini doğrula
+REMOTE_MAIN=$(git rev-parse origin/main 2>/dev/null || echo "")
+if [ -z "$REMOTE_MAIN" ]; then
+  echo "✗ FATAL: origin/main çözümlenemedi — repo/sube sorunu olabilir"
+  echo "  git remote -v:"
+  git remote -v
+  echo "  git branch -r:"
+  git branch -r
+  exit 1
+fi
+REMOTE_SHORT=$(echo "$REMOTE_MAIN" | cut -c1-7)
+echo "✓ origin/main: $REMOTE_SHORT"
+
+# Son commit tarihini kontrol et (çok eskiyse uyarı)
+REMOTE_AGE=$(git log -1 --format='%at' origin/main 2>/dev/null || echo "0")
+NOW=$(date +%s)
+AGE_DAYS=$(( (NOW - REMOTE_AGE) / 86400 ))
+if [ "$AGE_DAYS" -gt 7 ]; then
+  echo "⚠ UYARI: origin/main $AGE_DAYS gün önceki commit'e işaret ediyor"
+  echo "  Bu normal olabilir (yeni push yok) ama şüpheli ise Ctrl+C ile durun"
+  sleep 2
+fi
+
 git reset --hard origin/main
 git log --oneline -1
 
