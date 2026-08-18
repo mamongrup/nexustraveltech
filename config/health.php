@@ -1066,6 +1066,64 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     if ($ownershipBlocked) {
         $out .= "⚠ Sahiplik devri engellendiği için migration uygulaması ATLANDI — önce sahipliği devredin (yukarıdaki tek satır komut).\n";
     }
+
+    // --- 3a) Sahiplik ÖN kontrolü — migration'lar uygulanmadan ÖNCE ---
+    // Tablo sahibi app kullanıcısı değilse migration 'must be owner' verir. Bu blok
+    // durumu önceden raporlar: (a) app kullanıcısına ait olmayan public nesneler
+    // (tablo/dizi/görünüm), (b) sahibi artık var olmayan bir role işaret eden
+    // gerçek SAHİPSİZ tablolar. --repair modunda 2d-1 sahipliği zaten devretmiş
+    // olur; normal modda da uyarı görünür — başarısız migration'ın nedeni belli olur.
+    $ownMismatch = 0;
+    $ownList = [];
+    $ownOwnerless = [];
+    try {
+        $curUser = (string) $pdo->query('SELECT current_user')->fetchColumn();
+        $ownCheck = [
+            ['Tablo', 'tablename', 'tableowner', 'pg_tables'],
+            ['Dizi', 'sequencename', 'sequenceowner', 'pg_sequences'],
+            ['Görünüm', 'viewname', 'viewowner', 'pg_views'],
+        ];
+        foreach ($ownCheck as [$oLabel, $oNameCol, $oOwnCol, $oSrc]) {
+            $rows = $pdo->query("SELECT " . $oNameCol . ", " . $oOwnCol . " FROM " . $oSrc . " WHERE schemaname='public' AND " . $oOwnCol . " <> current_user ORDER BY " . $oNameCol)->fetchAll();
+            foreach ($rows as $r) {
+                $ownMismatch++;
+                $ownList[] = $oLabel . ': ' . $r[$oNameCol] . ' (' . $r[$oOwnCol] . ')';
+            }
+        }
+        // (b) Gerçek sahipsiz: sahibi var olmayan role işaret eden tablolar.
+        $ownerlessRows = $pdo->query("SELECT t.tablename, t.tableowner FROM pg_tables t WHERE t.schemaname='public' AND NOT EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname = t.tableowner) ORDER BY t.tablename")->fetchAll();
+        foreach ($ownerlessRows as $r) {
+            $ownOwnerless[] = $r['tablename'] . ' (sahip rolü yok: ' . $r['tableowner'] . ')';
+        }
+        $out .= "\n=== 3a) SAHİPLİK ÖN KONTROLÜ ===\n";
+        if ($ownMismatch === 0 && $ownOwnerless === []) {
+            $out .= "✓ Tüm public nesnelerin sahibi " . $curUser . " — migration öncesi sahiplik sorunu yok.\n";
+        } else {
+            if ($ownMismatch > 0) {
+                $out .= "⚠ " . $ownMismatch . " nesne app kullanıcısına (" . $curUser . ") ait değil — migration'lar 'must be owner' verebilir:\n";
+                foreach (array_slice($ownList, 0, 12) as $ol) {
+                    $out .= "  · " . $ol . "\n";
+                }
+                if (count($ownList) > 12) {
+                    $out .= "  … +" . (count($ownList) - 12) . " daha\n";
+                }
+            }
+            if ($ownOwnerless !== []) {
+                $out .= "⚠ " . count($ownOwnerless) . " SAHİPSİZ tablo (sahip rolü silinmiş):\n";
+                foreach (array_slice($ownOwnerless, 0, 12) as $oo) {
+                    $out .= "  · " . $oo . "\n";
+                }
+                if (count($ownOwnerless) > 12) {
+                    $out .= "  … +" . (count($ownOwnerless) - 12) . " daha\n";
+                }
+            }
+            $out .= "  → Çözüm: scripts/fix-server.sh (adım 4) veya health-check --repair sahipliği otomatik devreder.\n";
+            $errDetail = array_merge(array_slice($ownList, 0, 5), array_slice($ownOwnerless, 0, 5));
+            $errors[] = 'Sahiplik ön kontrolü: ' . ($ownMismatch + count($ownOwnerless)) . ' nesne sorunlu (' . implode('; ', $errDetail) . ($ownMismatch + count($ownOwnerless) > 5 ? ' …' : '') . ')';
+        }
+    } catch (Throwable $e) {
+        $out .= "⚠ Sahiplik ön kontrolü yapılamadı: " . $e->getMessage() . "\n";
+    }
     $pendingCount = 0;
     $failedMigs = [];
     // 'must be owner' otomatik devri — migration bir kez başarısız olursa sahiplik
