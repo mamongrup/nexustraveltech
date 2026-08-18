@@ -36,6 +36,13 @@ try {
 } catch (Throwable $e) {}
 $orphanCleaned = max(0, $orphanBefore - $orphanAfter);
 
+// Hedefi dolmuş öneriler: aynı kanal + dış kod için confirmed eşleşme varken hâlâ 'suggested'
+$staleBefore = 0;
+try {
+    $staleBefore = (int) db()->query("SELECT COUNT(*) FROM channel_room_mappings s JOIN channel_room_mappings c ON c.channel_connection_id=s.channel_connection_id AND c.external_room_id=s.external_room_id AND c.status='confirmed' WHERE s.status='suggested'")->fetchColumn()
+        + (int) db()->query("SELECT COUNT(*) FROM channel_rate_plan_mappings s JOIN channel_rate_plan_mappings c ON c.channel_connection_id=s.channel_connection_id AND c.external_rate_plan_id=s.external_rate_plan_id AND c.status='confirmed' WHERE s.status='suggested'")->fetchColumn();
+} catch (Throwable $e) {}
+
 // Son 24 saatte uygulanan migration'lar — deploy günü "o gün ne uygulandı" görünürlüğü.
 // Migration başarıyla uygulanıp başka sorun yoksa bile e-posta gider (sessiz deploy onayı).
 $migApplied = [];
@@ -47,6 +54,15 @@ try {
 }
 
 echo $result['output'];
+
+// repair sonrası hedefi dolmuş öneri sayısı
+$staleAfter = 0;
+try {
+    $staleAfter = (int) db()->query("SELECT COUNT(*) FROM channel_room_mappings s JOIN channel_room_mappings c ON c.channel_connection_id=s.channel_connection_id AND c.external_room_id=s.external_room_id AND c.status='confirmed' WHERE s.status='suggested'")->fetchColumn()
+        + (int) db()->query("SELECT COUNT(*) FROM channel_rate_plan_mappings s JOIN channel_rate_plan_mappings c ON c.channel_connection_id=s.channel_connection_id AND c.external_rate_plan_id=s.external_rate_plan_id AND c.status='confirmed' WHERE s.status='suggested'")->fetchColumn();
+} catch (Throwable $e) {}
+$staleCleaned = max(0, $staleBefore - $staleAfter);
+
 if ($result['ok'] && $migApplied === []) {
     exit(0);
 }
@@ -349,6 +365,9 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
             ? '<p style="background:#e6f8c7;border:1px solid #bcd98a;border-radius:8px;padding:10px 12px;margin-top:14px"><b style="color:#2e7d32">🧹 Yetim temizliği:</b> ' . $orphanCleaned . ' satır otomatik temizlendi' . ($orphanAfter > 0 ? ' · kalan: ' . $orphanAfter : ' · tüm yetimler temizlendi') . '</p>'
             : ($orphanBefore > 0 ? '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;margin-top:14px">🧹 <b>' . $orphanBefore . ' yetim eşleştirme</b> mevcut (otomatik temizlenmedi — <a href="https://nexustraveltech.com/admin/orphan-mappings" style="color:#8a6100;font-weight:bold">listeyi gör →</a>).</p>' : ''))
         . $orphanBlock
+        . ($staleCleaned > 0
+            ? '<p style="background:#e6f8c7;border:1px solid #bcd98a;border-radius:8px;padding:10px 12px;margin-top:14px"><b style="color:#2e7d32">✅ Öneri onayı:</b> ' . $staleCleaned . ' hedefi dolmuş öneri otomatik confirmed yapıldı' . ($staleAfter > 0 ? ' · kalan: ' . $staleAfter : ' · tüm öneriler tamamlandı') . '</p>'
+            : ($staleBefore > 0 ? '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;margin-top:14px">⏳ <b>' . $staleBefore . ' hedefi dolmuş öneri</b> mevcut (otomatik onaylanmadı — health-check --repair çalıştırın).</p>' : ''))
         . $migBlock
         . $runsBlock
         . $opsBlock
@@ -356,9 +375,10 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
         . $orphanDetailBlock
         . '</div>';
     $orphanNote = $orphanCleaned > 0 ? ' · ' . $orphanCleaned . ' yetim temizlendi' : '';
+    $staleNote = $staleCleaned > 0 ? ' · ' . $staleCleaned . ' öneri onaylandı' : '';
 $subject = $result['errors'] !== []
-        ? '⚠ Sağlık kontrolü: ' . count($result['errors']) . ' sorun' . $orphanNote
-        : '✅ Sağlık kontrolü: ' . count($migApplied) . ' migration uygulandı' . $orphanNote;
+        ? '⚠ Sağlık kontrolü: ' . count($result['errors']) . ' sorun' . $orphanNote . $staleNote
+        : '✅ Sağlık kontrolü: ' . count($migApplied) . ' migration uygulandı' . $orphanNote . $staleNote;
     queue_email($adminEmail, $subject, $body, 'health_check_alert');
     echo " Admin e-postası kuyruğa eklendi.\n";
 } else {
