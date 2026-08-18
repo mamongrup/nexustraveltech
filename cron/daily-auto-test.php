@@ -118,5 +118,23 @@ save_platform_setting('last_auto_test_oks', $oks);
 save_platform_setting('last_auto_test_warns', $warns);
 save_platform_setting('last_auto_test_fails', $fails);
 
+// Denetim kaydı yaz.
+try {
+    require_once __DIR__ . '/../config/audit.php';
+    $modDetails = [];
+    foreach ($output as $line) {
+        if (preg_match('/^\s+[✓⚠✗]\s+(.+?)\s+[—-]\s+(\d+)\s+kontrol\s+\((\d+)\s+hata\s+[·.]\s+(\d+)\s+uyarı\)/', $line, $m)) {
+            $modDetails[trim($m[1])] = ['total' => (int) $m[2], 'fail' => (int) $m[3], 'warn' => (int) $m[4]];
+        }
+    }
+    audit_log(
+        'auto_test.daily',
+        'auto_test',
+        null,
+        ['ok' => $oks, 'warn' => $warns, 'fail' => $fails, 'modules' => $modDetails, 'email_sent' => $hasProblems && $adminEmail !== ''],
+        'system'
+    );
+} catch (Throwable $e) {}
+
 echo $outputText . "\n";
 exit($exitCode);

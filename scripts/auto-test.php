@@ -337,4 +337,47 @@ echo str_repeat('═', 62) . "\n";
 echo "GENEL: $oks ✓ · $warns ⚠ · $fails ✗\n";
 echo "Komut: " . ($E2E ? '--e2e' : '') . ($KEEP ? ' --keep' : '') . ($VERBOSE ? ' --verbose' : '') . "\n";
 if ($E2E) echo "İpucu: e2e her koşuda ilk aktif kanalı kullanır; --keep ile test satırları kalır.\n";
+
+// --e2e ile çalıştırıldıysa denetim kaydına yaz (modül durumları, süre, hatalar).
+if ($E2E) {
+    $elapsedMs = (int) round((microtime(true) - $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true)) * 1000);
+    $modDetails = [];
+    foreach ($moduleOrder as $m) {
+        $mFails = count(array_filter($results[$m], fn($r) => $r[1] === 'fail'));
+        $mWarns = count(array_filter($results[$m], fn($r) => $r[1] === 'warn'));
+        $mOks = count($results[$m]) - $mFails - $mWarns;
+        $modDetails[$m] = ['ok' => $mOks, 'warn' => $mWarns, 'fail' => $mFails];
+    }
+    // Hata satırlarını topla (en fazla 20).
+    $errorList = [];
+    foreach ($results as $mod => $items) {
+        foreach ($items as [$name, $status, $detail]) {
+            if ($status === 'fail' && count($errorList) < 20) {
+                $errorList[] = ['module' => $mod, 'check' => $name, 'detail' => mb_substr($detail, 0, 200)];
+            }
+        }
+    }
+    try {
+        require_once __DIR__ . '/../config/audit.php';
+        audit_log(
+            'auto_test.e2e',
+            'auto_test',
+            null,
+            [
+                'ok' => $oks,
+                'warn' => $warns,
+                'fail' => $fails,
+                'elapsed_ms' => $elapsedMs,
+                'modules' => $modDetails,
+                'errors' => $errorList,
+                'command' => 'auto-test.php --e2e' . ($KEEP ? ' --keep' : ''),
+            ],
+            'system'
+        );
+        echo "\nDenetim kaydı yazıldı: auto_test.e2e ({$oks}✓ {$warns}⚠ {$fails}✗, {$elapsedMs}ms)\n";
+    } catch (Throwable $e) {
+        echo "\nDenetim kaydı yazılamadı: " . $e->getMessage() . "\n";
+    }
+}
+
 exit($fails > 0 ? 1 : 0);
