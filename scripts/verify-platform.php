@@ -102,6 +102,20 @@ try {
             $checks['room_mappings']['orphans'] = $orphanMappings;
             if($orphanMappings>0){$errors[]="channel_room_mappings: {$orphanMappings} yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait).";$checks['room_mappings']['status']='error';}
             echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, '.$orphanMappings." uyumsuz.\n";
+            // Hedefi dolmuş öneriler: aynı kanal + dış kod için confirmed eşleşme varken hâlâ 'suggested'
+            $staleRoom = (int) $pdo->query("SELECT COUNT(*) FROM channel_room_mappings s JOIN channel_room_mappings c ON c.channel_connection_id=s.channel_connection_id AND c.external_room_id=s.external_room_id AND c.status='confirmed' WHERE s.status='suggested'")->fetchColumn();
+            $stalePlan = 0;
+            try {
+                $stalePlan = (int) $pdo->query("SELECT COUNT(*) FROM channel_rate_plan_mappings s JOIN channel_rate_plan_mappings c ON c.channel_connection_id=s.channel_connection_id AND c.external_rate_plan_id=s.external_rate_plan_id AND c.status='confirmed' WHERE s.status='suggested'")->fetchColumn();
+            } catch (Throwable $e) {}
+            $staleTotal = $staleRoom + $stalePlan;
+            $checks['room_mappings']['stale_suggestions'] = $staleTotal;
+            if ($staleTotal > 0) {
+                $parts = [];
+                if ($staleRoom > 0) $parts[] = 'oda: ' . $staleRoom;
+                if ($stalePlan > 0) $parts[] = 'plan: ' . $stalePlan;
+                echo '  ⚠ Hedefi dolmuş öneri: ' . $staleTotal . ' (' . implode(', ', $parts) . ') — health-check --repair ile confirmed yapılır' . PHP_EOL;
+            }
         }
     } else {
         $checks['room_mappings']['status'] = 'error';
