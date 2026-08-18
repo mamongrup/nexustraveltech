@@ -118,6 +118,27 @@ $tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' .
   <?php endif; ?>
   <?php endif; ?></section>
 
+<section class="c" style="border:1px solid #d8ded8"><h2>📊 Son otomatik modül testi</h2><?php $atJson = platform_setting('last_auto_test_json', null); $atAt = (string) platform_setting('last_auto_test_at', ''); if ($atJson && is_array($atJson)): $atOk = $atJson['ok_count'] ?? 0; $atWarn = $atJson['warn_count'] ?? 0; $atFail = $atJson['fail_count'] ?? 0; $atMs = $atJson['elapsed_ms'] ?? 0; $atMods = $atJson['modules'] ?? []; $atErrs = $atJson['errors'] ?? []; $atOkAll = ($atJson['ok'] ?? false); ?>  <p class="muted">Son çalışma: <b><?= htmlspecialchars($atAt) ?></b> · <span style="font-weight:700;color:<?= $atFail > 0 ? '#b0301a' : ($atWarn > 0 ? '#8a6100' : '#0d7a4a') ?>"><?= $atOk ?> ✓ · <?= $atWarn ?> ⚠ · <?= $atFail ?> ✗</span> · <?= $atMs ?>ms<?php if ($atJson['e2e'] ?? false): ?> · <span style="color:#0d7a4a">e2e</span><?php endif; ?></p>
+  <table style="width:100%;border-collapse:collapse;font-size:12px">
+    <tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d">Modül</th><th style="padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d;text-align:center">Toplam</th><th style="padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d;text-align:center">OK</th><th style="padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d;text-align:center">⚠</th><th style="padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d;text-align:center">✗</th></tr>
+    <?php foreach ($atMods as $mN => $mD): $mF = $mD['fail'] ?? 0; $mW = $mD['warn'] ?? 0; $mT = $mD['total'] ?? 0; $mIc = $mF > 0 ? '✗' : ($mW > 0 ? '⚠' : '✓'); $mCo = $mF > 0 ? '#b0301a' : ($mW > 0 ? '#8a6100' : '#2e7d32'); ?>
+    <tr><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea"><b style="color:<?= $mCo ?>"><?= $mIc ?></b> <?= htmlspecialchars($mN) ?></td><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;text-align:center"><?= $mT ?></td><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;text-align:center;color:#2e7d32"><?= $mT - $mF - $mW ?></td><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;text-align:center;color:#8a6100"><?= $mW ?></td><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;text-align:center;color:#b0301a"><?= $mF ?></td></tr>
+    <?php endforeach; ?>
+  </table>
+  <?php if ($atErrs): ?>
+  <div style="margin-top:10px;background:#f8f6f4;border:1px solid #e1e5de;border-radius:8px;padding:8px 12px">
+    <div style="font-size:11px;font-weight:700;color:#b0301a;margin-bottom:4px">Hatalar</div>
+    <?php foreach (array_slice($atErrs, 0, 8) as $e): ?>
+    <div style="padding:2px 0;font-size:12px;color:#b0301a">✗ <b><?= htmlspecialchars($e['module'] ?? '') ?></b> · <?= htmlspecialchars($e['check'] ?? '') ?> — <?= htmlspecialchars(mb_substr($e['detail'] ?? '', 0, 120)) ?></div>
+    <?php endforeach; ?>
+    <?php if (count($atErrs) > 8): ?><div style="font-size:11px;color:#64716d">… +<?= count($atErrs) - 8 ?> daha</div><?php endif; ?>
+  </div>
+  <?php endif; ?>
+  <form method="post" style="margin-top:10px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="<?= (int) ($jobs[array_search('nexus-daily-auto-test', array_column($jobs, 'code'))]['id'] ?? 0) ?>"><button style="padding:8px 16px;background:#0d7a4a;font-size:13px">▶ Testi şimdi çalıştır</button> <span class="muted">auto-test.php --json çalıştırır</span></form>
+<?php else: ?>
+  <p class="muted">Henüz otomatik test çalıştırılmadı. Manuel olarak çalıştırmak için yukarıdaki butonu kullanın.</p>
+<?php endif; ?></section>
+
 <section class="c"><h2>Nabız kurulumu (ikisinden biri)</h2>
 <p><b>A) Sistem cron / Plesk Scheduled Tasks (komut):</b></p>
 <code>* * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/tick.php &gt;/dev/null 2>&1</code>

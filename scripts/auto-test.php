@@ -6,6 +6,7 @@ declare(strict_types=1);
 //
 //   /opt/plesk/php/8.5/bin/php scripts/auto-test.php            → tüm modüller (salt okunur)
 //   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --verbose  → her kontrolü göster
+//   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --json     → makinece okunabilir JSON çıktısı
 //   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --e2e      → + gerçek webhook uçtan uca (curl POST + uygulama + doğrulama)
 //   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --e2e --keep  → e2e test satırları silinmez
 //
@@ -24,6 +25,7 @@ require_once __DIR__ . '/../config/platform_settings.php';
 require_once __DIR__ . '/../config/mailer.php';
 
 $VERBOSE = in_array('--verbose', $argv ?? [], true);
+$JSON    = in_array('--json', $argv ?? [], true);
 $E2E     = in_array('--e2e', $argv ?? [], true);
 $KEEP    = in_array('--keep', $argv ?? [], true);
 
@@ -317,6 +319,60 @@ if ($E2E) {
 }
 
 // ─────────────────────────── RAPOR ───────────────────────────
+$elapsedMs = (int) round((microtime(true) - ($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true))) * 1000);
+
+// JSON modu — makinece okunabilir çıktı.
+if ($JSON) {
+    $modules = [];
+    foreach ($moduleOrder as $m) {
+        $mFails = count(array_filter($results[$m], fn($r) => $r[1] === 'fail'));
+        $mWarns = count(array_filter($results[$m], fn($r) => $r[1] === 'warn'));
+        $mOks = count($results[$m]) - $mFails - $mWarns;
+        $checks = [];
+        foreach ($results[$m] as [$name, $status, $detail]) {
+            $checks[] = ['name' => $name, 'status' => $status, 'detail' => $detail];
+        }
+        $modules[$m] = ['ok' => $mOks, 'warn' => $mWarns, 'fail' => $mFails, 'total' => count($results[$m]), 'checks' => $checks];
+    }
+    $errors = [];
+    foreach ($results as $mod => $items) {
+        foreach ($items as [$name, $status, $detail]) {
+            if ($status === 'fail') $errors[] = ['module' => $mod, 'check' => $name, 'detail' => mb_substr($detail, 0, 300)];
+        }
+    }
+    echo json_encode([
+        'ok' => $fails === 0,
+        'ok_count' => $oks,
+        'warn_count' => $warns,
+        'fail_count' => $fails,
+        'elapsed_ms' => $elapsedMs,
+        'e2e' => $E2E,
+        'modules' => $modules,
+        'errors' => $errors,
+        'ran_at' => date('c'),
+    ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n";
+    // Denetim kaydı (--json her zaman yazsın).
+    try {
+        require_once __DIR__ . '/../config/audit.php';
+        $modDetails = [];
+        foreach ($moduleOrder as $m) {
+            $mFails = count(array_filter($results[$m], fn($r) => $r[1] === 'fail'));
+            $mWarns = count(array_filter($results[$m], fn($r) => $r[1] === 'warn'));
+            $modDetails[$m] = ['ok' => count($results[$m]) - $mFails - $mWarns, 'warn' => $mWarns, 'fail' => $mFails];
+        }
+        audit_log('auto_test.run', 'auto_test', null, ['ok' => $oks, 'warn' => $warns, 'fail' => $fails, 'elapsed_ms' => $elapsedMs, 'modules' => $modDetails, 'errors' => array_slice($errors, 0, 20)], 'system');
+    } catch (Throwable $e) {}
+    // Sonucu platform ayarlarına kaydet (Zamanlayıcılar sayfası için).
+    save_platform_setting('last_auto_test_at', date('Y-m-d H:i:s'));
+    save_platform_setting('last_auto_test_oks', $oks);
+    save_platform_setting('last_auto_test_warns', $warns);
+    save_platform_setting('last_auto_test_fails', $fails);
+    save_platform_setting('last_auto_test_elapsed_ms', $elapsedMs);
+    save_platform_setting('last_auto_test_json', ['ok' => $fails === 0, 'ok_count' => $oks, 'warn_count' => $warns, 'fail_count' => $fails, 'elapsed_ms' => $elapsedMs, 'modules' => $modDetails, 'errors' => array_slice($errors, 0, 10), 'ran_at' => date('c')]);
+    exit($fails > 0 ? 1 : 0);
+}
+
+// Metin modu (mevcut çıktı).
 echo "\n" . str_repeat('═', 62) . "\n";
 echo "OTOMATİK MODÜL TESTİ — SONUÇ\n";
 echo str_repeat('═', 62) . "\n";
@@ -335,6 +391,7 @@ foreach ($moduleOrder as $m) {
 }
 echo str_repeat('═', 62) . "\n";
 echo "GENEL: $oks ✓ · $warns ⚠ · $fails ✗\n";
+echo "Süre: {$elapsedMs}ms\n";
 echo "Komut: " . ($E2E ? '--e2e' : '') . ($KEEP ? ' --keep' : '') . ($VERBOSE ? ' --verbose' : '') . "\n";
 if ($E2E) echo "İpucu: e2e her koşuda ilk aktif kanalı kullanır; --keep ile test satırları kalır.\n";
 

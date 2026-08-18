@@ -14,7 +14,7 @@ if ($adminEmail === '' || !filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
     echo "admin_alert_email tanımsız — e-posta atlanıyor.\n";
 }
 
-// auto-test.php'yi çalıştır (salt okunur, --verbose ekleyerek).
+// auto-test.php'yi çalıştır (--json ile makinece okunabilir çıktı al).
 $script = __DIR__ . '/../scripts/auto-test.php';
 if (!file_exists($script)) {
     echo "auto-test.php bulunamadı: $script\n";
@@ -23,21 +23,16 @@ if (!file_exists($script)) {
 
 $output = [];
 $exitCode = 0;
-exec(PHP_BINARY . ' ' . escapeshellarg($script) . ' --verbose 2>&1', $output, $exitCode);
+exec(PHP_BINARY . ' ' . escapeshellarg($script) . ' --json 2>&1', $output, $exitCode);
 $outputText = implode("\n", $output);
 
-// Çıktıdan özet satırını ayrıştır (GENEL: N ✓ · N ⚠ · N ✗).
-$oks = 0;
-$warns = 0;
-$fails = 0;
-foreach ($output as $line) {
-    if (preg_match('/^GENEL:\s*(\d+)\s*✓.*(\d+)\s*⚠.*(\d+)\s*✗/', $line, $m)) {
-        $oks = (int) $m[1];
-        $warns = (int) $m[2];
-        $fails = (int) $m[3];
-        break;
-    }
-}
+// JSON çıktısını ayrıştır.
+$jsonData = json_decode($outputText, true);
+$oks = $jsonData['ok_count'] ?? 0;
+$warns = $jsonData['warn_count'] ?? 0;
+$fails = $jsonData['fail_count'] ?? 0;
+$modules = $jsonData['modules'] ?? [];
+$errors = $jsonData['errors'] ?? [];
 
 // Hata/uyarı varsa e-posta gönder.
 $hasProblems = $fails > 0 || $warns > 0;
@@ -46,34 +41,29 @@ if ($hasProblems && $adminEmail !== '') {
     $durumIkon = $fails > 0 ? '✗' : '⚠';
     $durumMetni = $fails > 0 ? 'HATA' : 'UYARI';
 
-    // Modül özetini HTML tabloya çevir.
+    // Modül özetini HTML tabloya çevir (JSON verisinden).
     $modulRows = '';
-    foreach ($output as $line) {
-        if (preg_match('/^\s+[✓⚠✗]\s+(.+?)\s+[—-]\s+(\d+)\s+kontrol\s+\((\d+)\s+hata\s+[·.]\s+(\d+)\s+uyarı\)/', $line, $m)) {
-            $modName = trim($m[1]);
-            $modTotal = (int) $m[2];
-            $modFails = (int) $m[3];
-            $modWarns = (int) $m[4];
-            $modIcon = $modFails > 0 ? '✗' : ($modWarns > 0 ? '⚠' : '✓');
-            $modColor = $modFails > 0 ? '#b0301a' : ($modWarns > 0 ? '#8a6100' : '#2e7d32');
-            $modulRows .= '<tr>'
-                . '<td style="padding:6px 12px;border:1px solid #e1e5de"><b style="color:' . $modColor . '">' . $modIcon . '</b> ' . htmlspecialchars($modName) . '</td>'
-                . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center">' . $modTotal . '</td>'
-                . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center;color:#2e7d32">' . $modTotal - $modFails - $modWarns . '</td>'
-                . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center;color:#8a6100">' . $modWarns . '</td>'
-                . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center;color:#b0301a">' . $modFails . '</td>'
-                . '</tr>';
-        }
+    foreach ($modules as $mName => $mData) {
+        $modTotal = $mData['total'] ?? 0;
+        $modFails = $mData['fail'] ?? 0;
+        $modWarns = $mData['warn'] ?? 0;
+        $modIcon = $modFails > 0 ? '✗' : ($modWarns > 0 ? '⚠' : '✓');
+        $modColor = $modFails > 0 ? '#b0301a' : ($modWarns > 0 ? '#8a6100' : '#2e7d32');
+        $modulRows .= '<tr>'
+            . '<td style="padding:6px 12px;border:1px solid #e1e5de"><b style="color:' . $modColor . '">' . $modIcon . '</b> ' . htmlspecialchars($mName) . '</td>'
+            . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center">' . $modTotal . '</td>'
+            . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center;color:#2e7d32">' . ($modTotal - $modFails - $modWarns) . '</td>'
+            . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center;color:#8a6100">' . $modWarns . '</td>'
+            . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center;color:#b0301a">' . $modFails . '</td>'
+            . '</tr>';
     }
 
-    // Hata/uyarı satırlarını topla.
+    // Hata/uyarı satırlarını topla (JSON errors dizisinden).
     $sorunSatirlari = '';
-    foreach ($output as $line) {
-        if (preg_match('/^\s+[✗⚠]\s+/', $line)) {
-            $icon = str_starts_with(trim($line), '✗') ? '✗' : '⚠';
-            $color = $icon === '✗' ? '#b0301a' : '#8a6100';
-            $sorunSatirlari .= '<div style="padding:4px 0;font-size:13px;color:' . $color . '">' . htmlspecialchars(trim($line)) . '</div>';
-        }
+    foreach ($errors as $err) {
+        $icon = ($err['status'] ?? 'fail') === 'fail' ? '✗' : '⚠';
+        $color = $icon === '✗' ? '#b0301a' : '#8a6100';
+        $sorunSatirlari .= '<div style="padding:4px 0;font-size:13px;color:' . $color . '">' . $icon . ' <b>' . htmlspecialchars($err['module'] ?? '') . '</b> · ' . htmlspecialchars($err['check'] ?? '') . ' — ' . htmlspecialchars($err['detail'] ?? '') . '</div>';
     }
 
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
@@ -97,9 +87,9 @@ if ($hasProblems && $adminEmail !== '') {
     }
 
     $body .= '<p style="margin-top:14px;color:#64716d;font-size:12px">'
-        . 'Komut: <code>php scripts/auto-test.php --verbose</code> · '
+        . 'Komut: <code>php scripts/auto-test.php --json</code> · '
         . 'Çıkış kodu: ' . $exitCode . ' · '
-        . 'Tam çıktı: sunucuda <code>scripts/auto-test.php --verbose</code>'
+        . 'Tam çıktı: sunucuda <code>scripts/auto-test.php --json</code>'
         . '</p>'
         . '</div>';
 
@@ -117,21 +107,21 @@ save_platform_setting('last_auto_test_at', date('Y-m-d H:i:s'));
 save_platform_setting('last_auto_test_oks', $oks);
 save_platform_setting('last_auto_test_warns', $warns);
 save_platform_setting('last_auto_test_fails', $fails);
+save_platform_setting('last_auto_test_elapsed_ms', $jsonData['elapsed_ms'] ?? 0);
+save_platform_setting('last_auto_test_json', $jsonData);
 
 // Denetim kaydı yaz.
 try {
     require_once __DIR__ . '/../config/audit.php';
     $modDetails = [];
-    foreach ($output as $line) {
-        if (preg_match('/^\s+[✓⚠✗]\s+(.+?)\s+[—-]\s+(\d+)\s+kontrol\s+\((\d+)\s+hata\s+[·.]\s+(\d+)\s+uyarı\)/', $line, $m)) {
-            $modDetails[trim($m[1])] = ['total' => (int) $m[2], 'fail' => (int) $m[3], 'warn' => (int) $m[4]];
-        }
+    foreach ($modules as $mName => $mData) {
+        $modDetails[$mName] = ['total' => $mData['total'] ?? 0, 'fail' => $mData['fail'] ?? 0, 'warn' => $mData['warn'] ?? 0];
     }
     audit_log(
         'auto_test.daily',
         'auto_test',
         null,
-        ['ok' => $oks, 'warn' => $warns, 'fail' => $fails, 'modules' => $modDetails, 'email_sent' => $hasProblems && $adminEmail !== ''],
+        ['ok' => $oks, 'warn' => $warns, 'fail' => $fails, 'modules' => $modDetails, 'errors' => array_slice($errors, 0, 10), 'email_sent' => $hasProblems && $adminEmail !== ''],
         'system'
     );
 } catch (Throwable $e) {}
