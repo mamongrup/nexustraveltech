@@ -137,6 +137,78 @@ function admin_mapping_suggestions_hover_html(array $d): string
 }
 
 /**
+ * Bağlantı bazlı EN KRİTİK eşlenmemiş kodlar — tedarikçi ana sayfası dağıtım sağlık kartı için.
+ * Görülen kodlardan (son N işlem) hiçbir eşleştirmeye bağlı olmayanları bulur, görülme sayısına
+ * göre azalan sıralar; ilk `top` adet oda + fiyat planı kodunu ve toplam sayıyı döndürür.
+ * Tablo/kolon yoksa veya hata olursa boş sonuç (sayfa çökmez).
+ *
+ * @return array{room: array, plan: array, total: int}
+ */
+function connection_top_unmatched_codes(PDO $pdo, int $connectionId, int $window = 200, int $top = 2): array
+{
+    $out = ['room' => [], 'plan' => [], 'total' => 0];
+    try {
+        $seen = $pdo->prepare(
+            "SELECT request_payload, created_at FROM channel_sync_logs
+             WHERE channel_connection_id = ? AND direction = 'pull' AND request_payload IS NOT NULL
+             ORDER BY id DESC LIMIT ?"
+        );
+        $seen->execute([$connectionId, $window]);
+        $roomSeen = [];
+        $planSeen = [];
+        foreach ($seen->fetchAll() as $sl) {
+            $dec = json_decode((string) $sl['request_payload'], true);
+            if (!is_array($dec) || !isset($dec['entries']) || !is_array($dec['entries'])) continue;
+            foreach ($dec['entries'] as $en) {
+                if (!is_array($en)) continue;
+                if (isset($en['external_room_id']) && trim((string) $en['external_room_id']) !== '') {
+                    $code = trim((string) $en['external_room_id']);
+                    if (!isset($roomSeen[$code])) $roomSeen[$code] = ['c' => 0, 't' => (string) $sl['created_at']];
+                    $roomSeen[$code]['c']++;
+                }
+                if (isset($en['external_rate_plan_id']) && trim((string) $en['external_rate_plan_id']) !== '') {
+                    $code = trim((string) $en['external_rate_plan_id']);
+                    if (!isset($planSeen[$code])) $planSeen[$code] = ['c' => 0, 't' => (string) $sl['created_at']];
+                    $planSeen[$code]['c']++;
+                }
+            }
+        }
+        if ($roomSeen === [] && $planSeen === []) return $out;
+        // Eşlenmiş (herhangi bir durumda) + karalistede olan kodlar "görmezden" sayılır.
+        $done = [];
+        $rm = $pdo->prepare('SELECT external_room_id FROM channel_room_mappings WHERE channel_connection_id = ?');
+        $rm->execute([$connectionId]);
+        foreach ($rm->fetchAll() as $r) $done['room|' . $r['external_room_id']] = true;
+        $pm = $pdo->prepare('SELECT external_rate_plan_id FROM channel_rate_plan_mappings WHERE channel_connection_id = ?');
+        $pm->execute([$connectionId]);
+        foreach ($pm->fetchAll() as $r) $done['plan|' . $r['external_rate_plan_id']] = true;
+        try {
+            $bl = $pdo->prepare('SELECT code_type, external_code FROM channel_mapping_blacklist WHERE channel_connection_id = ?');
+            $bl->execute([$connectionId]);
+            foreach ($bl->fetchAll() as $r) $done[$r['code_type'] . '|' . $r['external_code']] = true;
+        } catch (Throwable $e) {
+        }
+        $roomList = [];
+        $planList = [];
+        foreach ($roomSeen as $code => $info) {
+            if (!isset($done['room|' . $code])) $roomList[] = ['code' => $code, 'count' => (int) $info['c'], 'last' => (string) $info['t']];
+        }
+        foreach ($planSeen as $code => $info) {
+            if (!isset($done['plan|' . $code])) $planList[] = ['code' => $code, 'count' => (int) $info['c'], 'last' => (string) $info['t']];
+        }
+        // Görülme sayısı (azalan), eşitse son görülme (azalan) — bölüm 1 sıralamasıyla aynı.
+        usort($roomList, fn($a, $b) => ($b['count'] ?? 0) <=> ($a['count'] ?? 0) ?: strcmp((string) ($b['last'] ?? ''), (string) ($a['last'] ?? '')));
+        usort($planList, fn($a, $b) => ($b['count'] ?? 0) <=> ($a['count'] ?? 0) ?: strcmp((string) ($b['last'] ?? ''), (string) ($a['last'] ?? '')));
+        $out['total'] = count($roomList) + count($planList);
+        $out['room'] = array_slice($roomList, 0, $top);
+        $out['plan'] = array_slice($planList, 0, $top);
+    } catch (Throwable $e) {
+        $out = ['room' => [], 'plan' => [], 'total' => 0];
+    }
+    return $out;
+}
+
+/**
  * Hover mini listesinin iç HTML'ini döndürür — bekleyen oda ve plan önerileri ayrı bölümlerde.
  * Boşsa "Bekleyen öneri yok." satırı döner.
  */
