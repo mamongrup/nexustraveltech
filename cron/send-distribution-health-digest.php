@@ -107,7 +107,13 @@ try {
 } catch (Throwable $e) {
     $orphanRoom = 0; $orphanPlan = 0; $orphanProp = 0;
 }
-$orphanTotal = $orphanRoom + $orphanPlan + $orphanProp;
+$orphanIcal = 0;
+try {
+    if ((bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='ical_connections'")->fetchColumn()) {
+        $orphanIcal = (int) $pdo->query("SELECT COUNT(*) FROM ical_connections c LEFT JOIN properties p ON p.id=c.property_id WHERE p.id IS NULL")->fetchColumn();
+    }
+} catch (Throwable $e) {}
+$orphanTotal = $orphanRoom + $orphanPlan + $orphanProp + $orphanIcal;
 
 // Tarihçe: hafta → toplam yetim. Geçen haftayla delta e-postada trend olarak gösterilir.
 $orphanHistory = platform_setting('distribution_health_orphan_history', []);
@@ -278,9 +284,16 @@ if ($orphanTotal > 0) {
     } else {
         $trendTxt = ' · ilk kayıt (trend 2. haftadan itibaren)';
     }
+    $orphanViewLink = 'https://nexustraveltech.com/admin/orphan-mappings';
+    $orphanApproveToken = bin2hex(random_bytes(32));
+    save_platform_setting('orphan_cleanup_approve', ['token' => $orphanApproveToken, 'expires_at' => date('Y-m-d H:i:s', time() + 3 * 86400)]);
+    $orphanApproveLink = 'https://nexustraveltech.com/admin/approve-orphan-cleanup.php?token=' . $orphanApproveToken;
     $orphanHtml = '<div style="margin-top:14px;padding:10px 14px;background:#fdecea;border:1px solid #f0c4bc;border-radius:8px">'
-        . '<h3 style="margin:0 0 4px;font-size:13px;color:#b0301a">🧹 Yetim eşleştirmeler: <b>' . $orphanTotal . '</b> (' . $orphanRoom . ' oda + ' . $orphanPlan . ' plan + ' . $orphanProp . ' ürün)' . $trendTxt . '</h3>'
-        . '<p style="margin:3px 0;font-size:12px;color:#64716d">Silinmiş oda tipi / fiyat planı / kanal / ürüne işaret eden eşleştirmeler — webhook yazımı bu kodlarda başarısız olabilir. Temizlik: sunucuda <code>scripts/health-check.php --repair --yes</code> veya günlük sağlık e-postasındaki tek tıklık onay bağlantısı.</p></div>';
+        . '<h3 style="margin:0 0 4px;font-size:13px;color:#b0301a">🧹 Yetim eşleştirmeler: <b>' . $orphanTotal . '</b> (' . $orphanRoom . ' oda + ' . $orphanPlan . ' plan + ' . $orphanProp . ' ürün' . ($orphanIcal > 0 ? ' + ' . $orphanIcal . ' iCal' : '') . ')' . $trendTxt . '</h3>'
+        . '<p style="margin:3px 0;font-size:12px;color:#64716d">Silinmiş oda tipi / fiyat planı / kanal / ürüne işaret eden eşleştirmeler — webhook yazımı bu kodlarda başarısız olabilir.</p>'
+        . '<p style="margin:6px 0"><a href="' . $orphanViewLink . '" style="color:#8a6100;font-weight:bold;font-size:13px;text-decoration:none">🧹 Tüm yetimleri gör →</a></p>'
+        . '<p style="margin:4px 0"><a href="' . $orphanApproveLink . '" style="color:#2e7d32;font-weight:bold;font-size:13px;text-decoration:none">✅ Tek tıkla toplu temizle →</a> <span style="color:#6b7774;font-size:11px">(3 gün geçerli)</span></p>'
+        . '</div>';
 }
 
 // Planı eksik eşleştirmeler bölümü — e-posta gövdesine eklenir.
