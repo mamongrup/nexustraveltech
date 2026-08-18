@@ -262,6 +262,57 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
                 $orphanDetailBlock .= '<tr><td style="padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1"><b>Toplam</b></td><td style="padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1;text-align:right"><b>' . $totalOrphan . '</b></td></tr>';
                 $orphanDetailBlock .= '</table>';
             }
+            // İlk 5 sorunlu satır — rozete tıklanınca neyin bozuk olduğu tek bakışta belli olsun.
+            $topOrphans = [];
+            try {
+                // Room mappings
+                $topQ = $pdo->query("SELECT m.external_room_id AS code, 'Oda' AS tbl,
+                    CASE WHEN rt.id IS NULL THEN 'oda tipi silindi' WHEN c.id IS NULL THEN 'kanal silindi'
+                    WHEN rt.property_id<>m.property_id THEN 'ürün eşleşmiyor'
+                    WHEN m.rate_plan_id IS NOT NULL AND rp.id IS NULL THEN 'plan silindi'
+                    WHEN m.rate_plan_id IS NOT NULL AND rp.property_id<>m.property_id THEN 'plan eşleşmiyor'
+                    ELSE 'bilinmiyor' END AS issue
+                    FROM channel_room_mappings m
+                    LEFT JOIN room_types rt ON rt.id=m.room_type_id
+                    LEFT JOIN channel_connections c ON c.id=m.channel_connection_id
+                    LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id
+                    WHERE m.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id
+                        OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))
+                    LIMIT 5");
+                if ($topQ) $topOrphans = $topQ->fetchAll();
+                // Eksikse iCal'den tamamla
+                if (count($topOrphans) < 5) {
+                    $icQ = $pdo->query("SELECT c.label AS code, 'iCal' AS tbl, 'ürün silindi' AS issue
+                        FROM ical_connections c LEFT JOIN properties p ON p.id=c.property_id WHERE p.id IS NULL LIMIT " . (5 - count($topOrphans)));
+                    if ($icQ) $topOrphans = array_merge($topOrphans, $icQ->fetchAll());
+                }
+                // Eksikse plan mappings'den tamamla
+                if (count($topOrphans) < 5) {
+                    $pmQ = $pdo->query("SELECT m.external_rate_plan_id AS code, 'Plan' AS tbl,
+                        CASE WHEN rp.id IS NULL THEN 'plan silindi' WHEN c.id IS NULL THEN 'kanal silindi'
+                        ELSE 'eşleşmiyor' END AS issue
+                        FROM channel_rate_plan_mappings m
+                        LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id
+                        LEFT JOIN channel_connections c ON c.id=m.channel_connection_id
+                        WHERE (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL
+                        LIMIT " . (5 - count($topOrphans)));
+                    if ($pmQ) $topOrphans = array_merge($topOrphans, $pmQ->fetchAll());
+                }
+            } catch (Throwable $e) {}
+            if ($topOrphans !== []) {
+                $orphanDetailBlock .= '<p style="margin:10px 0 4px;color:#64716d;font-size:12px">İlk sorunlu eşleştirmeler:</p>';
+                $orphanDetailBlock .= '<table style="border-collapse:collapse;width:100%;font-size:12px">';
+                $orphanDetailBlock .= '<tr><th style="text-align:left;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Kod</th><th style="text-align:left;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Tür</th><th style="text-align:left;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Sorun</th></tr>';
+                foreach (array_slice($topOrphans, 0, 5) as $to) {
+                    $orphanDetailBlock .= '<tr><td style="padding:4px 8px;border:1px solid #e1e5de"><b>' . htmlspecialchars((string) $to['code']) . '</b></td>';
+                    $orphanDetailBlock .= '<td style="padding:4px 8px;border:1px solid #e1e5de">' . htmlspecialchars((string) $to['tbl']) . '</td>';
+                    $orphanDetailBlock .= '<td style="padding:4px 8px;border:1px solid #e1e5de;color:#b0301a">' . htmlspecialchars((string) $to['issue']) . '</td></tr>';
+                }
+                if ($totalOrphan > 5) {
+                    $orphanDetailBlock .= '<tr><td colspan="3" style="padding:4px 8px;border:1px solid #e1e5de;color:#64716d;font-size:11px;text-align:center">… ve ' . ($totalOrphan - 5) . ' tane daha — <a href="https://nexustraveltech.com/admin/orphan-mappings" style="color:#8a6100">tümünü gör</a></td></tr>';
+                }
+                $orphanDetailBlock .= '</table>';
+            }
             // Son 7 gün temizlik geçmişi
             if ($historyRows !== []) {
                 $orphanDetailBlock .= '<p style="margin:10px 0 4px;color:#64716d;font-size:12px">Son 7 günün temizlik çalışmaları:</p>';
