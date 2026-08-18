@@ -3,6 +3,18 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/database.php';
+
+/**
+ * Benzerlik skoruna göre CSS sınıfı döndürür.
+ * %70+ yeşil, %50-69 turuncu, %30-49 gri, <30 varsayılan.
+ */
+function sim_score_class(?int $score): string
+{
+    if ($score === null) return '';
+    if ($score >= 70) return 'sim-high';
+    if ($score >= 50) return 'sim-mid';
+    return 'sim-low';
+}
 require_once __DIR__ . '/fx.php';
 require_once __DIR__ . '/platform_settings.php';
 require_once __DIR__ . '/name_similarity.php';

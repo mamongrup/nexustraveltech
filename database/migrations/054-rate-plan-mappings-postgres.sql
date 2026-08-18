@@ -1,20 +1,27 @@
 -- 054: Fiyat planı eşleştirmeleri — kanal dış fiyat planı kodu -> NEXUS rate_plan.
--- İdempotent: tablo yoksa CREATE, varsa eksik kolonları ADD COLUMN ile ekler.
--- Eski tablolar farklı şemayla oluşturulmuş olabilir (CREATE TABLE IF NOT EXISTS
--- yeni kolon EKLEMEZ) — bu dosya her iki durumu da kapsar.
+-- Çift modlu: tablo yoksa CREATE, eski şemaysa yedekle+düşür+CREATE, doğru şeması varsa ATLA.
+-- İdempotent: her durumda güvenle çalışır.
 
--- Eski şemalı tabloyu güvenle düşür (varsa, boşsa)
+-- Eski şemalı tabloyu güvenle düşür (channel_connection_id yoksa = eski şema)
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='channel_rate_plan_mappings') THEN
-        IF (SELECT COUNT(*) FROM channel_rate_plan_mappings) = 0 THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='channel_rate_plan_mappings' AND column_name='channel_connection_id') THEN
+            -- Eski şema: verileri yedekle, tabloyu düşür
+            BEGIN
+                CREATE TABLE IF NOT EXISTS channel_rate_plan_mappings_bak_054 AS SELECT * FROM channel_rate_plan_mappings;
+            EXCEPTION WHEN others THEN NULL;
+            END;
+            DROP TABLE IF EXISTS channel_rate_plan_mappings CASCADE;
+        ELSIF (SELECT COUNT(*) FROM channel_rate_plan_mappings) = 0 THEN
+            -- Boş tablo: güvenle düşür
             DROP TABLE IF EXISTS channel_rate_plan_mappings CASCADE;
         END IF;
     END IF;
 END
 $$;
 
--- Tablo oluştur (yeni kurulumlarda)
+-- Tablo oluştur (yeni kurulumlarda veya düşürülen eski tablo yerine)
 CREATE TABLE IF NOT EXISTS channel_rate_plan_mappings (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     channel_connection_id BIGINT NOT NULL REFERENCES channel_connections(id) ON DELETE CASCADE,
@@ -40,7 +47,7 @@ ALTER TABLE channel_rate_plan_mappings ADD COLUMN IF NOT EXISTS suggestion_count
 ALTER TABLE channel_rate_plan_mappings ADD COLUMN IF NOT EXISTS suggestion_score SMALLINT;
 ALTER TABLE channel_rate_plan_mappings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
--- Eski tabloda UNIQUE kısıtlaması eksik olabilir — güvenle ekle
+-- UNIQUE kısıtlaması
 DO $do$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'channel_rate_plan_mappings_conn_ext') THEN

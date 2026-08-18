@@ -148,6 +148,7 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .room-suggestion-actions .danger-btn{border-color:#b0301a;color:#b0301a}
 .room-suggestion-actions .danger-btn:hover{background:#fde8e2}
 .sug-badge{display:inline-block;background:#fdf3d0;color:#8a6100;border:1px solid #e0c878;border-radius:20px;padding:1px 8px;font-size:10px;font-weight:bold;margin-left:6px;vertical-align:middle}
+.sim-high{color:#2e7d32;font-weight:bold}.sim-mid{color:#b26a00;font-weight:bold}.sim-low{color:#8a8a8a}
 
 /* --- son 30 islemde gorulen eslesmemis kodlar --- */
 .room-unmatched{margin:14px 0 4px}
