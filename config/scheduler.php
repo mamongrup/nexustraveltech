@@ -29,6 +29,7 @@ function scheduler_seed_defaults(): void
         ['nexus-channel-inactive-alerts', 'Kanal dağıtımı pasif uyarıları', 'cron/alert-channel-inactive.php', '*/15 * * * *'],
         ['nexus-channel-sync-job-alerts', 'Kanal senkron hata uyarıları', 'cron/alert-channel-sync-jobs.php', '*/15 * * * *'],
         ['nexus-channel-webhook-loop-alerts', 'Webhook tekrar başarısızlık uyarıları', 'cron/alert-channel-webhook-loop.php', '*/15 * * * *'],
+        ['nexus-plan-missing-alerts', 'Planı eksik eşleştirme uyarıları', 'cron/alert-plan-missing.php', '*/15 * * * *'],
         ['nexus-distribution-health-digest', 'Dağıtım sağlığı haftalık özeti', 'cron/send-distribution-health-digest.php', '0 8 * * 1'],
         ['nexus-job-status-digest', 'Görev sağlık raporu', 'cron/send-job-status-digest.php', '0 9 * * *'],
         ['nexus-feature-trash-purge', 'Çöp kutusu otomatik temizliği (30 gün)', 'cron/purge-feature-trash.php', '0 4 * * *'],
