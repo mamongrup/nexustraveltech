@@ -155,7 +155,32 @@ for ($i = $hcDays - 1; $i >= 0; $i--) {
     $hcMaxProbs = max($hcMaxProbs, max(0, $probs));
     $hcRows[] = ['d' => $d, 'probs' => $probs, 'runs' => $info !== null ? (int) $info['runs'] : 0, 'failed' => $info !== null ? (int) $info['failed'] : 0];
 }
-
+// Yetim temizleme trendi — admin_audit_logs'tan health.repair_orphan_cleanup girişleri.
+// Her temizleme satırında details->total kaç satır silindiğini gösterir; gün bazında toplanır.
+$orphanDays = max($hcDays, 30); // en az 30 gün göster
+$orphanByDay = [];
+try {
+    $orphanQ = $pdo->prepare("SELECT created_at::date d, (COALESCE((details::json->>'total')::int, 0)) AS total FROM admin_audit_logs WHERE action='health.repair_orphan_cleanup' AND created_at >= CURRENT_DATE - " . ($orphanDays - 1) . ' ORDER BY created_at');
+    $orphanQ->execute();
+    foreach ($orphanQ->fetchAll() as $or) {
+        $d = (string) $or['d'];
+        $t = (int) $or['total'];
+        if (!isset($orphanByDay[$d])) $orphanByDay[$d] = 0;
+        $orphanByDay[$d] += $t;
+    }
+} catch (Throwable $e) {}
+$orphanChart = [];
+$orphanTotal = 0;
+$orphanMax = 1;
+$orphanActiveDays = 0;
+for ($i = $orphanDays - 1; $i >= 0; $i--) {
+    $d = date('Y-m-d', time() - $i * 86400);
+    $t = (int) ($orphanByDay[$d] ?? 0);
+    $orphanTotal += $t;
+    $orphanMax = max($orphanMax, $t);
+    if ($t > 0) $orphanActiveDays++;
+    $orphanChart[] = ['d' => $d, 't' => $t];
+}
 // Kartlardan filtre bağlantıları üret (görev seçimi korunur).
 $filterUrl = function (string $st, int $h) use ($jobId): string {
     $q = [];
@@ -246,6 +271,18 @@ $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başar�
 <?php endforeach; ?>
 </div>
 <p class="muted" style="margin:6px 0 0"><b><?= (int)$hcProblemDays ?>/<?= (int)$hcDays ?> gün sorunlu</b> · <?= (int)$hcRunCount ?> çalıştırma · en yüksek gün <?= (int)$hcMaxProbs ?> sorun <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#b0301a;vertical-align:middle"></span></p>
+</section>
+
+<section class="c"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">🧹 Yetim temizleme — günlük trend (son <?= $orphanDays ?> gün)</h2></div>
+<p class="muted" style="margin:6px 0 8px">Her günün <code>health.repair_orphan_cleanup</code> denetim kaydındaki toplam temizlenen satır sayısı. Günlük sağlık görevi (nexus-health-check) repair modunda çalıştığında otomatik temizlenir. <b>Turuncu bar</b> = o gün temizlik yapıldı; gri = temizlik yok.</p>
+<div style="display:flex;gap:2px;align-items:flex-end;max-width:820px;margin-top:10px">
+<?php foreach ($orphanChart as $oc): ?>
+  <div title="<?= htmlspecialchars($oc['d']) ?>: <?= $oc['t'] ?> satır temizlendi" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;min-width:4px">
+    <i style="display:block;width:100%;background:<?= $oc['t'] > 0 ? '#b26a00' : '#e1e5de' ?>;border-radius:2px 2px 0 0;height:<?= $oc['t'] > 0 ? max(2, (int) round($oc['t'] / $orphanMax * 46)) : 3 ?>px"></i>
+  </div>
+<?php endforeach; ?>
+</div>
+<p class="muted" style="margin:6px 0 0"><b><?= $orphanTotal ?></b> satır temizlendi · <?= $orphanActiveDays ?>/<?= $orphanDays ?> günde temizlik yapıldı · en yüksek gün <?= $orphanMax ?> satır <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#b26a00;vertical-align:middle"></span></p>
 </section>
 
 <section class="c">
