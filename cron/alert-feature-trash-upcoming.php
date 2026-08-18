@@ -14,6 +14,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/mailer.php';
 require_once __DIR__ . '/../config/platform_settings.php';
+require_once __DIR__ . '/../config/notifications.php';
 
 $pdo = db();
 $ttlDays = max(7, (int) platform_setting('feature_trash_ttl_days', 30));
@@ -137,5 +138,42 @@ foreach ($byCode as $code => $items) {
         . '</tr>';
 }
 
+
+
+// ─── Etkilenen tedarikcilere panel bildirimi ───
+try {
+    $notifiedSuppliers = [];
+    foreach ($fresh as $u) {
+        // feature_delete_backups'tan etkilenen ilanlari bul
+        $bkQ = $pdo->prepare('SELECT affected_properties FROM feature_delete_backups WHERE feature_id=? ORDER BY id DESC LIMIT 1');
+        $bkQ->execute([$u['id']]);
+        $bk = $bkQ->fetch();
+        if (!$bk) continue;
+        $props = json_decode((string)($bk['affected_properties'] ?? '[]'), true) ?: [];
+        if (empty($props)) continue;
+        $propIds = array_map(fn($p) => (int)($p['id'] ?? 0), $props);
+        $propIds = array_filter($propIds, fn($x) => $x > 0);
+        if (empty($propIds)) continue;
+        // Etkilenen tedarikcileri bul
+        $supQ = $pdo->prepare('SELECT DISTINCT p.supplier_id, s.company_name FROM properties p JOIN suppliers s ON s.id=p.supplier_id WHERE p.id = ANY(?::bigint[])');
+        $supQ->execute(['{' . implode(',', $propIds) . '}']);
+        foreach ($supQ->fetchAll() as $sup) {
+            $sid = (int)$sup['supplier_id'];
+            if ($sid <= 0 || isset($notifiedSuppliers[$sid])) continue;
+            if (!isset($notifiedSuppliers[$sid])) $notifiedSuppliers[$sid] = ['name' => (string)$sup['company_name'], 'features' => []];
+            $notifiedSuppliers[$sid]['features'][] = $u['label'] . ' (' . $u['purge_date'] . ' · ' . (int)$u['remain_days'] . ' gun)';
+        }
+    }
+    // Her tedarikciye tek bildirim gonder
+    foreach ($notifiedSuppliers as $sid => $info) {
+        $featList = implode(', ', array_slice($info['features'], 0, 10));
+        $extra = count($info['features']) > 10 ? ' … ve ' . (count($info['features']) - 10) . ' tane daha' : '';
+        $msg = '⚠ Kalici silme uyarisi: ' . count($info['features']) . ' ozelliginiz ' . $warnDays . ' gun icinde kalici olarak silinecek: ' . $featList . $extra . '. Silinmesini istemiyorsaniz admin ile iletisime gechin.';
+        notify_supplier_users_with_email($sid, 'trash_upcoming_purge', $msg, '/nexustraveltech/tedarikci/tesisler');
+    }
+    if ($notifiedSuppliers) echo 'Tedarikci bildirimi: ' . count($notifiedSuppliers) . ' tedarikciye gonderildi.\n';
+} catch (Throwable $e) {
+    echo 'Tedarikci bildirimi hatasi: ' . $e->getMessage() . "\n";
+}
 
 echo 'Uyarı e-postası kuyruğa eklendi: ' . count($fresh) . ' özellik (' . count($upcoming) . ' bulundu, ' . (count($upcoming) - count($fresh)) . " zaten uyarılmıştı).\n";
