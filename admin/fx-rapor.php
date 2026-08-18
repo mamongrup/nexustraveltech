@@ -3,20 +3,37 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../config/auth.php';
+require __DIR__ . '/../config/supplier_auth.php';
 require __DIR__ . '/../config/database.php';
 
-require_admin();
+// Erişim: admin tüm kanalları görür; tedarikçi oturumu yalnızca kendi kanallarının
+// dönüşümlerini görür (dağıtım merkezi Doğrula sonucundaki kur bağlantısıyla gelir).
+admin_session();
+$isAdmin = ($_SESSION['admin_logged_in'] ?? false) === true;
+$supplierId = 0;
+if (!$isAdmin) {
+    $su = supplier_user();
+    if (!$su) { header('Location: /nexustraveltech/admin/login'); exit; }
+    $supplierId = (int) ($su['supplier_id'] ?? 0);
+}
 
 $pdo = db();
 
 // Son 30 günün başarılı webhook işlemlerindeki kur dönüşüm denetimleri (channel_sync_logs.fx_audit).
 // [{from,to,rate,count,original_total,converted_total,first_date,last_date}] — satır başına bir dizi.
-$rows = $pdo->query(
-    "SELECT id, created_at, fx_audit FROM channel_sync_logs
+// Tedarikçi oturumu yalnızca kendi kanal bağlantılarının satırlarını görür.
+$fxSql = "SELECT id, created_at, fx_audit FROM channel_sync_logs
      WHERE direction='pull' AND fx_audit IS NOT NULL AND fx_audit <> '[]'::jsonb
-       AND created_at >= now() - interval '30 days'
-     ORDER BY id"
-)->fetchAll();
+       AND created_at >= now() - interval '30 days'";
+$fxArgs = [];
+if ($supplierId > 0) {
+    $fxSql .= " AND channel_connection_id IN (SELECT id FROM channel_connections WHERE supplier_id=?)";
+    $fxArgs[] = $supplierId;
+}
+$fxSql .= " ORDER BY id";
+$fxSt = $pdo->prepare($fxSql);
+$fxSt->execute($fxArgs);
+$rows = $fxSt->fetchAll();
 
 $pairs = [];       // FROM->TO => aggregate
 $dayPair = [];     // date => FROM->TO => ['count','converted','rate_acc']
@@ -69,6 +86,13 @@ foreach ($pairs as $key => $p) {
         $topKey = $key;
     }
 }
+// ?pair=FROM->TO — dağıtım merkezi Doğrula sonucundaki kur bağlantısı bu çiftin
+// günlük ortalama kur grafiğini açık getirir (çift yoksa en çok dönüştürülen açılır).
+$selKey = $topKey;
+$reqPair = strtoupper(trim((string) ($_GET['pair'] ?? '')));
+if ($reqPair !== '' && isset($pairs[$reqPair])) {
+    $selKey = $reqPair;
+}
 $totalOrig = 0.0;
 $totalConv = 0.0;
 foreach ($pairs as $p) {
@@ -87,13 +111,13 @@ $dayKeys = array_keys($dayPair);
 <?php endforeach; ?></table>
 <p class="muted" style="margin-top:8px">Ortalama kur, fiyat sayısıyla ağırlıklandırılmıştır (birden çok günün kuru varsa gerçek ortalamaya yakındır).</p>
 <h3 style="margin:18px 0 0;font-size:15px">Günlük ortalama kur zaman çizelgesi</h3>
-<select class="pair-select" id="pair-select"><?php foreach ($pairs as $key => $p): ?><option value="<?=htmlspecialchars($key)?>" <?= $key === $topKey ? 'selected' : '' ?>><?=htmlspecialchars($key)?> (<?=number_format($p['converted_total'], 0, ',', '.')?> <?=htmlspecialchars($p['to'])?>)</option><?php endforeach; ?></select>
+<select class="pair-select" id="pair-select"><?php foreach ($pairs as $key => $p): ?><option value="<?=htmlspecialchars($key)?>" <?= $key === $selKey ? 'selected' : '' ?>><?=htmlspecialchars($key)?> (<?=number_format($p['converted_total'], 0, ',', '.')?> <?=htmlspecialchars($p['to'])?>)</option><?php endforeach; ?></select>
 <?php foreach ($pairs as $key => $p): $series = []; foreach ($dayKeys as $d) { $series[$d] = $dayPair[$d][$key] ?? null; } $maxRate = 0.0; foreach ($series as $s) { if ($s && $s['count'] > 0) $maxRate = max($maxRate, $s['rate_acc'] / $s['count']); } $maxRate = $maxRate > 0 ? $maxRate : 1.0; ?>
-<div class="hist-block <?= $key === $topKey ? 'active' : '' ?>" id="hist-<?=htmlspecialchars(preg_replace('/[^A-Z0-9]/', '_', $key))?>">
+<div class="hist-block <?= $key === $selKey ? 'active' : '' ?>" id="hist-<?=htmlspecialchars(preg_replace('/[^A-Z0-9]/', '_', $key))?>">
 <div class="fx-hist"><?php foreach ($series as $d => $s): $avg = ($s && $s['count'] > 0) ? round($s['rate_acc'] / $s['count'], 4) : null; ?>
 <div class="fx-hist-col" title="<?=htmlspecialchars($d . ($avg !== null ? ' · ortalama kur ' . number_format($avg, 4, ',', '.') . ' · ' . (int) $s['count'] . ' fiyat · ' . number_format($s['converted'], 2, ',', '.') . ' ' . htmlspecialchars($p['to']) : ' · dönüşüm yok'))?>"><?php if ($avg !== null): ?><span class="fx-hist-val"><?=number_format($avg, 2, ',', '.')?></span><div class="fx-hist-bar" style="height:<?=max(3, (int) round(($avg / $maxRate) * 90))?>px"></div><?php else: ?><div class="fx-hist-bar" style="height:2px;background:#e1e5de"></div><?php endif; ?><span class="fx-hist-day"><?=htmlspecialchars(substr($d, 8, 2))?>.<?=htmlspecialchars(substr($d, 5, 2))?></span></div><?php endforeach; ?></div>
 </div>
 <?php endforeach; ?>
-<script>document.getElementById('pair-select').addEventListener('change',function(){var v=this.value;document.querySelectorAll('.hist-block').forEach(function(b){b.classList.remove('active')});var t=document.getElementById('hist-'+v.replace(/[^A-Z0-9]/g,'_'));if(t)t.classList.add('active');});</script>
+<script>document.getElementById('pair-select').addEventListener('change',function(){var v=this.value;document.querySelectorAll('.hist-block').forEach(function(b){b.classList.remove('active')});var t=document.getElementById('hist-'+v.replace(/[^A-Z0-9]/g,'_'));if(t)t.classList.add('active');});<?php if ($selKey !== '' && $selKey === $reqPair): ?>(function(){var t=document.getElementById('hist-'+<?=json_encode(preg_replace('/[^A-Z0-9]/', '_', $selKey))?>);if(t){setTimeout(function(){t.scrollIntoView({behavior:'smooth',block:'nearest'})},120)}})();<?php endif; ?></script>
 <?php endif; ?></section>
 </main><?php require_once __DIR__ . '/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); ?></body></html>
