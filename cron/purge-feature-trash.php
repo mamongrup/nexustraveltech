@@ -17,6 +17,12 @@ require_once __DIR__ . '/../config/mailer.php';
 require_once __DIR__ . '/../config/platform_settings.php';
 require_once __DIR__ . '/../config/audit.php';
 require_once __DIR__ . '/../config/feature_lists.php';
+require_once __DIR__ . '/../config/table-guard.php';
+if (!table_guard(['property_feature_catalog', 'pending_trash_purges', 'feature_delete_backups'])) {
+    fwrite(STDERR, "[purge-feature-trash] Eksik tablo — atlandı.
+");
+    exit(0);
+}
 
 $pdo = db();
 $ttlDays = max(7, (int) platform_setting('feature_trash_ttl_days', 30));
