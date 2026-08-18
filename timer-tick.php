@@ -8,12 +8,16 @@
  *
  * Güvenlik: HTTP çağrıları yalnızca admin panelindeki "Zamanlayıcılar" sayfasında
  * gösterilen paylaşımlı belirteçle kabul edilir.
+ *
+ * Kilit sağlığı: scheduler_tick() çalışmadan ÖNCE bayat kilit kontrolü yapılır.
+ * Advisory kilit 10+ dk tutuluyorsa otomatik kırılır ve denetim kaydına yazılır.
  */
 
 declare(strict_types=1);
 
 require __DIR__ . '/config/database.php';
 require __DIR__ . '/config/scheduler.php';
+require __DIR__ . '/config/tick_lock.php';
 
 if (PHP_SAPI !== 'cli') {
     $token = (string) ($_GET['token'] ?? ($_SERVER['HTTP_X_NEXUS_TOKEN'] ?? ''));
@@ -24,4 +28,17 @@ if (PHP_SAPI !== 'cli') {
     }
 }
 
-echo json_encode(scheduler_tick(), JSON_UNESCAPED_UNICODE) . PHP_EOL;
+// Bayat kilit kontrolü: tick'ten önce kilit serbest olsun.
+$lockResult = pre_tick_lock_check();
+
+// Tick'i çalıştır (zaten kilitliyse locked=true döner).
+$tickResult = scheduler_tick();
+
+// Sonucu zenginleştir: bayat kilit kırıldıysa bilgi ekle.
+if (!empty($lockResult['broken_pid'])) {
+    $tickResult['stale_lock_broken'] = true;
+    $tickResult['stale_lock_age'] = $lockResult['age'] ?? 0;
+    $tickResult['stale_lock_pid'] = $lockResult['broken_pid'];
+}
+
+echo json_encode($tickResult, JSON_UNESCAPED_UNICODE) . PHP_EOL;
