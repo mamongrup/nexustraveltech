@@ -33,37 +33,37 @@ function health_orphan_cleanup(PDO $pdo, bool $dryRun = false): array
             'label' => 'oda eşleştirmesi',
             'join' => 'LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id',
             'where' => 'm.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))',
-            'cols' => 'm.id, m.external_room_id AS code, m.status',
+            'cols' => 'm.id, m.external_room_id AS code, m.status, c.display_name AS channel_name, m.channel_connection_id AS conn_id',
         ],
         'channel_rate_plan_mappings' => [
             'label' => 'fiyat planı eşleştirmesi',
             'join' => 'LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
             'where' => '(m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL',
-            'cols' => 'm.id, m.external_rate_plan_id AS code, m.status',
+            'cols' => 'm.id, m.external_rate_plan_id AS code, m.status, c.display_name AS channel_name, m.channel_connection_id AS conn_id',
         ],
         'channel_property_mappings' => [
             'label' => 'ürün eşleştirmesi',
             'join' => 'LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
             'where' => 'p.id IS NULL OR c.id IS NULL',
-            'cols' => 'm.id, m.external_property_id AS code, m.status',
+            'cols' => 'm.id, m.external_property_id AS code, m.status, c.display_name AS channel_name, m.channel_connection_id AS conn_id',
         ],
         'ical_connections' => [
             'label' => 'iCal bağlantısı',
             'join' => 'LEFT JOIN properties p ON p.id=m.property_id',
             'where' => 'p.id IS NULL',
-            'cols' => 'm.id, m.label AS code, m.status',
+            'cols' => 'm.id, m.label AS code, m.status, m.direction, m.supplier_id',
         ],
         'ical_events' => [
             'label' => 'iCal olayı',
             'join' => 'LEFT JOIN ical_connections c ON c.id=m.ical_connection_id',
             'where' => 'c.id IS NULL',
-            'cols' => "m.id, m.external_uid AS code, '' AS status",
+            'cols' => "m.id, m.external_uid AS code, '' AS status, m.property_id",
         ],
         'ical_sync_logs' => [
             'label' => 'iCal senkron kaydı',
             'join' => 'LEFT JOIN ical_connections c ON c.id=m.ical_connection_id',
             'where' => 'c.id IS NULL',
-            'cols' => 'm.id, m.status AS code, m.status',
+            'cols' => 'm.id, m.status AS code, m.status, m.property_id',
         ],
     ];
     foreach ($specs as $table => $spec) {
@@ -73,8 +73,40 @@ function health_orphan_cleanup(PDO $pdo, bool $dryRun = false): array
             $orphanSql = 'SELECT ' . $spec['cols'] . ' FROM ' . $table . ' m ' . $spec['join'] . ' WHERE ' . $spec['where'];
             $orphans = $pdo->query($orphanSql)->fetchAll();
             if ($orphans) {
+                // Bağlam bilgisi üret: kanal adı, tedarikçi adı gibi ek alanlar.
+                $contextFn = function (array $o) use ($pdo, $table): string {
+                    $parts = [];
+                    // Kanal adı (mapping tabloları)
+                    if (!empty($o['channel_name'])) $parts[] = 'kanal: ' . (string) $o['channel_name'];
+                    elseif (!empty($o['conn_id'])) $parts[] = 'kanal #' . (int) $o['conn_id'] . ' (silindi)';
+                    // iCal: tedarikçi adı
+                    if ($table === 'ical_connections' && !empty($o['supplier_id'])) {
+                        try {
+                            $sName = $pdo->prepare('SELECT full_name FROM supplier_users WHERE supplier_id=? LIMIT 1');
+                            $sName->execute([(int) $o['supplier_id']]);
+                            $sRow = $sName->fetch();
+                            if ($sRow) $parts[] = 'tedarikçi: ' . (string) $sRow['full_name'];
+                        } catch (Throwable $e) {}
+                        if (!empty($o['direction'])) $parts[] = $o['direction'];
+                    }
+                    // iCal events/sync_logs: property_id
+                    if (in_array($table, ['ical_events', 'ical_sync_logs'], true) && !empty($o['property_id'])) {
+                        try {
+                            $pName = $pdo->prepare('SELECT name FROM properties WHERE id=?');
+                            $pName->execute([(int) $o['property_id']]);
+                            $pRow = $pName->fetch();
+                            if ($pRow) $parts[] = 'ilan: ' . (string) $pRow['name'];
+                        } catch (Throwable $e) {}
+                    }
+                    return $parts !== [] ? ' · ' . implode(' · ', $parts) : '';
+                };
                 if ($dryRun) {
-                    $out .= '→ [dry-run] ' . count($orphans) . ' yetim ' . $spec['label'] . ' SILİNECEK (örnek: ' . htmlspecialchars((string) $orphans[0]['code']) . ')' . "\n";
+                    $examples = array_slice($orphans, 0, 3);
+                    $exList = [];
+                    foreach ($examples as $ex) {
+                        $exList[] = htmlspecialchars((string) $ex['code']) . $contextFn($ex);
+                    }
+                    $out .= '→ [dry-run] ' . count($orphans) . ' yetim ' . $spec['label'] . ' SİLİNECEK' . ($exList ? ' (örnek: ' . implode(', ', $exList) . ')' : '') . "\n";
                 } else {
                     $del = $pdo->prepare('DELETE FROM ' . $table . ' WHERE id=?');
                     $removedCodes = [];
@@ -82,7 +114,8 @@ function health_orphan_cleanup(PDO $pdo, bool $dryRun = false): array
                         $del->execute([(int) $o['id']]);
                         $removed++;
                         $removedCodes[] = (string) $o['code'];
-                        $out .= '→ yetim ' . $spec['label'] . ' #' . (int) $o['id'] . ' (' . htmlspecialchars((string) $o['code']) . ', status=' . htmlspecialchars((string) ($o['status'] ?? '')) . ') silindi' . "\n";
+                        $ctx = $contextFn($o);
+                        $out .= '→ yetim ' . $spec['label'] . ' #' . (int) $o['id'] . ' (' . htmlspecialchars((string) $o['code']) . ', status=' . htmlspecialchars((string) ($o['status'] ?? '')) . ')' . $ctx . ' silindi' . "\n";
                     }
                     $out .= 'Özet: ' . $removed . ' yetim ' . $spec['label'] . ' temizlendi.' . "\n";
                     $codes[$table] = $removedCodes;
