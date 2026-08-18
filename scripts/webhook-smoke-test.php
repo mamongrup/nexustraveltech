@@ -350,6 +350,54 @@ try {
                     vnote('--keep: kapsam testi satırları bırakıldı (kod ' . $code . ')');
                 }
 
+                // ─────────── 2d) TANINMAYAN KOD AKIŞI: öneri → onay → yazma ───────────
+                // Aynı komut dizisinin gösterimi: tanınmayan dış kod önce suggested öneri
+                // oluşturur (satır yazılmaz); öneri onaylanınca aynı yük fiyatı yazar.
+                // Tek transaction + rollback — gösterim kalıntı bırakmaz; kanala gerçek
+                // webhook POST'u da bu bölümün sonundaki curl örnekleriyle verilir.
+                vsection('2d) TANINMAYAN KOD AKIŞI (öneri → onay → yazma)');
+                $autoMap = (bool) platform_setting('channel_webhook_auto_map', true);
+                $codeU = 'RMT-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+                $pdo->beginTransaction();
+                try {
+                    // 2d-1) Tanınmayan kod ile yük — auto_map açıksa suggested öneri oluşur, satır yazılmaz.
+                    $logU = ['channel_connection_id' => (int) $conn['id'], 'property_id' => $propId];
+                    $payloadU = ['scope' => 'rates', 'external_property_id' => $ext, 'currency' => $inCur, 'entries' => [['external_room_id' => $codeU, 'date' => $testDate, 'price' => 150.0]]];
+                    $resU = channel_webhook_apply($logU, $payloadU);
+                    $sugU = $pdo->prepare('SELECT status, suggestion_count FROM channel_room_mappings WHERE channel_connection_id=? AND external_room_id=?');
+                    $sugU->execute([(int) $conn['id'], $codeU]);
+                    $sugURow = $sugU->fetch();
+                    if ($autoMap) {
+                        ($resU['ok'] && $sugURow && $sugURow['status'] === 'suggested' && (int) ($resU['applied'] ?? 0) === 0)
+                            ? vok("öneri oluştu: '$codeU' → suggested (uygulanan satır: 0) — tanınmayan kod satır yazdırmıyor")
+                            : vbad("öneri akışı: '$codeU' beklenen suggested kaydı oluşmadı (ok=" . var_export($resU['ok'], true) . ', applied=' . (int) ($resU['applied'] ?? 0) . ')');
+                    } else {
+                        vnote("auto_map kapalı — '$codeU' ilk aktif oda tipine yazılır (öneri beklenmez); akış atlanıyor");
+                    }
+                    // 2d-2) Öneriyi onayla (tedarikçi onayı simülasyonu) → aynı yük fiyatı yazar.
+                    if ($autoMap && $sugURow) {
+                        $pdo->prepare("UPDATE channel_room_mappings SET status='confirmed', suggested_at=NULL, approved_by_type='supplier', approved_by_name='webhook-smoke-test', approved_by_user_id=NULL, approved_at=now() WHERE channel_connection_id=? AND external_room_id=?")
+                            ->execute([(int) $conn['id'], $codeU]);
+                        $resU2 = channel_webhook_apply($logU, $payloadU);
+                        $invU = $pdo->prepare('SELECT base_price FROM inventory_calendar WHERE room_type_id=? AND rate_plan_id=? AND stay_date=?');
+                        $invU->execute([(int) $roomRow['id'], (int) $planRow['id'], $testDate]);
+                        $priceU = $invU->fetchColumn();
+                        $expectedU = $rate > 0 ? round(150.0 * $rate, 2) : null;
+                        if ($expectedU !== null && $priceU !== false && abs((float) $priceU - $expectedU) < 0.01) {
+                            vok("onay sonrası yazma: '$codeU' → confirmed → fiyat " . number_format((float) $priceU, 2, '.', '') . ' ' . $planCur . ' yazıldı (beklenen ' . $expectedU . ', kur ' . number_format($rate, 4, '.', '') . ')');
+                        } elseif ($expectedU === null) {
+                            vnote("onay sonrası yazma: kur eksik ($inCur→$planCur) — fiyat yazımı fx korumasıyla engellendi (beklenen davranış)");
+                        } else {
+                            vbad("onay sonrası yazma bulunamadı (beklenen " . var_export($expectedU, true) . ', bulunan ' . var_export($priceU, true) . ')');
+                        }
+                    }
+                } catch (Throwable $e) {
+                    vbad('tanınmayan kod akışı hatası: ' . $e->getMessage());
+                } finally {
+                    $pdo->rollBack();
+                    vnote('gösterim temizlendi (rollback — öneri + takvim satırı kaldırıldı)');
+                }
+
                 // ─────────────────── 2c) CURL ÖRNEKLERİ ───────────────────
                 vsection('CURL ÖRNEKLERİ (kopyala-yapıştır)');
                 echo "  Not: '" . $code . "' bu çalıştırmanın geçici test kodu — kendi eşleştirilmiş oda kodunuzla değiştirin.\n";
