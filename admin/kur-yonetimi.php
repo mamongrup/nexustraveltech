@@ -56,6 +56,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Kaydedilecek kur girilmedi (en az bir satır doldurun).';
             }
         }
+        if ($action === 'refresh_pair') {
+            // Bayat çift kurunu TCMB'den güncelle (doğrudan veya TRY çaprazı) ve yeniden denetim çalıştır.
+            $pair = strtoupper(trim((string) ($_POST['pair'] ?? '')));
+            if (!preg_match('/^[A-Z]{3}->[A-Z]{3}$/', $pair)) {
+                $error = 'Geçersiz çift: ' . htmlspecialchars($pair);
+            } else {
+                [$from, $to] = explode('->', $pair);
+                try {
+                    $rows = fx_fetch_tcmb_today();
+                    $tcmbMap = [];
+                    foreach ($rows as $tr) {
+                        $tcmbMap[$tr['base'] . '->' . $tr['quote']] = (float) $tr['rate'];
+                    }
+                    $rate = 0.0;
+                    if (isset($tcmbMap[$pair])) {
+                        $rate = $tcmbMap[$pair];
+                    } elseif (isset($tcmbMap[$from . '->TRY']) && isset($tcmbMap[$to . '->TRY'])) {
+                        $rate = round($tcmbMap[$from . '->TRY'] / $tcmbMap[$to . '->TRY'], 6);
+                    }
+                    if ($rate <= 0) {
+                        $error = $pair . ' için TCMB bugünkü kur hesaplanamadı (yalnızca USD/EUR/GBP/CHF ↔ TRY arası hesaplanabilir).';
+                    } else {
+                        $pdo->prepare("INSERT INTO fx_rates(base_currency,quote_currency,rate,rate_date,source) VALUES(?,?,?,CURRENT_DATE,'tcmb') ON CONFLICT(base_currency,quote_currency,rate_date) DO UPDATE SET rate=EXCLUDED.rate")
+                            ->execute([$from, $to, $rate]);
+                        save_platform_setting('fx_tcmb_last_ok', date('Y-m-d H:i:s'));
+                        // Yeniden denetim — güncel sonuç fx_audit_daily'ye yazılır; bayat liste güncellenir.
+                        require_once __DIR__ . '/../cron/audit-fx-missing.php';
+                        $audit = audit_fx_missing_run($pdo, trim((string) platform_setting('admin_alert_email', '')));
+                        $message = $pair . ' kuru TCMB\'den güncellendi (' . number_format($rate, 4) . ') ve denetim yeniden çalıştırıldı — ' . (int) $audit['missing'] . ' eksik · ' . (int) $audit['stale'] . ' bayat.';
+                    }
+                } catch (Throwable $e) {
+                    save_platform_setting('fx_tcmb_last_fail', date('Y-m-d H:i:s'));
+                    save_platform_setting('fx_tcmb_last_error', $e->getMessage());
+                    $error = $e->getMessage();
+                }
+            }
+        }
         if ($action === 'tcmb' || $action === 'fill_missing') {
             try {
                 $rows = fx_fetch_tcmb_today();
@@ -214,7 +251,7 @@ if (isset($_GET['view_fx_email'])) {
 <div style="display:flex;gap:8px;align-items:baseline;font-size:13px"><span style="color:#b0301a">●</span><b><?=htmlspecialchars((string) $pk)?></b><span style="color:#64716d"><?=htmlspecialchars($reason)?></span><span style="color:#b0301a;font-size:12px">eksik</span><?php if ($peMail): ?><a href="?view_fx_email=<?=(int)$peMail?>" title="Bu çifti içeren son fx_missing_audit e-postasını gör" style="color:#0d7a4a;text-decoration:none;font-size:12px">📧 e-posta</a><?php endif; ?></div>
 <?php endforeach; ?>
 <?php foreach ($lastAuditStale as $pk => $pv): $peMailS = $pairEmail[$pk] ?? null; ?>
-<div style="display:flex;gap:8px;align-items:baseline;font-size:13px"><span style="color:#e0a800">●</span><b><?=htmlspecialchars((string) $pk)?></b><span style="color:#64716d"><?=htmlspecialchars((string) $pv)?></span><span style="color:#8a6d00;font-size:12px">bayat</span><?php if ($peMailS): ?><a href="?view_fx_email=<?=(int)$peMailS?>" title="Bu çifti içeren son fx_missing_audit e-postasını gör" style="color:#0d7a4a;text-decoration:none;font-size:12px">📧 e-posta</a><?php endif; ?></div>
+<div style="display:flex;gap:8px;align-items:baseline;font-size:13px;flex-wrap:wrap"><span style="color:#e0a800">●</span><b><?=htmlspecialchars((string) $pk)?></b><span style="color:#64716d"><?=htmlspecialchars((string) $pv)?></span><span style="color:#8a6d00;font-size:12px">bayat</span><?php if ($peMailS): ?><a href="?view_fx_email=<?=(int)$peMailS?>" title="Bu çifti içeren son fx_missing_audit e-postasını gör" style="color:#0d7a4a;text-decoration:none;font-size:12px">📧 e-posta</a><?php endif; ?><form method="post" style="display:inline;margin:0"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="refresh_pair"><input type="hidden" name="pair" value="<?=htmlspecialchars((string) $pk)?>"><button type="submit" style="border:1px solid #d8ded8;background:#fff;border-radius:4px;padding:1px 8px;font-size:11px;cursor:pointer;color:#0d7a4a" title="Bu çiftin kurunu TCMB bugünkü kurundan güncelle ve denetimi yeniden çalıştır">↻ Yenile</button></form></div>
 <?php endforeach; ?>
 </div><?php endif; ?>
 <?php if ($viewFxEmail): ?><div id="fx-email-view" style="margin-top:14px;border:1px dashed #b7c4bd;border-radius:8px;padding:12px 14px;background:#fbfdfa"><p style="margin:0 0 6px;font-size:12px;color:#64716d">📧 E-posta #<?=(int)$viewFxEmail['id']?> — <b><?=htmlspecialchars((string)$viewFxEmail['subject'])?></b> (<?=htmlspecialchars(date('d.m.Y H:i', strtotime((string)$viewFxEmail['created_at'])))?>) · <a href="?" style="color:#0d7a4a">kapat ✕</a></p><div style="max-height:340px;overflow:auto;border:1px solid #e1e5de;border-radius:6px;background:#fff;padding:10px"><?=$viewFxEmail['body_html']?></div></div><?php endif; ?>

@@ -23,8 +23,16 @@ require_once __DIR__ . '/../config/mailer.php';
 require_once __DIR__ . '/../config/platform_settings.php';
 require_once __DIR__ . '/../config/fx.php';
 
-$pdo = db();
-$adminEmail = trim((string) platform_setting('admin_alert_email', ''));
+/**
+ * Kur denetimi ana mantığı — CLI görevi (aşağıda) ve admin/kur-yonetimi 'yenile'
+ * eylemi (bayat çift kurunu TCMB'den güncelledikten sonra yeniden denetim) aynı
+ * fonksiyonu kullanır. Sonuç fx_audit_daily'ye yazılır; eksik/bayat varsa e-posta gider.
+ *
+ * @return array{ok: bool, missing: int, stale: int}
+ */
+function audit_fx_missing_run(PDO $pdo, string $adminEmail): array
+{
+
 
 // 1) Kanıt — son 24 saatte başarısız olan çiftler.
 $failed = []; // FROM->TO => ['count' => n, 'first' => ts, 'last' => ts]
@@ -154,7 +162,7 @@ $histUp->execute([
 
 if ($missing === [] && $stale === []) {
     echo "Kur denetimi temiz: son 24 saatte eksik kur hatası yok; aktif planlar için gereken tüm çiftler kapsanıyor; 7 günden eski kur yok. (Geçmiş: " . date('Y-m-d') . " → 0 eksik / 0 bayat)\n";
-    exit(0);
+    return ['ok' => true, 'missing' => 0, 'stale' => 0];
 }
 
 ksort($missing);
@@ -241,4 +249,17 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
     echo "Admin e-postası kuyruğa eklendi.\n";
 } else {
     echo "admin_alert_email tanımsız — e-posta atlanıyor.\n";
+}
+
+    return ['ok' => ($missing === [] && $stale === []), 'missing' => count($missing), 'stale' => count($stale)];
+}
+
+// CLI girişi (zamanlayıcı: nexus-fx-missing-audit) — yalnızca doğrudan çalıştırılınca.
+// admin/kur-yonetimi 'yenile' eylemi bu dosyayı require edip fonksiyonu kendisi çağırır;
+// bu blok o durumda atlanır (admin sayfası exit ile kesilmesin).
+if (PHP_SAPI === 'cli' && (!isset($_SERVER['argv']) || (string) ($_SERVER['argv'][0] ?? '') === __FILE__ || basename((string) ($_SERVER['argv'][0] ?? '')) === basename(__FILE__))) {
+    $pdoCli = db();
+    $adminCli = trim((string) platform_setting('admin_alert_email', ''));
+    $resCli = audit_fx_missing_run($pdoCli, $adminCli);
+    exit($resCli['ok'] ? 0 : 1);
 }
