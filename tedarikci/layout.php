@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/supplier_auth.php';
 require_once __DIR__ . '/../config/notifications.php';
+require_once __DIR__ . '/../config/mapping_suggestions.php';
 $supplier_user = require_supplier();
 $active_module = $active_module ?? 'dashboard';
 $notification_unread = 0;

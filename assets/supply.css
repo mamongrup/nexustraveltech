@@ -363,3 +363,14 @@ button.ical-sync-flash{outline:3px solid #c98f0a;outline-offset:2px;animation:ic
 .room-map-flash{animation:roomMapFlash 2.4s ease-out 1}
 .quick-flash{animation:roomMapFlash 2.2s ease-out 1}
 @keyframes roomMapFlash{0%{box-shadow:0 0 0 4px rgba(178,106,0,.35);background:#fff6e8}55%{box-shadow:0 0 0 4px rgba(178,106,0,.18)}100%{box-shadow:none}}
+
+/* Onay bekleyen öneri rozeti — hover mini listesi (oda + plan ayrı bölümler) */
+.badge-hover{position:relative;display:inline-block;cursor:default}
+.badge-hover .badge-hover-pop{display:none;position:absolute;z-index:60;left:50%;bottom:calc(100% + 9px);transform:translateX(-50%);min-width:280px;max-width:380px;background:#10211f;color:#eef3ee;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.55;box-shadow:0 6px 18px rgba(16,33,31,.28);white-space:normal;text-align:left}
+.badge-hover .badge-hover-pop::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#10211f}
+.badge-hover:hover .badge-hover-pop,.badge-hover:focus-within .badge-hover-pop{display:block}
+.badge-hover .hover-list-title{margin:6px 0 4px;font-weight:700;color:#d9c48a}
+.badge-hover .hover-list-title:first-child{margin-top:0}
+.badge-hover .hover-list-row{padding:2px 0;word-break:break-word}
+.badge-hover .hover-list-row code{background:rgba(255,255,255,.12);border-radius:4px;padding:0 4px;font-family:"DM Mono",monospace}
+.badge-hover .hover-list-row small{color:#9fb3ad}
