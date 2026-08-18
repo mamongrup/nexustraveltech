@@ -205,6 +205,113 @@ function health_schema_dump_table(PDO $pdo, string $table): string
     return $sql;
 }
 
+/**
+ * 'must be owner' hatalarını kendi başına çözer: tüm public tablo/dizi/görünüm
+ * sahipliğini current_user'a devretmeyi sırasıyla dener —
+ *  (A) mevcut bağlantı süper kullanıcıysa doğrudan,
+ *  (B) secrets.php'de db_admin_user/db_admin_pass varsa o hesapla,
+ *  (C) süreç root olarak çalışıyorsa `sudo -n -u postgres psql` ile (shell).
+ * Migration uygulaması 'must be owner' verdiğinde ve --repair sahiplik bölümünde
+ * kullanılır — tablo sahibi farklıysa devri otomatik yapar, manuel komut gerekmez.
+ *
+ * @return array{done:int, via:string, error:string}
+ */
+function health_auto_fix_ownership(PDO $pdo): array
+{
+    $curUser = (string) $pdo->query('SELECT current_user')->fetchColumn();
+    $qUser = '"' . str_replace('"', '""', $curUser) . '"';
+    // [sql kalıbı, ad kolonu, sahip kolonu, kaynak tablo, ALTER türü]
+    $specs = [
+        ['ALTER TABLE %s OWNER TO %s', 'tablename', 'tableowner', 'pg_tables', 'TABLE'],
+        ['ALTER SEQUENCE %s OWNER TO %s', 'sequencename', 'sequenceowner', 'pg_sequences', 'SEQUENCE'],
+        ['ALTER VIEW %s OWNER TO %s', 'viewname', 'viewowner', 'pg_views', 'VIEW'],
+    ];
+    $lists = [];
+    $mismatch = 0;
+    foreach ($specs as $sp) {
+        $rows = $pdo->query("SELECT " . $sp[1] . " FROM " . $sp[3] . " WHERE schemaname='public' AND " . $sp[2] . " <> current_user")->fetchAll(PDO::FETCH_COLUMN);
+        $lists[] = $rows;
+        $mismatch += count($rows);
+    }
+    if ($mismatch === 0) {
+        return ['done' => 0, 'via' => 'uyumsuz nesne yok', 'error' => ''];
+    }
+    $done = 0;
+    $fail = 0;
+    $via = '';
+    $errNotes = [];
+    // (A) mevcut bağlantı süper kullanıcı mı?
+    try {
+        $isSuper = (string) $pdo->query("SELECT current_setting('is_superuser')")->fetchColumn();
+        if ($isSuper === 'on') {
+            $via = $curUser . ' (süper kullanıcı)';
+            foreach ($specs as $i => $sp) {
+                foreach ($lists[$i] as $name) {
+                    $qn = '"' . str_replace('"', '""', (string) $name) . '"';
+                    try {
+                        $pdo->exec(sprintf($sp[0], $qn, $qUser));
+                        $done++;
+                    } catch (Throwable $e) {
+                        $fail++;
+                        $errNotes[] = $qn . ': ' . $e->getMessage();
+                    }
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        $errNotes[] = 'süper kullanıcı kontrolü: ' . $e->getMessage();
+    }
+    // (B) secrets db_admin_user
+    if ($done < $mismatch && $via === '') {
+        try {
+            $cfg = db_config();
+            $au = trim((string) ($cfg['db_admin_user'] ?? ''));
+            if ($au !== '') {
+                $dsn = 'pgsql:host=' . $cfg['db_host'] . ';port=' . $cfg['db_port'] . ';dbname=' . $cfg['db_name'];
+                $admin = new PDO($dsn, $au, (string) ($cfg['db_admin_pass'] ?? ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+                $via = $au . ' (secrets db_admin_user)';
+                foreach ($specs as $i => $sp) {
+                    foreach ($lists[$i] as $name) {
+                        $qn = '"' . str_replace('"', '""', (string) $name) . '"';
+                        try {
+                            $admin->exec(sprintf($sp[0], $qn, $qUser));
+                            $done++;
+                        } catch (Throwable $e) {
+                            $fail++;
+                            $errNotes[] = $qn . ': ' . $e->getMessage();
+                        }
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            $errNotes[] = 'db_admin_user bağlantısı: ' . $e->getMessage();
+        }
+    }
+    // (C) root + sudo -u postgres — Plesk/root ortamında otomatik devir.
+    if ($done < $mismatch && function_exists('shell_exec') && stripos((string) ini_get('disable_functions'), 'shell_exec') === false
+        && function_exists('posix_getuid') && posix_getuid() === 0) {
+        $sql = '';
+        foreach ($specs as $i => $sp) {
+            foreach ($lists[$i] as $name) {
+                $sql .= 'ALTER ' . $sp[4] . ' "' . str_replace('"', '""', (string) $name) . '" OWNER TO ' . $qUser . ";\n";
+            }
+        }
+        $cmd = 'sudo -n -u postgres psql -d ' . escapeshellarg((string) (db_config()['db_name'] ?? 'nexus_traveltech'))
+            . ' -v ON_ERROR_STOP=1 -q -c ' . escapeshellarg($sql) . ' 2>&1';
+        $outTxt = trim((string) shell_exec($cmd));
+        if ($outTxt === '' || stripos($outTxt, 'ERROR') === false) {
+            $done = $mismatch;
+            $via = 'sudo -u postgres (root)';
+        } else {
+            $errNotes[] = 'sudo devri: ' . $outTxt;
+        }
+    }
+    if ($via === '') {
+        $via = 'yol yok (süper değil, db_admin_user yok, root değil)';
+    }
+    return ['done' => $done, 'via' => $via, 'error' => ($fail > 0 || $done === 0) ? implode('; ', array_slice($errNotes, 0, 3)) : ''];
+}
+
 function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix = false, bool $yes = false, bool $orphans = false, bool $backupSchema = false): array
 {
     $pdo = db();
@@ -804,12 +911,29 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                         }
                     }
                     if ($transferPdo === null) {
-                        $ownershipBlocked = true;
+                        // (C) Root + sudo -u postgres — Plesk/root ortamında otomatik devir.
+                        // Süreç root olarak çalışıyorsa sahiplik doğrudan devredilir;
+                        // manuel tek satır komuta gerek kalmaz. Denemesi güvenli: başarısızsa
+                        // aşağıda engel + tek satır komut gösterilir (eski davranış).
                         $cfgDb = db_config();
-                        $out .= "✗ Sahiplik devredilemedi — mevcut kullanıcı süper değil ve secrets.php'de db_admin_user tanımlı değil.\n";
-                        $out .= "  → Migration'lar uygulanmayacak. postgres olarak önce tek satır (kullanıcıyı secrets'tan okur):\n";
-                        $out .= "    cd " . dirname(__DIR__) . " && OWNER=\"$(/opt/plesk/php/8.5/bin/php -r '\$c=require \"config/secrets.php\"; echo \$c[\"db_user\"] ?? \"app\";')\" && sudo -u postgres psql -d " . $cfgDb['db_name'] . " -v ON_ERROR_STOP=1 -v owner=\"\$OWNER\" -c \"SELECT format('ALTER TABLE %I OWNER TO %I', tablename, :'owner') FROM pg_tables WHERE schemaname='public' \\gexec\"\n";
-                        $errors[] = 'Sahiplik devri gerekli ama yapılamadı (süper değil + db_admin_user yok) — migration uygulaması atlandı.';
+                        try {
+                            $sudoFix = health_auto_fix_ownership($pdo);
+                            if ((int) $sudoFix['done'] > 0) {
+                                $ownershipTransferred = (int) $sudoFix['done'];
+                                $out .= "→ " . $ownershipTransferred . " nesnenin sahipliği otomatik devredildi (" . $sudoFix['via'] . ")\n";
+                                audit_log('health.repair_ownership', 'schema', null, ['target_user' => $curUser, 'transferred' => $ownershipTransferred, 'failed' => 0, 'via' => $sudoFix['via'], 'note' => 'must be owner sorunu root/sudo ile otomatik çözüldü'], 'health-check');
+                            } else {
+                                $ownershipBlocked = true;
+                                $out .= "✗ Sahiplik devredilemedi — mevcut kullanıcı süper değil, secrets.php'de db_admin_user tanımlı değil ve otomatik devir (" . $sudoFix['via'] . ") sonuç vermedi.\n";
+                                $out .= "  → Migration'lar uygulanmayacak. postgres olarak önce tek satır (kullanıcıyı secrets'tan okur):\n";
+                                $out .= "    cd " . dirname(__DIR__) . " && OWNER=\"$(/opt/plesk/php/8.5/bin/php -r '\$c=require \"config/secrets.php\"; echo \$c[\"db_user\"] ?? \"app\";')\" && sudo -u postgres psql -d " . $cfgDb['db_name'] . " -v ON_ERROR_STOP=1 -v owner=\"\$OWNER\" -c \"SELECT format('ALTER TABLE %I OWNER TO %I', tablename, :'owner') FROM pg_tables WHERE schemaname='public' \\gexec\"\n";
+                                $errors[] = 'Sahiplik devri gerekli ama yapılamadı (süper değil + db_admin_user yok + otomatik devir sonuç vermedi) — migration uygulaması atlandı.';
+                            }
+                        } catch (Throwable $eOwn) {
+                            $ownershipBlocked = true;
+                            $out .= "✗ Sahiplik devredilemedi: " . $eOwn->getMessage() . "\n";
+                            $errors[] = 'Sahiplik devri gerekli ama yapılamadı: ' . $eOwn->getMessage();
+                        }
                     } else {
                         $qUser = '"' . str_replace('"', '""', $curUser) . '"';
                         $done = 0;
@@ -944,6 +1068,10 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     }
     $pendingCount = 0;
     $failedMigs = [];
+    // 'must be owner' otomatik devri — migration bir kez başarısız olursa sahiplik
+    // devredilip yeniden denenir; bu bayrak tüm migration döngüsünde yalnızca bir kez
+    // devir girişimi yapılmasını garantiler (sonsuz döngü yok).
+    $ownershipRetried = false;
     foreach ($migrationFiles as $file) {
         $base = basename($file);
         // Onarım modunda düşürülen tabloların migration'ları schema_migrations'ta kayıtlı olsa
@@ -985,9 +1113,41 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             }
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            $out .= '✗ ' . $base . ' — ' . $e->getMessage() . "\n";
+            // 'must be owner': tablo sahibi farklıysa sahipliği otomatik devredip
+            // migration'ı bir kez yeniden dener. Root yetkisi varsa sudo -u postgres
+            // yoluyla; süper kullanıcı/db_admin_user da otomatik denenir. Devir başarılı
+            // olursa aynı SQL yeniden uygulanır, başarısızsa normal hata akışı.
+            $msg = (string) $e->getMessage();
+            if (!$ownershipRetried && stripos($msg, 'must be owner') !== false) {
+                $ownershipRetried = true;
+                try {
+                    $fix = health_auto_fix_ownership($pdo);
+                    if ((int) $fix['done'] > 0) {
+                        $out .= "→ 'must be owner' — " . $fix['done'] . " nesnenin sahipliği otomatik devredildi (" . $fix['via'] . "); " . $base . " yeniden deneniyor\n";
+                        audit_log('health.auto_ownership', 'schema', null, ['migration' => $base, 'transferred' => (int) $fix['done'], 'via' => $fix['via'], 'note' => 'must be owner hatası otomatik sahiplik devriyle çözüldü'], 'health-check');
+                        try {
+                            $pdo->beginTransaction();
+                            $pdo->exec($sql);
+                            $pdo->commit();
+                            $pdo->prepare('INSERT INTO schema_migrations(file, commit_hash) VALUES(?,?)')->execute([$base, $commitNow !== '' ? $commitNow : null]);
+                            $out .= '→ ' . $base . ' uygulandı (sahiplik devri sonrası)' . ($commitNow !== '' ? ' @ ' . substr($commitNow, 0, 7) : '') . "\n";
+                            continue;
+                        } catch (Throwable $e2) {
+                            if ($pdo->inTransaction()) $pdo->rollBack();
+                            $out .= '✗ ' . $base . ' — ' . $e2->getMessage() . "\n";
+                            $failedMigs[] = $base;
+                            $errors[] = 'Migration başarısız: ' . $base . ' — ' . $e2->getMessage();
+                            continue;
+                        }
+                    }
+                    $out .= "⚠ 'must be owner' — otomatik devir yapılamadı (" . $fix['via'] . ").\n";
+                } catch (Throwable $eFix) {
+                    $out .= "⚠ 'must be owner' — otomatik devir girişimi başarısız: " . $eFix->getMessage() . "\n";
+                }
+            }
+            $out .= '✗ ' . $base . ' — ' . $msg . "\n";
             $failedMigs[] = $base;
-            $errors[] = 'Migration başarısız: ' . $base . ' — ' . $e->getMessage();
+            $errors[] = 'Migration başarısız: ' . $base . ' — ' . $msg;
         }
     }
     if ($dryRun && $pendingCount > 0) {
