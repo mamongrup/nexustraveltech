@@ -87,3 +87,38 @@ echo "=== 7) DOĞRULAMA ==="
 
 echo
 echo "=== BİTTİ — üstte 'SONUÇ: ... sorun' veya '✗' satırı kalmadıysa sunucu sağlıklı ==="
+echo
+# ─── ÖZET: tek satır durum raporu ───
+ERRORS=0
+# Tablo sahipliği
+OWNER_COUNT=$(sudo -u postgres psql -d "$APP_DB_NAME" -t -A -c "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public' AND tableowner != '$APP_DB_USER'" 2>/dev/null || echo "?")
+if [ "$OWNER_COUNT" != "0" ] && [ "$OWNER_COUNT" != "?" ]; then
+  echo "⚠ Sahiplik: $OWNER_COUNT tablo hala $APP_DB_USER değil"
+  ERRORS=$((ERRORS+1))
+fi
+# Migration: başarısız var mı?
+MIG_FAIL=$("$PHP_BIN" scripts/health-check.php 2>&1 | grep -c "✗" || true)
+if [ "$MIG_FAIL" -gt 0 ]; then
+  echo "✗ Migration: $MIG_FAIL sorun"
+  ERRORS=$((ERRORS+1))
+fi
+# Verify: eksik kolon var mı?
+VERIFY_OUT=$("$PHP_BIN" scripts/verify-platform.php 2>&1 || true)
+if echo "$VERIFY_OUT" | grep -q "✗"; then
+  VERIFY_ERRS=$(echo "$VERIFY_OUT" | grep -c "✗" || true)
+  echo "✗ Verify: $VERIFY_ERRS eksik kolon"
+  ERRORS=$((ERRORS+1))
+fi
+# trash_upcoming_alerts tablosu var mı?
+TRASH_TBL=$(sudo -u postgres psql -d "$APP_DB_NAME" -t -A -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='trash_upcoming_alerts'" 2>/dev/null || echo "0")
+if [ "$TRASH_TBL" = "0" ]; then
+  echo "✗ trash_upcoming_alerts tablosu eksik"
+  ERRORS=$((ERRORS+1))
+fi
+# Sonuç
+if [ "$ERRORS" -eq 0 ]; then
+  echo "✅ OK — tüm kontroller temiz ($APP_DB_NAME)"
+else
+  echo "❌ HATA — $ERRORS sorun kaldı ($APP_DB_NAME) — yukarıdaki ✗ satırlarına bakın"
+fi
+exit $ERRORS
