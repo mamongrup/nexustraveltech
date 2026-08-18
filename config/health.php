@@ -1142,6 +1142,71 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
                 audit_log('health.repair_stale_confirm', 'schema', null, ['confirmed' => rtrim($staleConfirmNote, ';'), 'ran_at' => gmdate('c'), 'note' => 'hedefi dolmuş onay bekleyen öneriler otomatik confirmed yapıldı'], 'health-check');
             } catch (Throwable $e) {}
         }
+        // --- Retry sıfırlama (§8.3) --- Başarısız webhook/e-posta yükleri deneme
+        // sayacı tükenmişse (attempt_count >= max_retries) ve hata kalıcı değilse
+        // (transient/expected) kuyruğa geri alınır; kök neden çözüldüğünde tekrar denenir.
+        $retryResetCount = 0;
+        $retryResetLog = '';
+        $retryResetSpecs = [
+            ['table' => 'channel_sync_logs', 'label' => 'webhook', 'errorCol' => 'error_message'],
+            ['table' => 'email_outbox',      'label' => 'e-posta', 'errorCol' => 'error'],
+        ];
+        $webhookMaxRetries = max(2, min(10, (int) platform_setting('channel_webhook_max_retries', 3)));
+        foreach ($retryResetSpecs as $rrSpec) {
+            if (in_array($rrSpec['table'], $missingTables, true)) continue;
+            try {
+                // Kolon var mı kontrol et — channel_sync_logs'ta failure_category varsa
+                // yalnızca transient/expected olanları sıfırla; yoksa tümünü sıfırla.
+                $hasFailureCat = (bool) $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='" . $rrSpec['table'] . "' AND column_name='failure_category'")->fetchColumn();
+                $statusCol = $rrSpec['table'] === 'email_outbox' ? 'status' : 'status';
+                $failedVal = $rrSpec['table'] === 'email_outbox' ? 'failed' : 'failed';
+                $queuedVal = $rrSpec['table'] === 'email_outbox' ? 'queued' : 'queued';
+                $attemptCol = $rrSpec['table'] === 'email_outbox' ? 'retry_count' : 'attempt_count';
+                if ($hasFailureCat) {
+                    $resetSql = "SELECT id, {$rrSpec['errorCol']} AS err FROM \"{$rrSpec['table']}\" WHERE status='{$failedVal}' AND {$attemptCol} >= {$webhookMaxRetries} AND failure_category IN ('transient','expected') ORDER BY id";
+                } else {
+                    $resetSql = "SELECT id, {$rrSpec['errorCol']} AS err FROM \"{$rrSpec['table']}\" WHERE status='{$failedVal}' AND {$attemptCol} >= {$webhookMaxRetries} ORDER BY id";
+                }
+                $resetRows = $pdo->query($resetSql)->fetchAll();
+                if (!$resetRows) {
+                    $out .= "✓ {$rrSpec['label']} retry sıfırlama: sıfırlanacak yük yok (eşik: {$webhookMaxRetries} deneme)\n";
+                    continue;
+                }
+                $resetCount = count($resetRows);
+                if ($dryRun) {
+                    $out .= "→ [dry-run] {$rrSpec['label']}: {$resetCount} başarısız yük kuyruğa GERİ ALINACAK (deneme sayacı sıfırlanacak)\n";
+                    foreach (array_slice($resetRows, 0, 5) as $rr) {
+                        $out .= "   ↻ #{$rr['id']} — " . mb_substr((string) ($rr['err'] ?? ''), 0, 80) . "\n";
+                    }
+                    if ($resetCount > 5) $out .= "   … +" . ($resetCount - 5) . " daha\n";
+                } else {
+                    $ids = array_map(fn($r) => (int) $r['id'], $resetRows);
+                    $ph = implode(',', array_fill(0, count($ids), '?'));
+                    $pdo->prepare("UPDATE \"{$rrSpec['table']}\" SET status='{$queuedVal}', {$attemptCol}=0, error_message=NULL WHERE id IN ({$ph})")->execute($ids);
+                    $retryResetCount += $resetCount;
+                    $retryResetLog .= $rrSpec['label'] . ':' . $resetCount . ';';
+                    $out .= "↻ {$rrSpec['label']}: {$resetCount} tükenmiş yük kuyruğa geri alındı (deneme sıfırlandı, kök neden çözüldüğünde tekrar denenir)\n";
+                    foreach (array_slice($resetRows, 0, 3) as $rr) {
+                        $out .= "   ↻ #{$rr['id']} — " . mb_substr((string) ($rr['err'] ?? ''), 0, 80) . "\n";
+                    }
+                    if ($resetCount > 3) $out .= "   … +" . ($resetCount - 3) . " daha\n";
+                }
+            } catch (Throwable $e) {
+                $out .= "✗ {$rrSpec['label']} retry sıfırlama hatası: " . $e->getMessage() . "\n";
+                $errors[] = $rrSpec['label'] . ' retry sıfırlama başarısız: ' . $e->getMessage();
+            }
+        }
+        if ($retryResetCount > 0 && !$dryRun) {
+            try {
+                audit_log('health.repair_retry_reset', 'schema', null, [
+                    'reset' => rtrim($retryResetLog, ';'),
+                    'total' => $retryResetCount,
+                    'max_retries' => $webhookMaxRetries,
+                    'ran_at' => gmdate('c'),
+                    'note' => 'deneme sayısı tükenmiş başarısız yükler kuyruğa geri alındı (§8.3)',
+                ], 'health-check');
+            } catch (Throwable $e) {}
+        }
         if ($backupSchema && $backupFile !== null) {
             $out .= "✓ Şema yedeği: " . $backupFile . " (" . count($backedUp) . " tablo: " . implode(', ', $backedUp) . ")\n";
         } elseif ($backupSchema) {

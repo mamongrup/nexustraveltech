@@ -347,6 +347,15 @@ sudo -u postgres psql -d nexus_traveltech -x -c "SELECT id, scope, attempt_count
 #    UPDATE channel_sync_logs SET attempt_count=0, status='queued', error_message=NULL WHERE status='failed' AND attempt_count>=3 AND created_at > now() - interval '7 days';
 ```
 
+**Otomatik onarım (health-check --repair):** `--repair` modu 4. adımdaki elle sıfırlamayı otomatik yapar — deneme sayısı tükenmiş (attempt_count >= max_retries) ve hata kalıcı olmayan (transient/expected) yükleri kuyruğa geri alır. Yalnızca `failure_category` kolonu varsa transient/expected filtresi uygulanır; yoksa tüm tükenmiş yükler sıfırlanır. Sonuç denetim kaydına (`health.repair_retry_reset`) yazılır:
+```bash
+# Dry-run: kaç yük sıfırlanacağını gör
+/opt/plesk/php/8.5/bin/php scripts/health-check.php --repair --dry-run
+
+# Gerçek onarım
+/opt/plesk/php/8.5/bin/php scripts/health-check.php --repair --yes
+```
+
 **Doğrulama:** 15 dakika sonra aynı tanı sorgusu — `queued`/`failed` sayısı düşmeli, `success` artmalı; işlem günlüğünde yeni satırlar `success` olmalı.
 
 ---

@@ -160,6 +160,12 @@ try {
         $f24 = (int) $pdo->query("SELECT COUNT(*) FROM channel_sync_logs WHERE status='failed' AND created_at > now() - interval '24 hours'")->fetchColumn();
         $q = (int) $pdo->query("SELECT COUNT(*) FROM channel_sync_logs WHERE status='queued'")->fetchColumn();
         rec($mod, 'webhook işleri (son 24s)', $f24 === 0 ? 'ok' : 'warn', $q . ' bekleyen · ' . $f24 . ' başarısız');
+        // Retry sıfırlanabilir yükler — deneme sayısı tükenmiş transient/expected hatalar.
+        $maxRet = max(2, min(10, (int) platform_setting('channel_webhook_max_retries', 3)));
+        $resettable = (int) $pdo->query("SELECT COUNT(*) FROM channel_sync_logs WHERE status='failed' AND attempt_count >= {$maxRet} AND (failure_category IS NULL OR failure_category IN ('transient','expected'))")->fetchColumn();
+        if ($resettable > 0) {
+            rec($mod, 'retry sıfırlanabilir yükler', 'warn', $resettable . ' yüke --repair ile kuyruğa geri alınabilir (eşik: ' . $maxRet . ' deneme)');
+        }
     }
 } catch (Throwable $e) {
     rec($mod, 'kanal durumu', 'fail', $e->getMessage());

@@ -180,7 +180,7 @@ try {
     $auditTables = ['channel_room_mappings', 'channel_rate_plan_mappings'];
     $repairLogs = [];
     try {
-        $repairQ = $pdo->prepare("SELECT action, details, admin_username, created_at FROM admin_audit_logs WHERE action IN ('health.repair_drop','health.repair_verify','health.repair_orphan_cleanup','health.repair_stale_confirm') AND created_at > now() - interval '90 days' ORDER BY id");
+        $repairQ = $pdo->prepare("SELECT action, details, admin_username, created_at FROM admin_audit_logs WHERE action IN ('health.repair_drop','health.repair_verify','health.repair_orphan_cleanup','health.repair_stale_confirm','health.repair_retry_reset') AND created_at > now() - interval '90 days' ORDER BY id");
         $repairQ->execute();
         foreach ($repairQ->fetchAll() as $rl) {
             $d = json_decode((string) $rl['details'], true) ?: [];
@@ -210,6 +210,8 @@ try {
                 $verdict = $rl['ok'] ? 'yeniden kuruldu ✓ — beklenen kolonlar mevcut (sonraki satırlar yeni şemaya yazıldı)' : 'yeniden kurulamadı ✗ — eksik kolonlar kaldı: ' . ($rl['missing'] !== '' ? $rl['missing'] : '—');
             } elseif ($rl['action'] === 'health.repair_orphan_cleanup') {
                 $verdict = $rl['total'] . ' yetim satır temizlendi (silinmiş oda tipi/plan/kanal bağlantıları)';
+            } elseif ($rl['action'] === 'health.repair_retry_reset') {
+                $verdict = (int) ($d['total'] ?? 0) . ' tükenmiş yük kuyruğa geri alındı (deneme sıfırlandı)' . (isset($d['reset']) ? ' — ' . $d['reset'] : '');
             } else {
                 $verdict = 'hedefi dolmuş öneriler confirmed yapıldı: ' . ($rl['table'] !== '—' ? $rl['table'] : 'detay: ' . $rl['missing']);
             }
