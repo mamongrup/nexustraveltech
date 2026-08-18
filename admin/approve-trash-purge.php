@@ -134,6 +134,20 @@ if ($bulkToken !== '') {
                 $impactQ->execute([(int) $row['feature_id']]);
                 $bk = $impactQ->fetch();
                 $props = $bk ? (json_decode((string) $bk['affected_properties'], true) ?: []) : [];
+                // property_type'ı DB'den çek (ilana tıklanınca doğru detay sayfasına gitsin)
+                if ($props) {
+                    $pidList = array_map(fn($p) => (int) ($p['id'] ?? 0), $props);
+                    $pidList = array_values(array_filter($pidList, fn($i) => $i > 0));
+                    if ($pidList) {
+                        $ph = str_repeat('?,', count($pidList) - 1) . '?';
+                        $ptq = $pdo->prepare("SELECT id, property_type FROM properties WHERE id IN ($ph)");
+                        $ptq->execute($pidList);
+                        $ptMap = [];
+                        foreach ($ptq->fetchAll() as $ptRow) $ptMap[(int) $ptRow['id']] = (string) $ptRow['property_type'];
+                        foreach ($props as &$pp) { $pp['property_type'] = $ptMap[(int) ($pp['id'] ?? 0)] ?? ''; }
+                        unset($pp);
+                    }
+                }
                 $tokenResetAttempts('single');
                 $confirm = ['type' => 'single', 'token' => $token, 'feat' => $feat, 'listings' => $props, 'expires_at' => (string) $row['expires_at']];
             }
@@ -158,7 +172,7 @@ $effPurge = function (array $feat) {
 <?php if ($confirm !== null && $confirm['type'] === 'single'): $f = $confirm['feat']; $pu = $effPurge($f); ?>
 <h1>🗑 Kalıcı silme onayı</h1>
 <div class="warn"><b>Özellik:</b> <?= htmlspecialchars((string) $f['label']) ?> <small style="color:#6b7774">(<?= htmlspecialchars($sectionTitles[$f['code']] ?? (string) $f['code']) ?> · silindi <?= htmlspecialchars(mb_substr((string) $f['deleted_at'], 0, 10)) ?> · kalıcı silme <?= htmlspecialchars($pu['date']) ?><?= $pu['custom'] ? ' · özel tarih' : '' ?>)</small>
-<?php if ($confirm['listings']): ?><p style="margin:10px 0 4px">Bu özellik <b><?= count($confirm['listings']) ?> ilandan</b> kaldırılmış durumda. Onaylarsanız <b style="color:#9d3b1c">kalıcı olarak silinir ve geri alınamaz</b>.</p><ul><?php foreach (array_slice($confirm['listings'], 0, 10) as $p): ?><li><?= htmlspecialchars((string) ($p['name'] ?? '#' . ($p['id'] ?? ''))) ?> <small style="color:#6b7774">(#<?= (int) ($p['id'] ?? 0) ?>)</small></li><?php endforeach; ?><?php if (count($confirm['listings']) > 10): ?><li style="color:#6b7774">… ve <?= count($confirm['listings']) - 10 ?> ilan daha</li><?php endif; ?></ul><?php else: ?><p style="margin:10px 0 0">Hiçbir ilandan kaldırılmamış. Onaylarsanız katalog satırı kalıcı olarak silinir.</p><?php endif; ?></div>
+<?php if ($confirm['listings']): ?><p style="margin:10px 0 4px">Bu özellik <b><?= count($confirm['listings']) ?> ilandan</b> kaldırılmış durumda. Onaylarsanız <b style="color:#9d3b1c">kalıcı olarak silinir ve geri alınamaz</b>.</p><ul><?php foreach (array_slice($confirm['listings'], 0, 10) as $p): $pType = (string) ($p['property_type'] ?? ''); $pUrl = $pType === 'hotel' ? '/nexustraveltech/tedarikci/otel-detay?product=' : '/nexustraveltech/tedarikci/villa-detay?product='; ?><li><a href="<?= $pUrl . (int) ($p['id'] ?? 0) ?>" target="_blank" rel="noopener" style="color:#10211f;text-decoration:none;border-bottom:1px dashed #64716d;font-weight:bold"><?= htmlspecialchars((string) ($p['name'] ?? '#' . ($p['id'] ?? ''))) ?></a> <small style="color:#6b7774">(#<?= (int) ($p['id'] ?? 0) ?>)</small></li><?php endforeach; ?><?php if (count($confirm['listings']) > 10): ?><li style="color:#6b7774">… ve <?= count($confirm['listings']) - 10 ?> ilan daha</li><?php endif; ?></ul><?php else: ?><p style="margin:10px 0 0">Hiçbir ilandan kaldırılmamış. Onaylarsanız katalog satırı kalıcı olarak silinir.</p><?php endif; ?></div>
 <form method="post"><input type="hidden" name="token" value="<?= htmlspecialchars($confirm['token']) ?>"><button class="danger">Evet, kalıcı sil</button><a class="back" href="/nexustraveltech/admin/ozellik-listeleri#trash">Vazgeç — çöp kutusunda bırak</a></form>
 <?php $expTs = strtotime((string) ($confirm['expires_at'] ?? '')) ?: 0; if ($expTs > 0): ?><div id="tokenCountdown" style="margin:10px 0 0;padding:8px 12px;background:#f4f6f1;border:1px solid #d5dccf;border-radius:6px;font-size:12px;color:#6b7774;text-align:center">⏳ Bu bağlantının geçerlilik süresi: <b id="tokenCdText"></b></div><?php endif; ?>
 <?php elseif ($confirm !== null && $confirm['type'] === 'bulk'): ?>
