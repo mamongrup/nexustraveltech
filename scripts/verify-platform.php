@@ -228,6 +228,7 @@ try {
         'channel_room_mappings' => ['label' => 'oda', 'join' => 'LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id', 'where' => 'm.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))'],
         'channel_rate_plan_mappings' => ['label' => 'plan', 'join' => 'LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id', 'where' => '(m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL'],
         'channel_property_mappings' => ['label' => 'ürün', 'join' => 'LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id', 'where' => 'p.id IS NULL OR c.id IS NULL'],
+        'ical_connections' => ['label' => 'iCal', 'join' => 'LEFT JOIN properties p ON p.id=m.property_id', 'where' => 'p.id IS NULL'],
     ];
     $orphanParts = [];
     $orphanTotal = 0;

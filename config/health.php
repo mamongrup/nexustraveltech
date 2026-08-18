@@ -47,6 +47,24 @@ function health_orphan_cleanup(PDO $pdo, bool $dryRun = false): array
             'where' => 'p.id IS NULL OR c.id IS NULL',
             'cols' => 'm.id, m.external_property_id AS code, m.status',
         ],
+        'ical_connections' => [
+            'label' => 'iCal bağlantısı',
+            'join' => 'LEFT JOIN properties p ON p.id=m.property_id',
+            'where' => 'p.id IS NULL',
+            'cols' => 'm.id, m.label AS code, m.status',
+        ],
+        'ical_events' => [
+            'label' => 'iCal olayı',
+            'join' => 'LEFT JOIN ical_connections c ON c.id=m.ical_connection_id',
+            'where' => 'c.id IS NULL',
+            'cols' => "m.id, m.external_uid AS code, '' AS status",
+        ],
+        'ical_sync_logs' => [
+            'label' => 'iCal senkron kaydı',
+            'join' => 'LEFT JOIN ical_connections c ON c.id=m.ical_connection_id',
+            'where' => 'c.id IS NULL',
+            'cols' => 'm.id, m.status AS code, m.status',
+        ],
     ];
     foreach ($specs as $table => $spec) {
         $tbl = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='" . $table . "'")->fetchColumn();
