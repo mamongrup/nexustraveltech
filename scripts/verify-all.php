@@ -23,7 +23,7 @@ declare(strict_types=1);
 // Kullanım:
 //   php scripts/verify-all.php                      # yapı + şema + görev kaydı + webhook (salt)
 //   php scripts/verify-all.php --run-jobs           # güvenli tanı görevleri + tick + kilit doğrulaması
-//   php scripts/verify-all.php --deep               # geçici onaylı eşleştirmeyle fiyat yazma + fx testi + plan ipucu (oda+plan önerisi)
+//   php scripts/verify-all.php --deep               # geçici onaylı eşleştirmeyle fiyat yazma + fx testi + plan ipucu (oda+plan önerisi) + kısıt-plan eşleştirmesi
 //   php scripts/verify-all.php --http               # webhook'u canlı HTTP ucu üzerinden (curl) dener
 //   php scripts/verify-all.php --run-jobs --deep --http   # tam uçtan uca koşu
 // Çıkış kodu: 0 = tüm kontroller geçti, 1 = en az bir hata.
@@ -362,6 +362,50 @@ try {
                         $hintOk2
                             ? vok('plan ipucu çözümü: oda önerisi plan #' . (int) ($sug2Row['rate_plan_id'] ?? 0) . ' ipucuyla çözüldü — plan önerisiyle aynı')
                             : vbad('plan ipucu çözümü: oda önerisi planı plan önerisiyle eşleşmedi');
+                    } finally {
+                        $pdo->rollBack();
+                    }
+                }
+            }
+
+            // Test A3 (--deep) — kısıt (restrictions) kapsamında plan eşleştirmesi: dış fiyat planı
+            // kodu ipucu, oda eşleştirmesindeki plandan ÖNCE gelir — kısıt satırı ipucuyla çözülen
+            // planın satırına yazılır, oda eşleştirmesinin planına sızmaz (tek transaction, rollback).
+            if ($deep) {
+                $plansX = $pdo->prepare("SELECT id FROM rate_plans WHERE property_id=? AND status='active' ORDER BY id LIMIT 2");
+                $plansX->execute([$propId]);
+                $planIdsX = $plansX->fetchAll(PDO::FETCH_COLUMN);
+                $roomX = $pdo->prepare("SELECT id FROM room_types WHERE property_id=? AND status='active' ORDER BY id LIMIT 1");
+                $roomX->execute([$propId]);
+                $roomIdX = (int) $roomX->fetchColumn();
+                if (count($planIdsX) < 2 || $roomIdX <= 0) {
+                    vnote('--deep (kısıt-plan): en az 2 aktif fiyat planı + 1 aktif oda tipi gerekli — test atlandı.');
+                } else {
+                    $planA = (int) $planIdsX[0]; // oda eşleştirmesinin planı
+                    $planB = (int) $planIdsX[1]; // dış plan kodu ipucunun çözüleceği plan
+                    $codeX = 'RES-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+                    $planCodeX = 'RPLAN-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+                    $pdo->beginTransaction();
+                    try {
+                        $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status) VALUES(?,?,?,?,?,'confirmed')")
+                            ->execute([(int) $conn['id'], $propId, $roomIdX, $planA, $codeX]);
+                        $pdo->prepare("INSERT INTO channel_rate_plan_mappings(channel_connection_id, property_id, rate_plan_id, external_rate_plan_id, status) VALUES(?,?,?,?,'confirmed')")
+                            ->execute([(int) $conn['id'], $propId, $planB, $planCodeX]);
+                        $logX = ['channel_connection_id' => (int) $conn['id'], 'property_id' => $propId];
+                        $payloadX = ['scope' => 'restrictions', 'entries' => [['external_room_id' => $codeX, 'external_rate_plan_id' => $planCodeX, 'date' => $testDate, 'stop_sale' => true, 'min_stay' => 3, 'max_stay' => 5]]];
+                        $resX = channel_webhook_apply($logX, $payloadX);
+                        $rowX = $pdo->prepare('SELECT min_stay, max_stay, stop_sale FROM inventory_calendar WHERE room_type_id=? AND rate_plan_id=? AND stay_date=?');
+                        $rowX->execute([$roomIdX, $planB, $testDate]);
+                        $gotX = $rowX->fetch();
+                        $leakX = $pdo->prepare('SELECT 1 FROM inventory_calendar WHERE room_type_id=? AND rate_plan_id=? AND stay_date=? LIMIT 1');
+                        $leakX->execute([$roomIdX, $planA, $testDate]);
+                        $leakVal = (bool) $leakX->fetchColumn();
+                        $stopOk = is_array($gotX) && in_array($gotX['stop_sale'], [true, 't', '1'], true);
+                        $okRestr = $resX['ok'] && (int) ($resX['applied'] ?? 0) === 1 && is_array($gotX)
+                            && (int) $gotX['min_stay'] === 3 && (int) $gotX['max_stay'] === 5 && $stopOk && !$leakVal;
+                        $okRestr
+                            ? vok("kısıt-plan: '$codeX' + plan '$planCodeX' → plan #$planB satırına yazıldı (min 3 / max 5 / stop_sale) — oda planı #$planA boş")
+                            : vbad('kısıt-plan: kısıt satırı plan eşleştirmesine göre yazılmadı (ok=' . var_export($resX['ok'], true) . ', applied=' . (int) ($resX['applied'] ?? 0) . ', satır=' . var_export($gotX, true) . ', sızıntı=' . var_export($leakVal, true) . ')');
                     } finally {
                         $pdo->rollBack();
                     }
