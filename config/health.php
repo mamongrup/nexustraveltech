@@ -843,6 +843,77 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         'checks' => $consistencyChecks,
     ];
 
+    // --- 2e) Zamanlayıcı kilidi (advisory lock) sağlık kontrolü — tick.php bayat kilit kontrolü.
+    //        pre_tick_lock_check() her 10 dk'da bayat kilitleri kırar; burada claimed/kilit durumu
+    //        apertureHealth-check çıktısına yansıtılır. Bağlantı koparsa kilit TP'de kalmış olabilir.
+    $out .= "\n=== 2e) ZAMANLAYICI KİLİDİ ===\n";
+    $lockOk = false;
+    $lockAge = 0;
+    $lockPid = 0;
+    $lockAppName = '';
+    $lockWarn = '';
+    try {
+        require_once __DIR__ . '/tick_lock.php';
+        $lockKey = SCHEDULER_LOCK_KEY;
+        // Kilidi tutan PID'i bul.
+        $holder = $pdo->query("
+            SELECT l.pid, a.state, a.state_change, a.usename, a.client_addr, a.application_name
+            FROM pg_locks l
+            JOIN pg_stat_activity a ON a.pid = l.pid
+            WHERE l.locktype = 'advisory'
+              AND l.classid = 0
+              AND l.objid = " . $lockKey . "
+              AND l.granted = true
+            ORDER BY l.pid
+            LIMIT 1
+        ")->fetch();
+
+        if (!$holder) {
+            // Kilit tutulmuyor — tick çalışıyor veya hiç çalışmadı.
+            // Gereken: son successful tick'i kontrol et.
+            $lastTick = (string) platform_setting('scheduler_last_tick_at', '');
+            if ($lastTick === '') {
+                $out .= "✓ Kilit serbest (henüz hiç tick çalışmadı).\n";
+            } else {
+                $tickAge = (int) (time() - strtotime($lastTick));
+                if ($tickAge > 1800) { // 30 dk
+                    $out .= "✗ Kilit serbest ama son tick " . round($tickAge / 60) . " dk önce — tick kilitlenmemiş/çalışmamış olabilir\n";
+                    $errors[] = 'scheduler lock serbest ama son tick ' . round($tickAge / 60) . ' dk önce';
+                    $checks['scheduler_lock'] = ['status' => 'error', 'last_tick_age' => $tickAge];
+                } else {
+                    $out .= "✓ Kilit serbest, son tick " . round($tickAge / 60) . " dk önce.\n";
+                    $checks['scheduler_lock'] = ['status' => 'ok', 'last_tick_age' => $tickAge];
+                }
+            }
+            $lockOk = true;
+        } else {
+            $lockPid = (int) $holder['pid'];
+            $lockAppName = (string) ($holder['application_name'] ?? '?');
+            $stateChangeTs = strtotime((string) ($holder['state_change'] ?? ''));
+            $lockAge = $stateChangeTs > 0 ? time() - $stateChangeTs : 0;
+            $staleThreshold = 600; // 10 dk
+
+            if ($lockAge >= $staleThreshold) {
+                $out .= sprintf("✗ Kilit bayat: PID %d, %d sn önce tutulmuş (%s) — bayat eşik: %d sn\n", $lockPid, $lockAge, $lockAppName, $staleThreshold);
+                $errors[] = sprintf('scheduler lock bayat: PID %d, %d sn (%s)', $lockPid, $lockAge, $lockAppName);
+                $lockWarn = 'bayat';
+            } else {
+                $out .= sprintf("✓ Kilit aktif: PID %d, %d sn önce tutulmuş (%s) — bayat değil\n", $lockPid, $lockAge, $lockAppName);
+                $lockOk = true;
+            }
+            $checks['scheduler_lock'] = [
+                'status' => $lockOk ? 'ok' : 'error',
+                'pid' => $lockPid,
+                'age_seconds' => $lockAge,
+                'application_name' => $lockAppName,
+                'warning' => $lockWarn ?: null,
+            ];
+        }
+    } catch (Throwable $e) {
+        $out .= "⚠ Zamanlayıcı kilidi kontrolü yapılamadı: " . $e->getMessage() . "\n";
+        $checks['scheduler_lock'] = ['status' => 'error', 'error' => $e->getMessage()];
+    }
+
     // --- 2d) Onarım — yabancı şemalı boş tabloları düşür (migration bölümü yeniden kurar).
     if ($repair) {
         $out .= "\n=== 2d) ONARIM MODU ===\n";

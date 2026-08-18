@@ -229,6 +229,8 @@ function scheduler_tick(): array
             scheduler_record_run((int) $job['id'], $res['status'], (string) $res['output'], $durationMs, 'tick');
             $ran[] = ['code' => $job['code'], 'status' => $res['status']];
         }
+        // Son başarılı tick zamanını kaydet — sağlık kontrolü bayat kilidi tespit eder.
+        try { save_platform_setting('scheduler_last_tick_at', date('c')); } catch (Throwable $e) {}
         return ['locked' => false, 'ran' => $ran];
     } finally {
         $pdo->query('SELECT pg_advisory_unlock(' . SCHEDULER_LOCK_KEY . ')');

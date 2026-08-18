@@ -261,6 +261,32 @@ try {
         'total' => $orphanTotal,
         'parts' => $orphanParts,
     ];
+    // Zamanlayıcı kilidi — tick.php bayat kilit durumu.
+    try {
+        require_once __DIR__ . '/../config/tick_lock.php';
+        $lockKey = SCHEDULER_LOCK_KEY;
+        $holder = $pdo->query("
+            SELECT l.pid, a.state, a.state_change, a.application_name
+            FROM pg_locks l
+            JOIN pg_stat_activity a ON a.pid = l.pid
+            WHERE l.locktype = 'advisory' AND l.classid = 0 AND l.objid = " . $lockKey . " AND l.granted = true
+            LIMIT 1
+        ")->fetch();
+        if (!$holder) {
+            echo 'Zamanlayıcı kilidi: serbest' . PHP_EOL;
+            $checks['scheduler_lock'] = ['status' => 'ok', 'locked' => false];
+        } else {
+            $stateChangeTs = strtotime((string) ($holder['state_change'] ?? ''));
+            $age = $stateChangeTs > 0 ? time() - $stateChangeTs : 0;
+            $isStale = $age >= 600;
+            echo 'Zamanlayıcı kilidi: ' . ($isStale ? 'bayat' : 'aktif') . ' — PID ' . (int) $holder['pid'] . ', ' . $age . ' sn (' . ($holder['application_name'] ?? '?') . ')' . ($isStale ? ' ✗ (10+ dk)' : ' ✓') . PHP_EOL;
+            $checks['scheduler_lock'] = ['status' => $isStale ? 'error' : 'ok', 'locked' => true, 'pid' => (int) $holder['pid'], 'age_seconds' => $age];
+            if ($isStale) $errors[] = 'Zamanlayıcı kilidi bayat: PID ' . (int) $holder['pid'] . ', ' . $age . ' sn';
+        }
+    } catch (Throwable $e) {
+        echo 'Zamanlayıcı kilidi: kontrol yapılamadı — ' . $e->getMessage() . PHP_EOL;
+        $checks['scheduler_lock'] = ['status' => 'error', 'error' => $e->getMessage()];
+    }
     // Migration durumu — schema_migrations takibi (health-check ile aynı; burada uygulanmaz, yalnızca raporlanır).
     $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())");
     $hasCommitCol=(bool)$pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='schema_migrations' AND column_name='commit_hash'")->fetchColumn();
