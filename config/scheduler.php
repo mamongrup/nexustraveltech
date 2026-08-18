@@ -37,6 +37,7 @@ function scheduler_seed_defaults(): void
         ['nexus-ical-repeat-alerts', 'iCal tekrar hata uyarıları', 'cron/alert-ical-repeat.php', '*/15 * * * *'],
         ['nexus-channel-webhook-retry', 'Webhook yeniden deneme', 'cron/retry-channel-webhooks.php', '*/5 * * * *'],
         ['nexus-health-check', 'Günlük sağlık kontrolü', 'cron/health-check-alert.php', '45 6 * * *'],
+        ['nexus-verify-all', 'Günlük uçtan uca doğrulama (verify-all)', 'cron/verify-all-alert.php', '10 7 * * *'],
         ['nexus-admin-alert-test', 'Admin uyarı e-postası hazırlık kontrolü (kuru)', 'cron/test-admin-alerts.php', '0 7 * * 1'],
         ['nexus-alert-test-delivery', 'Test e-postası teslimat doğrulaması', 'cron/verify-alert-test-delivery.php', '*/30 * * * *'],
         ['nexus-room-mapping-audit', 'Oda eşleştirme tutarlılık denetimi', 'cron/audit-room-mappings.php', '30 5 * * *'],
