@@ -37,9 +37,9 @@ if ($token === '') {
     } else {
         // Şu anki yetim durumunu listele (token üretilirken kaydedilen değil — güncel tarama).
         $items = [];
-        $tables = ['channel_room_mappings', 'channel_rate_plan_mappings', 'channel_property_mappings'];
-        $labelMap = ['channel_room_mappings' => 'oda eşleştirmesi', 'channel_rate_plan_mappings' => 'fiyat planı eşleştirmesi', 'channel_property_mappings' => 'ürün eşleştirmesi'];
-        $codeMap = ['channel_room_mappings' => 'external_room_id', 'channel_rate_plan_mappings' => 'external_rate_plan_id', 'channel_property_mappings' => 'external_property_id'];
+        $tables = ['channel_room_mappings', 'channel_rate_plan_mappings', 'channel_property_mappings', 'ical_connections'];
+        $labelMap = ['channel_room_mappings' => 'oda eşleştirmesi', 'channel_rate_plan_mappings' => 'fiyat planı eşleştirmesi', 'channel_property_mappings' => 'ürün eşleştirmesi', 'ical_connections' => 'iCal bağlantısı'];
+        $codeMap = ['channel_room_mappings' => 'external_room_id', 'channel_rate_plan_mappings' => 'external_rate_plan_id', 'channel_property_mappings' => 'external_property_id', 'ical_connections' => 'label'];
         foreach ($tables as $t) {
             try {
                 $tbl = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='" . $t . "'")->fetchColumn();
@@ -47,12 +47,12 @@ if ($token === '') {
                 $join = [
                     'channel_room_mappings' => 'LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id',
                     'channel_rate_plan_mappings' => 'LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
-                    'channel_property_mappings' => 'LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id',
+                    'channel_property_mappings' => 'LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id', 'ical_connections' => 'LEFT JOIN properties p ON p.id=m.property_id',
                 ][$t];
                 $where = [
                     'channel_room_mappings' => 'm.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))',
                     'channel_rate_plan_mappings' => '(m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL',
-                    'channel_property_mappings' => 'p.id IS NULL OR c.id IS NULL',
+                    'channel_property_mappings' => 'p.id IS NULL OR c.id IS NULL', 'ical_connections' => 'p.id IS NULL',
                 ][$t];
                 $rows = $pdo->query('SELECT m.id, m.' . $codeMap[$t] . ' AS code, m.status FROM ' . $t . ' m ' . $join . ' WHERE ' . $where . ' ORDER BY m.id')->fetchAll();
                 if ($rows) {
@@ -78,7 +78,31 @@ if ($token === '') {
                         'note' => 'e-posta onay bağlantısıyla yetim eşleştirmeler temizlendi',
                     ], 'health-check');
                 }
-                $out = '✓ ' . $res['removed'] . ' yetim eşleştirme temizlendi (oda / fiyat planı / ürün). Bu noktadan sonra geri alınamaz.';
+                // Temizlik sonrası kalan yetim sayısını say.
+                $remainingTotal = 0;
+                $remainingParts = [];
+                foreach ($tables as $t) {
+                    try {
+                        $tbl = (bool) $pdo->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='" . $t . "'")->fetchColumn();
+                        if (!$tbl) continue;
+                        $cnt = (int) $pdo->query('SELECT COUNT(*) FROM ' . $t . ' m ' . $join[$t] . ' WHERE ' . $where[$t])->fetchColumn();
+                        if ($cnt > 0) { $remainingTotal += $cnt; $remainingParts[] = $labelMap[$t] . ': ' . $cnt; }
+                    } catch (Throwable $e) {}
+                }
+                // Temizlenen kodların listesi.
+                $cleanedCodes = [];
+                foreach ($res['codes'] as $tbl => $codes) {
+                    $lbl = $labelMap[$tbl] ?? $tbl;
+                    foreach (array_slice($codes, 0, 5) as $c) {
+                        $cleanedCodes[] = htmlspecialchars($c) . ' <span class="mini">(' . htmlspecialchars($lbl) . ')</span>';
+                    }
+                    if (count($codes) > 5) $cleanedCodes[] = '<span class="mini">… +' . (count($codes) - 5) . ' daha (' . htmlspecialchars($lbl) . ')</span>';
+                }
+                $codeList = $cleanedCodes !== [] ? '<div style="margin:12px 0 0;font-size:13px"><b>Temizlenen kodlar:</b><ul style="margin:6px 0 0;padding-left:18px">' . implode('', array_map(fn($c) => '<li><code>' . $c . '</code></li>', $cleanedCodes)) . '</ul></div>' : '';
+                $remainTxt = $remainingTotal > 0
+                    ? '<div style="margin:10px 0 0;padding:8px 12px;background:#fff3cd;border:1px solid #e0c9a3;border-radius:6px;font-size:13px">⚠ <b>' . $remainingTotal . ' yetim eşleştirme hâlâ mevcut</b> (' . htmlspecialchars(implode(', ', $remainingParts)) . ') — <a href="/nexustraveltech/admin/orphan-mappings" style="color:#8a6100;font-weight:bold">yönetim sayfasına git →</a></div>'
+                    : '<div style="margin:10px 0 0;padding:8px 12px;background:#e6f8c7;border:1px solid #bcd98a;border-radius:6px;font-size:13px">✅ <b>Tüm yetimler temizlendi</b> — kalan yetim yok.</div>';
+                $out = '✓ <b>' . $res['removed'] . ' yetim eşleştirme temizlendi</b> (oda / fiyat planı / ürün). Bu noktadan sonra geri alınamaz.' . $codeList . $remainTxt;
                 $ok = true;
             } else {
                 $total = 0;
