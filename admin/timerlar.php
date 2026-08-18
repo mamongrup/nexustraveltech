@@ -110,7 +110,7 @@ $tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' .
         <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;white-space:nowrap"><?= htmlspecialchars((string) ($h['at'] ?? '—')) ?></td>
         <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:<?= ($h['mode'] ?? '') === 'send' ? '#e6f8c7;color:#2e7d32' : '#f2f4ef;color:#64716d' ?>"><?= htmlspecialchars(($h['mode'] ?? '') === 'send' ? 'gerçek' : 'kuru') ?></span></td>
         <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea"><span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:8px;background:<?= $stBg ?>;color:<?= $stColor ?>;font-weight:700;font-size:11px"><?= $stIcon ?> <?= htmlspecialchars($st) ?></span></td>
-        <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;color:#64716d"><?= htmlspecialchars((string) ($h['delivered_at'] ?? '—')) ?></td>
+        <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;color:#64716d"><?= htmlspecialchars((string) ($h['delivered_at'] ?? '—')) ?><?= !empty($h['retried']) ? ' <span style="display:inline-block;background:#fff6ef;border:1px solid #e0c9a3;border-radius:8px;padding:1px 6px;font-size:10px;color:#6b3a12" title="yeniden gönderildi: ' . htmlspecialchars((string) ($h['retry_at'] ?? '')) . '">🔄 retry</span>' : '' ?></td>
       </tr>
       <?php endforeach; ?>
     </table>

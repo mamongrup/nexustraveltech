@@ -82,6 +82,45 @@ if ($mode === 'send' && $code !== '' && $at !== '') {
     $reason = 'kuru koşu — gerçek gönderim için cron/test-admin-alerts.php --send';
 }
 
+// ---- Otomatik yeniden deneme: missed durumunda kuyruk işleyicisini tetikle ----
+$noRetry = in_array('--no-retry', $argv ?? [], true);
+$retried = false;
+if ($status === 'missed' && !$noRetry && $code !== '') {
+    echo "\n⚠ MISSed — otomatik yeniden deneme başlatılıyor…\n";
+    // 1) Kuyruk işleyicisini çalıştır (bekleyen e-postaları gönder).
+    $processor = __DIR__ . '/process-emails.php';
+    if (file_exists($processor)) {
+        $out = [];
+        $rc = 0;
+        exec(PHP_BINARY . ' ' . escapeshellarg($processor) . ' 2>&1', $out, $rc);
+        echo '  → process-emails: ' . ($rc === 0 ? 'tamamlandı' : 'hata (kod ' . $rc . ')') . (isset($out[0]) ? ' — ' . mb_substr($out[0], 0, 120) : '') . "\n";
+    }
+    // 2) Test e-postasını yeniden gönder.
+    $tester = __DIR__ . '/test-admin-alerts.php';
+    if (file_exists($tester)) {
+        $out2 = [];
+        $rc2 = 0;
+        exec(PHP_BINARY . ' ' . escapeshellarg($tester) . ' --send 2>&1', $out2, $rc2);
+        echo '  → test-admin-alerts --send: ' . ($rc2 === 0 ? 'kuyruğa eklendi' : 'hata (kod ' . $rc2 . ')') . (isset($out2[0]) ? ' — ' . mb_substr($out2[0], 0, 120) : '') . "\n";
+        if ($rc2 === 0) {
+            $retried = true;
+            // Yeni kodu kaydet — 5 dk sonra gelecek doğrulama bunu kontrol edecek.
+            save_platform_setting('last_alert_test_retry_at', date('Y-m-d H:i:s'));
+            save_platform_setting('last_alert_test_retry_count', (int) platform_setting('last_alert_test_retry_count', 0) + 1);
+            echo "  → 5 dk sonra yeniden doğrulanacak (sonraki otomatik çalışma veya manuel buton).\n";
+        }
+    }
+    // Retry tarihçesine not ekle.
+    foreach ($hist as &$h) {
+        if (is_array($h) && ($h['code'] ?? '') === $code && ($h['status'] ?? '') === 'missed') {
+            $h['retried'] = true;
+            $h['retry_at'] = date('Y-m-d H:i:s');
+        }
+    }
+    unset($h);
+    save_platform_setting('alert_test_history', $hist);
+}
+
 // ---- Konsol raporu ----
 echo "Admin uyarı e-postası teslimat doğrulaması\n";
 echo str_repeat('-', 60) . "\n";
@@ -91,6 +130,9 @@ if ($status === 'none') {
     echo 'Son test: ' . ($code !== '' ? $code : '—') . ' · ' . $at . ' · mod: ' . $mode . "\n";
     echo 'Durum: ' . strtoupper($status) . " — " . $reason . "\n";
     if ($status === 'delivered') echo 'Teslim: ' . ($deliveredAt !== '' ? $deliveredAt : '—') . "\n";
+    if ($retried) echo 'Yeniden deneme: otomatik olarak kuyruk işleyicisi çalıştırıldı ve test yeniden gönderildi.' . "\n";
+    $retryCount = (int) platform_setting('last_alert_test_retry_count', 0);
+    if ($retryCount > 0) echo 'Toplam yeniden deneme sayısı: ' . $retryCount . "\n";
 }
 echo str_repeat('-', 60) . "\n";
 echo "Tarihçe (son " . min(10, count($hist)) . " koşu):\n";
@@ -99,11 +141,12 @@ if ($hist === []) {
 }
 foreach (array_slice(array_reverse($hist), 0, 10) as $h) {
     if (!is_array($h)) continue;
-    printf("  %s · %s · %s%s\n",
+    printf("  %s · %s · %s%s%s\n",
         str_pad((string) ($h['code'] ?? '—'), 18),
         str_pad((string) ($h['status'] ?? '?'), 10),
         (string) ($h['at'] ?? '—'),
-        ($h['delivered_at'] ?? '') !== '' ? ' · teslim ' . $h['delivered_at'] : '');
+        ($h['delivered_at'] ?? '') !== '' ? ' · teslim ' . $h['delivered_at'] : '',
+        !empty($h['retried']) ? ' · yeniden gönderildi' : '');
 }
 
 // ---- E-posta raporu (--email) ----
@@ -127,7 +170,9 @@ if ($email && $status !== 'none') {
             . '<p style="color:#64716d;margin:0 0 10px">Son test koşusu: <b>' . htmlspecialchars($code) . '</b> · ' . htmlspecialchars($at) . ' · durum: <b style="color:' . ($status === 'delivered' ? '#2e7d32' : ($status === 'missed' ? '#b0301a' : '#8a6100')) . '">' . strtoupper($status) . '</b></p>'
             . '<p>' . htmlspecialchars($reason) . '</p>'
             . ($status === 'missed'
-                ? '<p style="background:#ffe2de;border:1px solid #f0c4bc;border-radius:8px;padding:10px 12px">Kuyruk işleyicisi çalışmıyor olabilir: <code>/opt/plesk/php/8.5/bin/php cron/tick.php</code> → <code>nexus-process-emails</code> satırını kontrol edin; ardından <code>cron/test-admin-alerts.php --send</code> ile yeniden test edin.</p>'
+                ? '<p style="background:#ffe2de;border:1px solid #f0c4bc;border-radius:8px;padding:10px 12px">'
+                    . ($retried ? '🔄 <b>Otomatik yeniden gönderim başlatıldı</b> — kuyruk işleyicisi çalıştırıldı ve test e-postası yeniden kuyruğa eklendi. 5 dk sonra tekrar kontrol edin.<br>' : '')
+                    . 'Kuyruk işleyicisi çalışmıyor olabilir: <code>/opt/plesk/php/8.5/bin/php cron/tick.php</code> → <code>nexus-process-emails</code> satırını kontrol edin; ardından <code>cron/test-admin-alerts.php --send</code> ile yeniden test edin.</p>'
                 : '')
             . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px;margin-top:12px">'
             . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Kod</th>'
