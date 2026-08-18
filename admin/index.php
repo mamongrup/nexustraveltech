@@ -21,6 +21,24 @@ $identityAlerts = (int) db()->query("SELECT COUNT(*) FROM admin_alerts WHERE is_
 $blockCount = (int) db()->query("SELECT COUNT(*) FROM blocked_ips WHERE action='block'")->fetchColumn();
 $flagCount = (int) db()->query("SELECT COUNT(*) FROM blocked_ips WHERE action='flag'")->fetchColumn();
 $adminPending = admin_pending_mapping_suggestions(db());
+// Yaklasan kalici silme uyarisi — 3 gun icinde silinecek ozellikler
+$upcomingPurge = ['count' => 0, 'items' => []];
+try {
+  $ttlTmp = max(7, (int) platform_setting('feature_trash_ttl_days', 30));
+  $upRows = db()->query("SELECT id, label, code, deleted_at, purge_at FROM property_feature_catalog WHERE deleted_at IS NOT NULL ORDER BY deleted_at")->fetchAll();
+  foreach ($upRows as $ur) {
+    $dTs = strtotime((string)$ur['deleted_at']) ?: 0;
+    if ($dTs <= 0) continue;
+    $custom = !empty($ur['purge_at']);
+    $pTs = $custom ? (strtotime((string)$ur['purge_at']) ?: 0) : 0;
+    if ($pTs <= 0) $pTs = $dTs + $ttlTmp * 86400;
+    $diff = $pTs - time();
+    if ($diff <= 0 || $diff > 3 * 86400) continue;
+    $upcomingPurge['count']++;
+    $upcomingPurge['items'][] = ['label'=>(string)$ur['label'],'purge_date'=>date('Y-m-d',$pTs),'remain'=>max(1,(int)ceil($diff/86400))];
+  }
+} catch (Throwable $e) {}
+
 
 // Sohbet ayarları özeti.
 $chatMinLen = max(1, (int) platform_setting('chat_min_length', 5));
@@ -106,7 +124,8 @@ $timerAvg7 = (int) db()->query("SELECT COALESCE(AVG(duration_ms),0) FROM schedul
     <div class="ip-stats">
       <a class="ip-chip ip-block" href="/nexustraveltech/admin/ziyaretci-sohbet" title="Kötü niyetli trafik için engellenen IP'ler">🚫 Engelli IP: <b><?= (int)$blockCount ?></b></a>
       <a class="ip-chip ip-flag" href="/nexustraveltech/admin/ziyaretci-sohbet" title="İzlemeye alınan (bayraklı) IP'ler">⚠ Bayraklı IP: <b><?= (int)$flagCount ?></b></a>
-      <?php if ($adminPending['total'] > 0): ?><span class="badge-hover"><a class="ip-chip" style="background:#fff6ef;border:1px solid #e0c9a3" href="/nexustraveltech/admin/tedarikci-ilanlari" title="Tüm tedarikçilerin onay bekleyen oda/fiyat planı eşleştirme önerileri — onay tedarikçi panelinde (dağıtım merkezi → bölüm 3)">⏳ Bekleyen öneri: <b><?= (int)$adminPending['total'] ?></b></a><span class="badge-hover-pop"><?= admin_mapping_suggestions_hover_html($adminPending) ?></span></span><?php endif; ?>
+      <?php if ($adminPending['total'] > 0): ?><span class="badge-hover"><a class="ip-chip" style="background:#fff6ef;border:1px solid #e0c9a3" href="/nexustraveltech/admin/tedarikci-ilanlari" title="Tüm tedarikçilerin onay bekleyen oda/fiyat planı eşleştirme önerileri — onay tedarikçi panelinde (dağıtım merkezi → bölüm 3)">⏳ Bekleyen öneri: <b><?= (int)$adminPending['total'] ?></b></a><span class="badge-hover-pop"><?= admin_mapping_suggestions_hover_html($adminPending) ?></span></span><?php if ($upcomingPurge["count"] > 0): ?><span class="badge-hover"><a class="ip-chip" style="background:#fff3f1;border:1px solid #f3c4ba" href="/nexustraveltech/admin/ozellik-listeleri#trash" title="3 gun icinde kalici silinecek ozellikler">&#x23F3; Yaklasan silme: <b><?= (int)$upcomingPurge["count"] ?></b></a><span class="badge-hover-pop"><div class="hover-list-title">&#x26A0; Yaklasan kalici silme (3 gun)</div><div style="margin-top:6px"><a href="/nexustraveltech/admin/ozellik-listeleri#trash" style="color:#d9f0b4;font-weight:bold;text-decoration:none">Cöp kutusuna git →</a></div></span></span><?php endif; ?>
+<?php endif; ?>
     </div>
 
     <div class="chat-card">
