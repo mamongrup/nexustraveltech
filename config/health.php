@@ -471,6 +471,45 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         ? "✓ Tüm kritik kolonlar mevcut.\n"
         : implode("\n", array_map(fn($e) => '✗ ' . $e, $colErrors)) . "\n";
 
+    // --- 2a0) Kısmi şema tespiti (normal mod) ---
+    // $repairMap yalnızca --repair modunda kullanılıyordu; bu blok AYNI taramayı normal modda
+    // da çalıştırır: migration zincirinden çözümlenen TÜM kolonlar denetlenir (requiredColumns'a
+    // elle eklenmemiş tablolar ve zincirdeki ek kolonlar dahil — örn. channel_property_mappings,
+    // rate_rules, channel_room_mappings.created_at/approved_by_*). Eksik kolon uyarı olarak
+    // gösterilir ve checks.partial_schema JSON'una yazılır; böylece '--repair gerekli mi' sorusu
+    // kuru çalıştırmada bile cevaplanır. 2) bölümünün çift hata üretmemesi için yalnızca
+    // requiredColumns'ta OLMAYAN (migration zincirinden gelen) kolonlar taranır.
+    $partialSchema = [];
+    $partialColStmt = $pdo->prepare("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?");
+    foreach ($repairMap as $tbl => $spec) {
+        if (in_array($tbl, $missingTables, true)) continue;
+        [$expected, $migs] = $spec;
+        if ($expected === []) continue;
+        $known = $requiredColumns[$tbl] ?? [];
+        $extra = array_values(array_diff($expected, $known));
+        if ($extra === []) continue; // migration zinciri ek kolonu yok — 2) bölümü yeterli
+        $partialColStmt->execute([$tbl]);
+        $existing = array_flip($partialColStmt->fetchAll(PDO::FETCH_COLUMN));
+        $missingExtra = array_values(array_diff($extra, array_keys($existing)));
+        if ($missingExtra === []) continue;
+        $partialSchema[$tbl] = [
+            'missing_columns' => $missingExtra,
+            'migrations' => $migs,
+            'repairable' => $migs !== [],
+        ];
+        $out .= '⚠ ' . $tbl . ': kısmi şema — eksik kolonlar: ' . implode(', ', $missingExtra)
+            . ($migs !== [] ? ' (scripts/health-check.php --repair gerekli)' : ' (migration zinciri yok — elle müdahale)') . "\n";
+        $errors[] = $tbl . ': kısmi şema — eksik kolonlar: ' . implode(', ', $missingExtra);
+    }
+    if ($partialSchema !== []) {
+        $out .= '→ ' . count($partialSchema) . ' tabloda kısmi şema — ' . (count(array_filter($partialSchema, fn($p) => $p['repairable'])) > 0 ? 'boşsa scripts/health-check.php --repair düşürüp yeniden kurar' : 'migration zinciri yok, elle müdahale gerekir') . "\n";
+    }
+    $checks['partial_schema'] = [
+        'status' => $partialSchema === [] ? 'ok' : 'error',
+        'tables' => $partialSchema,
+    ];
+
+
     // --- 2a) Oda eşleştirme tutarlılığı — verify-platform ile aynı yetim/uyumsuz taraması. ---
     if (!in_array('channel_room_mappings', $missingTables, true)) {
         $out .= "\n=== 2a) ODA EŞLEŞTİRME DURUMU ===\n";
