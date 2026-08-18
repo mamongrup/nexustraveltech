@@ -52,6 +52,32 @@ function scheduler_seed_defaults(): void
     // Tek seferlik dönüşüm: eski iCal sağlık özeti kaydını birleşik dağıtım sağlığı görevine devret.
     $up = db()->prepare("UPDATE scheduled_jobs SET code='nexus-distribution-health-digest', name='Dağıtım sağlığı haftalık özeti', command='cron/send-distribution-health-digest.php' WHERE code='nexus-ical-health-digest'");
     $up->execute();
+
+    // Varsayılan e-posta şablonları — admin panelinden düzenlenebilir.
+    $tplDefaults = [
+        'alert_test_delivery' => [
+            'name' => 'Test e-postası teslimat raporu',
+            'subject' => '📬 Test e-postası teslimat raporu — {durum}',
+            'body_html' => '<div style="font-family:Arial,sans-serif;color:#10211f">'
+                . '<h2 style="margin:0 0 6px">📬 Test e-postası teslimat raporu</h2>'
+                . '<p style="color:#64716d;margin:0 0 10px">Son test koşusu: <b>{kod}</b> · {tarih} · durum: <b style="color:{durum_renk}">{durum}</b></p>'
+                . '<p>{neden}</p>'
+                . '{uyari_kutusu}'
+                . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px;margin-top:12px">'
+                . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Kod</th>'
+                . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Kuyruğa alındı</th>'
+                . '<th style="padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Durum</th>'
+                . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Teslim</th></tr>'
+                . '{tablo_satirlari}'
+                . '</table>'
+                . '<p style="margin-top:14px;color:#64716d;font-size:12px">Rapor: cron/verify-alert-test-delivery.php --email · tarihçe son 20 koşu tutulur.</p>'
+                . '</div>',
+        ],
+    ];
+    $tplQ = db()->prepare('INSERT INTO email_templates(code,name,subject,body_html,is_active) VALUES(?,?,?,?,true) ON CONFLICT(code) DO NOTHING');
+    foreach ($tplDefaults as $tplCode => $tpl) {
+        $tplQ->execute([$tplCode, $tpl['name'], $tpl['subject'], $tpl['body_html']]);
+    }
 }
 
 function scheduler_jobs(): array

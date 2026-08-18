@@ -183,7 +183,24 @@ if ($email && $status !== 'none') {
             . '</table>'
             . '<p style="margin-top:14px;color:#64716d;font-size:12px">Rapor: cron/verify-alert-test-delivery.php --email · tarihçe son 20 koşu tutulur.</p>'
             . '</div>';
-        queue_email($adminEmail, '📬 Test e-postası teslimat raporu — ' . $status, $body, 'alert_test_delivery');
+        // Şablon değişkenleri hazırla — admin panelinden düzenlenebilir alert_test_delivery şablonu.
+        $durumRenk = $status === 'delivered' ? '#2e7d32' : ($status === 'missed' ? '#b0301a' : '#8a6100');
+        $uyariKutusu = '';
+        if ($status === 'missed') {
+            $uyariKutusu = '<p style="background:#ffe2de;border:1px solid #f0c4bc;border-radius:8px;padding:10px 12px">'
+                . ($retried ? '🔄 <b>Otomatik yeniden gönderim başlatıldı</b> — kuyruk işleyicisi çalıştırıldı ve test e-postası yeniden kuyruğa eklendi. 5 dk sonra tekrar kontrol edin.<br>' : '')
+                . 'Kuyruk işleyicisi çalışmıyor olabilir: <code>/opt/plesk/php/8.5/bin/php cron/tick.php</code> → <code>nexus-process-emails</code> satırını kontrol edin; ardından <code>cron/test-admin-alerts.php --send</code> ile yeniden test edin.</p>';
+        }
+        $tplVars = [
+            'kod' => $code,
+            'tarih' => $at,
+            'durum' => strtoupper($status),
+            'durum_renk' => $durumRenk,
+            'neden' => $reason,
+            'uyari_kutusu' => $uyariKutusu,
+            'tablo_satirlari' => $rows,
+        ];
+        queue_email_with_template($adminEmail, 'alert_test_delivery', $tplVars, '📬 Test e-postası teslimat raporu — ' . $status, $body, 'alert_test_delivery');
         echo "\nTeslimat raporu kuyruğa eklendi: " . $adminEmail . "\n";
     } else {
         echo "\nadmin_alert_email tanımsız — e-posta raporu atlanıyor.\n";
