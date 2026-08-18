@@ -202,6 +202,85 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
     } catch (Throwable $e) {
         $orphanBlock = '';
     }
+    // Yetim ayrıntı listesi — mevcut yetimlerin dağılımı ve son 7 günün temizlik geçmişi.
+    $orphanDetailBlock = '';
+    try {
+        $pdo = db();
+        // Mevcut yetim dağılımı
+        $orphanParts = [];
+        // 1) channel_room_mappings
+        $rc = $pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE m.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))");
+        $n = $rc ? (int) $rc->fetchColumn() : 0;
+        if ($n > 0) $orphanParts[] = ['label' => 'Oda eşleştirmesi', 'count' => $n, 'table' => 'channel_room_mappings'];
+        // 2) channel_rate_plan_mappings
+        $rc = $pdo->query("SELECT COUNT(*) FROM channel_rate_plan_mappings m LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL");
+        $n = $rc ? (int) $rc->fetchColumn() : 0;
+        if ($n > 0) $orphanParts[] = ['label' => 'Fiyat planı eşleştirmesi', 'count' => $n, 'table' => 'channel_rate_plan_mappings'];
+        // 3) channel_property_mappings
+        $rc = $pdo->query("SELECT COUNT(*) FROM channel_property_mappings m LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE p.id IS NULL OR c.id IS NULL");
+        $n = $rc ? (int) $rc->fetchColumn() : 0;
+        if ($n > 0) $orphanParts[] = ['label' => 'Ürün eşleştirmesi', 'count' => $n, 'table' => 'channel_property_mappings'];
+        // 4) ical_connections
+        $rc = $pdo->query("SELECT COUNT(*) FROM ical_connections c LEFT JOIN properties p ON p.id=c.property_id WHERE p.id IS NULL");
+        $n = $rc ? (int) $rc->fetchColumn() : 0;
+        if ($n > 0) $orphanParts[] = ['label' => 'iCal bağlantısı', 'count' => $n, 'table' => 'ical_connections'];
+        // 5) ical_events
+        $rc = $pdo->query("SELECT COUNT(*) FROM ical_events e LEFT JOIN ical_connections c ON c.id=e.ical_connection_id WHERE c.id IS NULL");
+        $n = $rc ? (int) $rc->fetchColumn() : 0;
+        if ($n > 0) $orphanParts[] = ['label' => 'iCal olayı', 'count' => $n, 'table' => 'ical_events'];
+        // 6) ical_sync_logs
+        $rc = $pdo->query("SELECT COUNT(*) FROM ical_sync_logs l LEFT JOIN ical_connections c ON c.id=l.ical_connection_id WHERE c.id IS NULL");
+        $n = $rc ? (int) $rc->fetchColumn() : 0;
+        if ($n > 0) $orphanParts[] = ['label' => 'iCal senkron kaydı', 'count' => $n, 'table' => 'ical_sync_logs'];
+        // 7) channel_property_mappings (ürün eşleştirmesi — ürün yok)
+        // 8) pending_trash_purges
+        $rc = $pdo->query("SELECT COUNT(*) FROM pending_trash_purges p LEFT JOIN feature_delete_backups b ON b.feature_id=p.feature_id WHERE b.id IS NULL");
+        $n = $rc ? (int) $rc->fetchColumn() : 0;
+        if ($n > 0) $orphanParts[] = ['label' => 'Silme onayı (yedeği yok)', 'count' => $n, 'table' => 'pending_trash_purges'];
+
+        // Son 7 günün yetim temizlik geçmişi
+        $historyRows = [];
+        try {
+            $histQ = $pdo->query("SELECT details, created_at FROM admin_audit_logs WHERE action='health.repair_orphan_cleanup' AND created_at >= now() - interval '7 days' ORDER BY created_at DESC");
+            $historyRows = $histQ ? $histQ->fetchAll() : [];
+        } catch (Throwable $e) {}
+
+        if ($orphanParts !== [] || $historyRows !== []) {
+            $orphanDetailBlock = '<div style="background:#f9f8f4;border:1px solid #e1e5de;border-radius:8px;padding:12px 14px;margin-top:14px">';
+            $orphanDetailBlock .= '<b style="color:#10211f;font-size:14px">🧹 Yetim eşleştirme özeti</b>';
+            // Dağılım tablosu
+            if ($orphanParts !== []) {
+                $orphanDetailBlock .= '<table style="border-collapse:collapse;width:100%;font-size:12px;margin-top:8px">';
+                $orphanDetailBlock .= '<tr><th style="text-align:left;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Tür</th><th style="text-align:right;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Sayı</th></tr>';
+                $totalOrphan = 0;
+                foreach ($orphanParts as $op) {
+                    $totalOrphan += $op['count'];
+                    $orphanDetailBlock .= '<tr><td style="padding:4px 8px;border:1px solid #e1e5de">' . htmlspecialchars($op['label']) . '</td><td style="padding:4px 8px;border:1px solid #e1e5de;text-align:right"><b>' . $op['count'] . '</b></td></tr>';
+                }
+                $orphanDetailBlock .= '<tr><td style="padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1"><b>Toplam</b></td><td style="padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1;text-align:right"><b>' . $totalOrphan . '</b></td></tr>';
+                $orphanDetailBlock .= '</table>';
+            }
+            // Son 7 gün temizlik geçmişi
+            if ($historyRows !== []) {
+                $orphanDetailBlock .= '<p style="margin:10px 0 4px;color:#64716d;font-size:12px">Son 7 günün temizlik çalışmaları:</p>';
+                $orphanDetailBlock .= '<table style="border-collapse:collapse;width:100%;font-size:12px">';
+                $orphanDetailBlock .= '<tr><th style="text-align:left;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Tarih</th><th style="text-align:left;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Detay</th></tr>';
+                foreach (array_slice($historyRows, 0, 10) as $hr) {
+                    $det = $hr['details'] ?? '';
+                    // details JSON ise summary alanı var
+                    if (is_string($det) && str_starts_with(trim($det), '{')) {
+                        $jd = json_decode($det, true);
+                        $det = $jd['summary'] ?? ($jd['removed'] ?? '') . ' satır temizlendi';
+                    }
+                    $orphanDetailBlock .= '<tr><td style="padding:4px 8px;border:1px solid #e1e5de;white-space:nowrap">' . htmlspecialchars(date('d.m', strtotime((string) $hr['created_at']))) . '</td><td style="padding:4px 8px;border:1px solid #e1e5de">' . htmlspecialchars(mb_substr((string) $det, 0, 80)) . '</td></tr>';
+                }
+                $orphanDetailBlock .= '</table>';
+            }
+            $orphanDetailBlock .= '</div>';
+        }
+    } catch (Throwable $e) {
+        $orphanDetailBlock = '';
+    }
     $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
         . ($result['errors'] !== []
             ? '<h2 style="margin:0 0 6px">⚠ Platform sağlık kontrolü: ' . count($result['errors']) . ' sorun</h2>'
@@ -221,6 +300,7 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
         . $runsBlock
         . $opsBlock
         . '<p style="margin-top:18px">Tam çıktı için sunucuda: <code style="background:#f2f4ef;padding:2px 5px">/opt/plesk/php/8.5/bin/php scripts/health-check.php</code></p>'
+        . $orphanDetailBlock
         . '</div>';
     $orphanNote = $orphanCleaned > 0 ? ' · ' . $orphanCleaned . ' yetim temizlendi' : '';
 $subject = $result['errors'] !== []
