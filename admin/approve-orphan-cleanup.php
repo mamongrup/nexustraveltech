@@ -8,6 +8,7 @@ declare(strict_types=1);
 // Tek kullanımlık 64 hex token (platform ayarında 3 gün); kullanıldığında temizlenir.
 // Bağlantıyı günlük sağlık e-postası (cron/health-check-alert.php) üretir.
 
+require_once __DIR__ . '/../config/auth.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/platform_settings.php';
 require_once __DIR__ . '/../config/health.php';
@@ -68,6 +69,18 @@ if ($token === '') {
             $out = 'Şu an temizlenecek yetim eşleştirme yok (daha önce temizlenmiş olabilir).';
         } elseif ($out === '') {
             if ($method === 'POST') {
+                // İsteğe bağlı parola doğrulaması — platform ayarı açıkken token tek başına yetmez.
+                $pwRequired = (bool) platform_setting('orphan_cleanup_require_password', false);
+                $pwOk = !$pwRequired; // Kapalıysa parola gerekmez
+                if ($pwRequired) {
+                    $adminPass = trim((string) ($_POST['admin_password'] ?? ''));
+                    $creds = admin_credentials();
+                    $pwOk = hash_equals($creds['password'], $adminPass);
+                }
+                if (!$pwOk) {
+                    $out = '❌ Parola doğrulaması başarısız — temizleme iptal edildi.';
+                    $confirm = ['token' => $token, 'items' => $items, 'total' => $total, 'pw_error' => true];
+                } else {
                 $res = health_orphan_cleanup($pdo, false);
                 save_platform_setting('orphan_cleanup_approve', []);
                 if ($res['removed'] > 0) {
@@ -104,6 +117,7 @@ if ($token === '') {
                     : '<div style="margin:10px 0 0;padding:8px 12px;background:#e6f8c7;border:1px solid #bcd98a;border-radius:6px;font-size:13px">✅ <b>Tüm yetimler temizlendi</b> — kalan yetim yok.</div>';
                 $out = '✓ <b>' . $res['removed'] . ' yetim eşleştirme temizlendi</b> (oda / fiyat planı / ürün). Bu noktadan sonra geri alınamaz.' . $codeList . $remainTxt;
                 $ok = true;
+                } // pw check else
             } else {
                 $total = 0;
                 foreach ($items as $t) {
@@ -115,7 +129,7 @@ if ($token === '') {
     }
 }
 ?>
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Yetim temizleme onayı | NEXUS Admin</title><style>body{font-family:Arial;background:#f7f7f2;color:#10211f;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}.card{background:#fff;border:1px solid #e1e5de;border-radius:10px;padding:28px 32px;max-width:600px;width:calc(100% - 48px);box-shadow:0 4px 18px rgba(0,0,0,.05)}h1{font-size:20px;margin:0 0 10px}.ok{background:#e6f8c7;padding:12px;border-radius:6px}.no{background:#ffe2de;padding:12px;border-radius:6px}.warn{background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:12px;margin:14px 0}.warn ul{margin:8px 0 0;padding-left:18px}.back{display:inline-block;margin-top:14px;color:#10211f}.danger{background:#9d3b1c;color:#fff;border:0;padding:12px 18px;font-size:15px;font-weight:bold;border-radius:6px;cursor:pointer;margin-right:10px}button{cursor:pointer}.mini{color:#6b7774;font-size:12px}</style></head><body><div class="card">
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Yetim temizleme onayı | NEXUS Admin</title><style>body{font-family:Arial;background:#f7f7f2;color:#10211f;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}.card{background:#fff;border:1px solid #e1e5de;border-radius:10px;padding:28px 32px;max-width:600px;width:calc(100% - 48px);box-shadow:0 4px 18px rgba(0,0,0,.05)}h1{font-size:20px;margin:0 0 10px}.ok{background:#e6f8c7;padding:12px;border-radius:6px}.no{background:#ffe2de;padding:12px;border-radius:6px}.warn{background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:12px;margin:14px 0}.warn ul{margin:8px 0 0;padding-left:18px}.back{display:inline-block;margin-top:14px;color:#10211f}.danger{background:#9d3b1c;color:#fff;border:0;padding:12px 18px;font-size:15px;font-weight:bold;border-radius:6px;cursor:pointer;margin-right:10px}button{cursor:pointer}.mini{color:#6b7774;font-size:12px}.pw-err{background:#ffe2de;border:1px solid #e8b4b0;padding:8px;border-radius:6px;margin:8px 0;font-size:13px}</style></head><body><div class="card">
 <?php if ($confirm !== null): ?>
 <h1>🧹 Yetim eşleştirme temizliği onayı</h1>
 <div class="warn"><p style="margin:0">Aşağıdaki <b style="color:#9d3b1c"><?= (int) $confirm['total'] ?> yetim eşleştirme</b> silinmiş oda tipi / fiyat planı / kanal / ürüne işaret ediyor. Onaylarsanız <b style="color:#9d3b1c">kalıcı olarak silinir</b> ve geri alınamaz — webhook yazımı bu satırlarda zaten başarısız olur, bu yüzden temizlik veri kaybı üretmez.</p>
@@ -124,7 +138,7 @@ if ($token === '') {
 <ul><?php foreach (array_slice($t['rows'], 0, 8) as $r): ?><li>#<?= (int) $r['id'] ?> · <code><?= htmlspecialchars((string) $r['code']) ?></code> <span class="mini">(<?= htmlspecialchars((string) ($r['status'] ?? '')) ?>)</span></li><?php endforeach; ?><?php if (count($t['rows']) > 8): ?><li class="mini">… ve <?= count($t['rows']) - 8 ?> satır daha</li><?php endif; ?></ul></div>
 <?php endforeach; ?>
 </div>
-<form method="post"><input type="hidden" name="token" value="<?= htmlspecialchars($confirm['token']) ?>"><button class="danger">Evet, <?= (int) $confirm['total'] ?> yetimi temizle</button><a class="back" href="/nexustraveltech/admin/">&nbsp;Vazgeç</a></form>
+<?php if (!empty($confirm['pw_error'])): ?><div class="pw-err">❌ Parola doğrulaması başarısız — lütfen doğru parolayı girin.</div><?php endif; ?><form method="post"><input type="hidden" name="token" value="<?= htmlspecialchars($confirm['token']) ?>"><?php if ((bool) platform_setting('orphan_cleanup_require_password', false)): ?><div style="margin:10px 0"><label style="font-size:13px;font-weight:bold">Yönetici parolası:<input type="password" name="admin_password" autocomplete="off" placeholder="Parolanızı girin" style="display:block;width:100%;padding:10px;border:1px solid #d8ded8;font:inherit;margin-top:4px"></label></div><?php endif; ?><button class="danger">Evet, <?= (int) $confirm['total'] ?> yetimi temizle</button><a class="back" href="/nexustraveltech/admin/">&nbsp;Vazgeç</a></form>
 <?php else: ?>
 <h1>🧹 Yetim eşleştirme temizliği onayı</h1>
 <div class="<?= $ok ? 'ok' : 'no' ?>"><?= htmlspecialchars($out) ?></div>
