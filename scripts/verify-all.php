@@ -129,10 +129,14 @@ try {
     try {
         $pdo->exec('CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())');
         $applied = array_flip($pdo->query('SELECT file FROM schema_migrations')->fetchAll(PDO::FETCH_COLUMN));
-        $files = glob(__DIR__ . '/../database/migrations/[0-9][0-9][0-9]-*.sql');
+        // Yalnızca *-postgres.sql dosyaları sayılır — legacy MySQL dosyaları (002-008 vb.)
+        // health-check/verify-platform ile aynı şekilde atlanır; aksi halde her gün yanlış
+        // 'N migration bekliyor' hatası + e-posta üretilir.
+        $files = glob(__DIR__ . '/../database/migrations/*-postgres.sql');
         sort($files);
+        $legacyCount = count(array_filter(glob(__DIR__ . '/../database/migrations/[0-9][0-9][0-9]-*.sql'), fn($f) => !str_contains($f, '-postgres')));
         $pending = array_values(array_filter($files, fn($f) => !isset($applied[basename($f)])));
-        $pending === [] ? vok('migration durumu: ' . count($files) . ' dosyanın tamamı uygulanmış') : vbad(count($pending) . ' migration bekliyor: ' . implode(', ', array_map('basename', array_slice($pending, 0, 8))));
+        $pending === [] ? vok('migration durumu: ' . count($files) . ' postgres dosyasının tamamı uygulanmış (' . $legacyCount . ' legacy atlandı)') : vbad(count($pending) . ' postgres migration bekliyor: ' . implode(', ', array_map('basename', array_slice($pending, 0, 8))));
     } catch (Throwable $e) {
         vnote('schema_migrations okunamadı: ' . $e->getMessage());
     }
