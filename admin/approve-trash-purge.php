@@ -21,6 +21,26 @@ $out = '';
 $ok = false;
 $confirm = null; // ['type' => 'single'|'bulk', 'token' => ..., ...]
 $sectionTitles = ['villa' => 'Villa özellikleri', 'yacht' => 'Yat özellikleri', 'amenity' => 'Otel olanakları', 'activity' => 'Otel aktiviteleri', 'event' => 'Otel etkinlikleri'];
+// Brute force koruması: hatalı token denemesi sayacı (platform ayarında tutulur).
+$TOKEN_MAX_ATTEMPTS = 5;
+$tokenAttempts = function (string $key, bool $increment = false): int {
+    $data = (array) platform_setting('trash_token_attempts', []);
+    $count = (int) ($data[$key] ?? 0);
+    if ($increment) {
+        $count++;
+        $data[$key] = $count;
+        save_platform_setting('trash_token_attempts', $data);
+    }
+    return $count;
+};
+$tokenResetAttempts = function (string $key): void {
+    $data = (array) platform_setting('trash_token_attempts', []);
+    unset($data[$key]);
+    save_platform_setting('trash_token_attempts', $data);
+};
+$tokenInvalidateBulk = function (): void {
+    save_platform_setting('trash_bulk_approve', []);
+};
 
 if ($bulkToken !== '') {
     if (!preg_match('/^[a-f0-9]{64}$/', $bulkToken)) {
@@ -32,7 +52,15 @@ if ($bulkToken !== '') {
         $storedToken = (string) ($stored['token'] ?? '');
         $expires = (string) ($stored['expires_at'] ?? '');
         if ($storedToken === '' || !hash_equals($storedToken, $bulkToken)) {
-            $out = 'Bu toplu onay bağlantısı geçersiz veya zaten kullanıldı.';
+            $attempts = $tokenAttempts('bulk', true);
+            if ($attempts >= $TOKEN_MAX_ATTEMPTS) {
+                $tokenInvalidateBulk();
+                $tokenResetAttempts('bulk');
+                audit_log('feature.token_lockout', 'platform_setting', null, ['type' => 'bulk', 'attempts' => $attempts]);
+                $out = 'Çok fazla hatalı deneme (' . $attempts . ') — toplu onay bağlantısı iptal edildi. Yeni temizlik taraması e-postayı yeniden gönderecek.';
+            } else {
+                $out = 'Bu toplu onay bağlantısı geçersiz veya zaten kullanıldı.' . ($attempts > 1 ? ' <small style="color:#6b7774">(' . $attempts . '/' . $TOKEN_MAX_ATTEMPTS . ' deneme)</small>' : '');
+            }
         } elseif ($expires === '' || strtotime($expires) < time()) {
             $out = 'Bu toplu onay bağlantısının süresi doldu — yeni temizlik taraması e-postayı yeniden gönderecek.';
         } else {
@@ -54,6 +82,7 @@ if ($bulkToken !== '') {
                 $out = '✓ ' . count($pending) . ' özellik toplu onaylandı ve kalıcı olarak silindi (' . $purged['count'] . ' kayıt). Bu noktadan sonra geri alınamaz.';
                 $ok = true;
             } else {
+                $tokenResetAttempts('bulk');
                 $confirm = ['type' => 'bulk', 'token' => $bulkToken, 'items' => $pending];
             }
         }
@@ -68,7 +97,15 @@ if ($bulkToken !== '') {
         $q->execute([$token]);
         $row = $q->fetch();
         if (!$row) {
-            $out = 'Bu onay bağlantısı geçersiz veya zaten kullanıldı.';
+            $attempts = $tokenAttempts('single', true);
+            if ($attempts >= $TOKEN_MAX_ATTEMPTS) {
+                $pdo->prepare('DELETE FROM pending_trash_purges WHERE token=?')->execute([$token]);
+                $tokenResetAttempts('single');
+                audit_log('feature.token_lockout', 'pending_trash_purge', null, ['type' => 'single', 'attempts' => $attempts]);
+                $out = 'Çok fazla hatalı deneme (' . $attempts . ') — onay bağlantısı iptal edildi. Yeni temizlik taraması e-postayı yeniden gönderecek.';
+            } else {
+                $out = 'Bu onay bağlantısı geçersiz veya zaten kullanıldı.' . ($attempts > 1 ? ' <small style="color:#6b7774">(' . $attempts . '/' . $TOKEN_MAX_ATTEMPTS . ' deneme)</small>' : '');
+            }
         } elseif (strtotime((string) $row['expires_at']) < time()) {
             $out = 'Bu onay bağlantısının süresi doldu — yeni temizlik taraması e-postayı yeniden gönderecek.';
         } elseif ($row['approved_at'] !== null) {
@@ -97,6 +134,7 @@ if ($bulkToken !== '') {
                 $impactQ->execute([(int) $row['feature_id']]);
                 $bk = $impactQ->fetch();
                 $props = $bk ? (json_decode((string) $bk['affected_properties'], true) ?: []) : [];
+                $tokenResetAttempts('single');
                 $confirm = ['type' => 'single', 'token' => $token, 'feat' => $feat, 'listings' => $props];
             }
         }
