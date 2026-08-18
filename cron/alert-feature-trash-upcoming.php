@@ -96,17 +96,46 @@ foreach ($fresh as $u) {
 
 $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '<h2 style="margin:0 0 6px">⏳ Yaklaşan kalıcı silme: ' . count($fresh) . ' özellik</h2>'
-    . '<p>Aşağıdaki silinmiş özellikler kalıcı silme vadesine <b>3 gün içinde</b> ulaşacak. Vade dolduğunda ayrı bir "son şans" onay e-postası istenir; onaylanırsa <b>geri alınamaz</b>. Silinmesini istemiyorsanız çöp kutusundan geri yükleyin.</p>'
+    . '<p>Aşağıdaki silinmiş özellikler kalıcı silme vadesine <b>' . $warnDays . ' gün içinde</b> ulaşacak. Vade dolduğunda ayrı bir "son şans" onay e-postası istenir; onaylanırsa <b>geri alınamaz</b>. Silinmesini istemiyorsanız çöp kutusundan geri yükleyin.</p>'
     . '<ul>' . $rowsHtml . '</ul>'
+    // Bolum bazinda ozet tablosu
+    . '<div style="margin:16px 0 0;border:1px solid #e1e5de;border-radius:8px;overflow:hidden">'
+    . '<div style="background:#f7f7f2;padding:8px 12px;font-weight:bold;font-size:13px;border-bottom:1px solid #e1e5de">'
+    . '&#x1F4CB; Bu hafta silinecek t&#x00FC;m &#xF6;zellikler (' . count($upcoming) . ' &#xF6;zellik, ' . count($byCode) . ' b&#x00F6;l&#x00FC;m)'
+    . '</div>'
+    . '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+    . '<tr style="background:#f0f2ed"><th style="padding:6px 12px;text-align:left;border-bottom:1px solid #e1e5de;font-size:11px;text-transform:uppercase;color:#64716d">B&#x00F6;l&#x00FC;m</th><th style="padding:6px 12px;text-align:center;border-bottom:1px solid #e1e5de;font-size:11px;text-transform:uppercase;color:#64716d">Adet</th><th style="padding:6px 12px;text-align:left;border-bottom:1px solid #e1e5de;font-size:11px;text-transform:uppercase;color:#64716d">&#xD6;zellikler</th></tr>'
+    . $summaryRows
+    . '</table></div>'
+
     . '<p><a href="https://nexustraveltech.com/admin/ozellik-listeleri#trash" style="color:#b0301a">Katalog & çöp kutusu →</a></p>'
     . '</div>';
 
-queue_email($adminEmail, 'Yaklaşan kalıcı silme: ' . count($fresh) . ' özellik (3 gün içinde)', $body, 'trash_upcoming', count($fresh));
+queue_email($adminEmail, 'Yaklaşan kalıcı silme: ' . count($fresh) . ' özellik (' . $warnDays . ' gün içinde)', $body, 'trash_upcoming', count($fresh));
 
 // Tekilleştirme kayıtlarını işaretle — aynı özellik + tarih için bir daha e-posta gitmez.
 $insSt = $pdo->prepare('INSERT INTO trash_upcoming_alerts(feature_id, purge_date) VALUES(?,?) ON CONFLICT (feature_id, purge_date) DO NOTHING');
 foreach ($fresh as $u) {
     $insSt->execute([$u['id'], $u['purge_date']]);
 }
+
+// Bolum bazinda gruplu ozet
+$byCode = [];
+foreach ($upcoming as $u) {
+    $c = (string)$u['code'];
+    if (!isset($byCode[$c])) $byCode[$c] = [];
+    $byCode[$c][] = $u;
+}
+$summaryRows = "";
+foreach ($byCode as $code => $items) {
+    $codeLabel = htmlspecialchars($sectionTitles[$code] ?? (string)$code);
+    $names = array_map(fn($x) => '<b>' . htmlspecialchars($x['label']) . '</b> <span style="color:#6b7774;font-size:12px">(' . htmlspecialchars($x['purge_date']) . ' · ' . (int)$x['remain_days'] . ' gun' . ($x['custom'] ? ' · ozel' : '') . ')</span>', $items);
+    $summaryRows .= '<tr style="border-bottom:1px solid #e8e5de">'
+        . '<td style="padding:8px 12px;font-weight:bold;background:#f7f7f2;white-space:nowrap">>'.$codeLabel.'</td>'
+        . '<td style="padding:8px 12px;text-align:center;background:#f7f7f2"><b style="color:#b0301a">'.count($items).'</b></td>'
+        . '<td style="padding:8px 12px">'.implode(', ',$names).'</td>'
+        . '</tr>';
+}
+
 
 echo 'Uyarı e-postası kuyruğa eklendi: ' . count($fresh) . ' özellik (' . count($upcoming) . ' bulundu, ' . (count($upcoming) - count($fresh)) . " zaten uyarılmıştı).\n";
