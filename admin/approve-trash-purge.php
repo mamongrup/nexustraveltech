@@ -83,7 +83,7 @@ if ($bulkToken !== '') {
                 $ok = true;
             } else {
                 $tokenResetAttempts('bulk');
-                $confirm = ['type' => 'bulk', 'token' => $bulkToken, 'items' => $pending];
+                $confirm = ['type' => 'bulk', 'token' => $bulkToken, 'items' => $pending, 'expires_at' => $expires];
             }
         }
     }
@@ -135,7 +135,7 @@ if ($bulkToken !== '') {
                 $bk = $impactQ->fetch();
                 $props = $bk ? (json_decode((string) $bk['affected_properties'], true) ?: []) : [];
                 $tokenResetAttempts('single');
-                $confirm = ['type' => 'single', 'token' => $token, 'feat' => $feat, 'listings' => $props];
+                $confirm = ['type' => 'single', 'token' => $token, 'feat' => $feat, 'listings' => $props, 'expires_at' => (string) $row['expires_at']];
             }
         }
     }
@@ -160,13 +160,15 @@ $effPurge = function (array $feat) {
 <div class="warn"><b>Özellik:</b> <?= htmlspecialchars((string) $f['label']) ?> <small style="color:#6b7774">(<?= htmlspecialchars($sectionTitles[$f['code']] ?? (string) $f['code']) ?> · silindi <?= htmlspecialchars(mb_substr((string) $f['deleted_at'], 0, 10)) ?> · kalıcı silme <?= htmlspecialchars($pu['date']) ?><?= $pu['custom'] ? ' · özel tarih' : '' ?>)</small>
 <?php if ($confirm['listings']): ?><p style="margin:10px 0 4px">Bu özellik <b><?= count($confirm['listings']) ?> ilandan</b> kaldırılmış durumda. Onaylarsanız <b style="color:#9d3b1c">kalıcı olarak silinir ve geri alınamaz</b>.</p><ul><?php foreach (array_slice($confirm['listings'], 0, 10) as $p): ?><li><?= htmlspecialchars((string) ($p['name'] ?? '#' . ($p['id'] ?? ''))) ?> <small style="color:#6b7774">(#<?= (int) ($p['id'] ?? 0) ?>)</small></li><?php endforeach; ?><?php if (count($confirm['listings']) > 10): ?><li style="color:#6b7774">… ve <?= count($confirm['listings']) - 10 ?> ilan daha</li><?php endif; ?></ul><?php else: ?><p style="margin:10px 0 0">Hiçbir ilandan kaldırılmamış. Onaylarsanız katalog satırı kalıcı olarak silinir.</p><?php endif; ?></div>
 <form method="post"><input type="hidden" name="token" value="<?= htmlspecialchars($confirm['token']) ?>"><button class="danger">Evet, kalıcı sil</button><a class="back" href="/nexustraveltech/admin/ozellik-listeleri#trash">Vazgeç — çöp kutusunda bırak</a></form>
+<?php $expTs = strtotime((string) ($confirm['expires_at'] ?? '')) ?: 0; if ($expTs > 0): ?><div id="tokenCountdown" style="margin:10px 0 0;padding:8px 12px;background:#f4f6f1;border:1px solid #d5dccf;border-radius:6px;font-size:12px;color:#6b7774;text-align:center">⏳ Bu bağlantının geçerlilik süresi: <b id="tokenCdText"></b></div><?php endif; ?>
 <?php elseif ($confirm !== null && $confirm['type'] === 'bulk'): ?>
 <h1>🗑 Toplu kalıcı silme onayı</h1>
 <div class="warn"><p style="margin:0">Aşağıdaki <b><?= count($confirm['items']) ?> özellik</b> onaylanırsa <b style="color:#9d3b1c">kalıcı olarak silinir</b> (geri alınamaz):</p><ul><?php foreach ($confirm['items'] as $it): $pu = $effPurge($it); ?><li><b><?= htmlspecialchars((string) $it['label']) ?></b> <small style="color:#6b7774">(<?= htmlspecialchars($sectionTitles[$it['code']] ?? (string) $it['code']) ?> · <?= (int) $it['affected_count'] ?> ilan · kalıcı silme <?= htmlspecialchars($pu['date']) ?><?= $pu['custom'] ? ' · özel tarih' : '' ?>)</small></li><?php endforeach; ?></ul></div>
 <form method="post"><input type="hidden" name="bulk_token" value="<?= htmlspecialchars($confirm['token']) ?>"><button class="danger">Evet, <?= count($confirm['items']) ?> özelliği kalıcı sil</button><a class="back" href="/nexustraveltech/admin/ozellik-listeleri#trash">Vazgeç — çöp kutusunda bırak</a></form>
+<?php $expTs = strtotime((string) ($confirm['expires_at'] ?? '')) ?: 0; if ($expTs > 0): ?><div id="tokenCountdown" style="margin:10px 0 0;padding:8px 12px;background:#f4f6f1;border:1px solid #d5dccf;border-radius:6px;font-size:12px;color:#6b7774;text-align:center">⏳ Bu bağlantının geçerlilik süresi: <b id="tokenCdText"></b></div><?php endif; ?>
 <?php else: ?>
 <h1>🗑 Çöp kutusu "son şans" onayı</h1>
 <div class="<?= $ok ? 'ok' : 'no' ?>"><?= htmlspecialchars($out) ?></div>
 <a class="back" href="/nexustraveltech/admin/ozellik-listeleri">← Katalog & sınıflandırma yönetimi</a>
 <?php endif; ?>
-</div></body></html>
+<?php if ($expTs ?? 0 > 0): ?><script>var cdEnd=<?=$expTs?>*1000;function updateCd(){var rem=cdEnd-Date.now();if(rem<=0){document.getElementById('tokenCdText').textContent='Süre doldu — bağlantı artık geçersiz';document.getElementById('tokenCdText').style.color='#9d3b1c';return}var d=Math.floor(rem/864e5);var h=Math.floor((rem%864e5)/36e5);var m=Math.floor((rem%36e5)/6e4);var s=Math.floor((rem%6e4)/1e3);var parts=[];if(d>0)parts.push(d+' gün');if(h>0||d>0)parts.push(h+' sa');parts.push(m+' dk');parts.push(s+' sn');document.getElementById('tokenCdText').textContent=parts.join(' ');if(rem<864e5)document.getElementById('tokenCdText').style.color='#9d3b1c';else if(rem<3*864e5)document.getElementById('tokenCdText').style.color='#8a6100'}updateCd();setInterval(updateCd,1000)</script><?php endif; ?></div></body></html>
