@@ -34,16 +34,29 @@ save_platform_setting('last_alert_test_code', $code);
 save_platform_setting('last_alert_test_delivered_code', ''); // yeni koşu: eski teslimat işareti geçersiz
 
 $types = [
-    ['channel_inactive', 'Kanal dağıtımı pasif (test)'],
-    ['channel_sync_job_failed', 'Kanal senkron başarısızlığı (test)'],
-    ['channel_webhook_loop', 'Webhook tekrar başarısızlığı (test)'],
-    ['ical_inactive', 'iCal bağlantısı pasif (test)'],
-    ['ical_repeat', 'iCal tekrar hatası (test)'],
-    ['fx_missing_audit', 'Eksik kur çiftleri (test)'],
-    ['health_check_alert', '⚠ Sağlık kontrolü: 0 sorun (test)'],
-    ['trash_purge_approval', 'Son şans: çöp kutusu onayı (test)'],
-    ['feature_trash_purge', 'Çöp kutusu temizlendi (test)'],
-    ['trash_upcoming', 'Yaklaşan kalıcı silme uyarısı (test)'],
+    ['channel_inactive', 'Kanal dağıtımı pasif (test)', '⚠ Booking.com kanalı pasif — son 24 saatte 3 başarısız webhook_LOADED'],
+    ['channel_sync_job_failed', 'Kanal senkron başarısızlığı (test)', '✗ channel_sync_logs #142 başarısız: property_not_mapped [OTA-STD]'],
+    ['channel_webhook_loop', 'Webhook tekrar başarısızlığı (test)', '🔄 Booking.com: aynı yük 5 kez başarısız — döngü uyarısı'],
+    ['ical_inactive', 'iCal bağlantısı pasif (test)', '⚠ Vrbo Takvimi pasif — 14 gündür senkron yok'],
+    ['ical_repeat', 'iCal tekrar hatası (test)', '⚠ Airbnb Ana Takvim: son 24 saatte 8 hata (timeout)'],
+    ['fx_missing_audit', 'Eksik kur çiftleri (test)', '💱 Eksik kur: EUR→TRY — son 3 günde 1.200 EUR dönüştürülemedi'],
+    ['health_check_alert', '⚠ Sağlık kontrolü: 0 sorun (test)', '✅ 5 tablo eksik · 2 yetim eşleştirme'],
+    ['trash_purge_approval', 'Son şans: çöp kutusu onayı (test)', "🗑 'On olanakları' 2 günde kalıcı silinecek — 3 ilanda kullanılıyor"],
+    ['feature_trash_purge', 'Çöp kutusu temizlendi (test)', "🗑 'Kumsal aktiviteleri' çöp kutusundan silindi"],
+    ['trash_upcoming', 'Yaklaşan kalıcı silme uyarısı (test)', '⏳ Bu hafta silinecek: 2 özellik (60 gün doldu)'],
+];
+// Her kanal için örnek uyari satiri —gercek uyarilarin nasil gorundugunu gosterecek.
+$examples = [
+    'channel_inactive' => '<span style="color:#b0301a">⚠ Booking.com</span> kanalı <b>pasif</b> — son 24 saatte <b>3</b> başarısız webhook',
+    'channel_sync_job_failed' => '<span style="color:#b0301a">✗</span> channel_sync_logs <b>#142</b> başarısız: <code>property_not_mapped [OTA-STD]</code>',
+    'channel_webhook_loop' => '<span style="color:#b26a00">🔄</span> Booking.com: aynı yük <b>5</b> kez başarısız — döngü uyarısı',
+    'ical_inactive' => '<span style="color:#b0301a">⚠</span> Vrbo Takvimi <b>pasif</b> — <b>14</b> gündür senkron yok',
+    'ical_repeat' => '<span style="color:#b0301a">⚠</span> Airbnb Ana Takvim: son 24 saatte <b>8</b> hata (timeout)',
+    'fx_missing_audit' => '<span style="color:#b26a00">💱</span> Eksik kur: <b>EUR→TRY</b> — son 3 günde <b>1.200 EUR</b> dönüştürülemedi',
+    'health_check_alert' => '<span style="color:#b0301a">⚠</span> <b>5</b> tablo eksik · <b>2</b> yetim eşleştirme · 1 bayat kilit',
+    'trash_purge_approval' => '<span style="color:#b0301a">🗑</span> <b>"On olanakları"</b> <b>2</b> günde kalıcı silinecek — <b>3</b> ilanda kullanılıyor',
+    'feature_trash_purge' => '<span style="color:#64716d">🗑</span> <b>"Kumsal aktiviteleri"</b> çöp kutusundan silindi',
+    'trash_upcoming' => '<span style="color:#b26a00">⏳</span> Bu hafta silinecek: <b>2</b> özellik (<b>60</b> gün doldu)',
 ];
 
 // Tek özet mesajı — tüm kanalların sonucu tek tabloda; gelen kutuya 1 e-posta düşer.
@@ -53,9 +66,11 @@ $rows = '';
 $ok = 0;
 foreach ($types as [$related, $subject]) {
     $ok++;
-    $rows .= '<tr>'
+    $example = $examples[$related] ?? '';
+        $rows .= '<tr>'
         . '<td style="padding:6px 12px;border:1px solid #e1e5de"><code>' . htmlspecialchars($related) . '</code></td>'
         . '<td style="padding:6px 12px;border:1px solid #e1e5de">' . htmlspecialchars($subject) . '</td>'
+        . '<td style="padding:6px 12px;border:1px solid #e1e5de;font-size:12px;background:#fafcfa">' . $example . '</td>'
         . '<td style="padding:6px 12px;border:1px solid #e1e5de;text-align:center"><b style="color:#2e7d32">✓ test</b></td>'
         . '</tr>';
     echo ($send ? '✓ özete eklendi: ' : '· sıralanır: ') . str_pad($related, 26) . $subject . "\n";
@@ -76,6 +91,7 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . '<table style="border-collapse:collapse;width:100%;max-width:640px;font-size:13px">'
     . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Kanal</th>'
     . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Başlık</th>'
+    . '<th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1;font-size:11px">Gerçek uyarı örneği</th>'
     . '<th style="padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1;text-align:center">Durum</th></tr>'
     . $rows
     . '</table>'
