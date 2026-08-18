@@ -1,6 +1,13 @@
 <?php
 declare(strict_types=1);
+// Platform doğrulaması — tablo/kolon/migration durumu tek komutla:
+//   /opt/plesk/php/8.5/bin/php scripts/verify-platform.php          → insan çıktısı
+//   /opt/plesk/php/8.5/bin/php scripts/verify-platform.php --json   → makinece okunabilir JSON
+// --json: checks (tables/columns/room_mappings/integration/repair_audit/migrations/env)
+// + errors listesi; çıkış kodu sorun varsa 1 (health-check --json deseniyle uyumlu).
 require_once __DIR__.'/../config/database.php';
+
+$jsonMode = in_array('--json', $argv ?? [], true);
 
 $requiredTables=['suppliers','supplier_users','properties','supplier_bookings','inventory_calendar','channel_connections','channel_property_mappings','ical_connections','ical_events','physical_rooms','booking_folios','folio_transactions','payment_records','payment_allocations','hotel_invoices','night_audit_runs','hotel_staff','hotel_roles','loyalty_tiers','guest_loyalty_accounts','revenue_recommendations','guest_service_requests','login_throttle','guest_reviews','agency_booking_requests','email_outbox','webhook_subscriptions','webhook_deliveries','error_logs','admin_audit_logs','payment_links','fx_rates','booking_groups','notifications','agencies','agency_users','email_templates','admin_2fa','scheduled_jobs','public_chat_messages','blocked_ips','panel_chat_messages','scheduled_job_runs','property_feature_catalog','channel_room_mappings','channel_rate_plan_mappings','feature_delete_backups','channel_sync_logs','ical_sync_logs','pending_trash_purges','fx_audit_daily','channel_mapping_blacklist'];
 
@@ -50,20 +57,34 @@ try {
     $config=db_config();
     $errors=[];
     if($missing)$errors[]='Eksik tablolar: '.implode(', ',$missing);
+    $checks = [];
+    $checks['tables'] = [
+        'status' => $missing === [] ? 'ok' : 'error',
+        'total' => count($requiredTables),
+        'found' => count($found),
+        'missing' => $missing,
+    ];
 
     // Kolon bazlı kontrol — yalnızca mevcut tablolarda.
     $colStmt=$pdo->prepare("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?");
+    $colErrorsList = [];
     foreach($requiredColumns as $table=>$cols){
         if(in_array($table,$missing))continue;
         $colStmt->execute([$table]);
         $existing=array_flip($colStmt->fetchAll(PDO::FETCH_COLUMN));
         $missingCols=array_values(array_diff($cols,array_keys($existing)));
-        if($missingCols)$errors[]="{$table} tablosunda eksik kolon(lar): ".implode(', ',$missingCols);
+        if($missingCols){$colErrorsList[$table]=$missingCols;$errors[]="{$table} tablosunda eksik kolon(lar): ".implode(', ',$missingCols);}
     }
+    $checks['columns'] = [
+        'status' => $colErrorsList === [] ? 'ok' : 'error',
+        'missing' => $colErrorsList,
+    ];
 
     // Oda eşleştirme durumu — channel_room_mappings tablosu varsa tutarlılık denetimi.
+    $checks['room_mappings'] = ['status' => 'ok', 'count' => 0, 'schema_ok' => true, 'missing_columns' => [], 'orphans' => 0];
     if(!in_array('channel_room_mappings',$missing,true)){
         $mappingCount=(int)$pdo->query('SELECT COUNT(*) FROM channel_room_mappings')->fetchColumn();
+        $checks['room_mappings']['count'] = $mappingCount;
         // Şema uyumluluğu: yabancı/eski şemalı tablo (örn. channel_property_mapping_id + inventory_mode
         // ile elle/eski sürümde oluşturulmuş) sorguları patlatmasın — hedef durum raporlanır,
         // onarım scripts/health-check.php --repair ile yapılır (boşsa otomatik, doluysa elle).
@@ -72,12 +93,20 @@ try {
         $rmMissing=array_values(array_filter($rmNeed,fn($c)=>!isset($rmCols[$c])));
         if($rmMissing){
             $errors[]='channel_room_mappings yabancı/eski şemada — eksik kolonlar: '.implode(', ',$rmMissing).' (scripts/health-check.php --repair ile yeniden kurun; tablo boşsa otomatik, doluysa elle veri taşıma gerekir).';
+            $checks['room_mappings']['status'] = 'error';
+            $checks['room_mappings']['schema_ok'] = false;
+            $checks['room_mappings']['missing_columns'] = $rmMissing;
             echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, ŞEMA UYUMSUZ ('.implode(', ',$rmMissing).") eksik — scripts/health-check.php --repair gerekli\n";
         } else {
             $orphanMappings=(int)$pdo->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))")->fetchColumn();
-            if($orphanMappings>0)$errors[]="channel_room_mappings: {$orphanMappings} yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait).";
+            $checks['room_mappings']['orphans'] = $orphanMappings;
+            if($orphanMappings>0){$errors[]="channel_room_mappings: {$orphanMappings} yetim/uyumsuz eşleştirme (oda tipi veya kanal yok, ya da oda tipi başka ürüne ait).";$checks['room_mappings']['status']='error';}
             echo 'Oda eşleştirme durumu: '.$mappingCount.' kayıt, '.$orphanMappings." uyumsuz.\n";
         }
+    } else {
+        $checks['room_mappings']['status'] = 'error';
+        $checks['room_mappings']['schema_ok'] = false;
+        $checks['room_mappings']['missing_columns'] = ['tablo yok'];
     }
     // Yeni entegrasyon kolonları özeti — 047-055 migration'larının durumu tek satırda.
     // 047: channel_room_mappings.status/suggested_at/suggestion_count · 048: channel_sync_logs.fx_audit
@@ -120,6 +149,13 @@ try {
     if ($newColMissing) {
         $errors[] = 'Yeni entegrasyon kolonları eksik: ' . implode(', ', $newColMissing) . '(scripts/health-check.php migration 047-055/061 uygular)';
     }
+    $checks['integration'] = [
+        'status' => $newColMissing === [] ? 'ok' : 'error',
+        'ready' => count($newCols) - count($newColMissing),
+        'total' => count($newCols),
+        'missing' => array_values($newColMissing),
+        'summary' => $newSummary,
+    ];
     // Veri denetimi — channel_room_mappings / channel_rate_plan_mappings onarımı sonrası eski
     // kayıtların yeni şemaya nasıl taşındığını gösterir. Onarım yalnızca BOŞ tabloları düşürür
     // (health.repair_drop); dolu tablolara dokunmaz ve elle veri taşıma için raporlanır. Zincir:
@@ -167,6 +203,7 @@ try {
         }
     }
     // Güncel veri durumu — onarım sonrası yeni şemaya yazılan satırlar (webhook/panel akışı).
+    $auditCurrent = [];
     foreach ($auditTables as $at) {
         if (in_array($at, $missing, true)) continue;
         try {
@@ -174,11 +211,18 @@ try {
             $conf = (int) $pdo->query('SELECT COUNT(*) FROM "' . $at . '" WHERE status=' . $pdo->quote('confirmed'))->fetchColumn();
             $sugg = (int) $pdo->query('SELECT COUNT(*) FROM "' . $at . '" WHERE status=' . $pdo->quote('suggested'))->fetchColumn();
             $latest = (string) ($pdo->query('SELECT MAX(created_at) FROM "' . $at . '"')->fetchColumn() ?: '—');
+            $auditCurrent[$at] = ['count' => $count, 'confirmed' => $conf, 'suggested' => $sugg, 'latest' => $latest];
             echo '  · ' . $at . ' güncel: ' . $count . ' kayıt (' . $conf . ' confirmed · ' . $sugg . ' suggested) · son ekleme ' . $latest . PHP_EOL;
         } catch (Throwable $e) {
+            $auditCurrent[$at] = ['error' => $e->getMessage()];
             echo '  · ' . $at . ' güncel durumu okunamadı: ' . $e->getMessage() . PHP_EOL;
         }
     }
+    $checks['repair_audit'] = [
+        'status' => $repairLogs === [] ? 'ok' : (count(array_filter($repairLogs, fn($rl) => $rl['action'] === 'health.repair_verify' && $rl['ok'] === false)) > 0 ? 'error' : 'info'),
+        'logs' => $repairLogs,
+        'current' => $auditCurrent,
+    ];
     // Migration durumu — schema_migrations takibi (health-check ile aynı; burada uygulanmaz, yalnızca raporlanır).
     $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())");
     $hasCommitCol=(bool)$pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='schema_migrations' AND column_name='commit_hash'")->fetchColumn();
@@ -192,15 +236,40 @@ try {
     $legacyCount=count(array_filter($legacyFiles,fn($f)=>!str_contains($f,'-postgres')));
     echo 'Migration durumu ('.count($migrationFiles).' postgres + '.$legacyCount." legacy atlandı):".PHP_EOL;
     $pendingMigs=[];
+    $appliedMigs=[];
     foreach($migrationFiles as $file){
         $base=basename($file);
-        if(isset($appliedMap[$base])){echo '  ✓ '.$base.($appliedMap[$base]!==''?' @ '.substr($appliedMap[$base],0,7):'').PHP_EOL;}
+        if(isset($appliedMap[$base])){$appliedMigs[]=['file'=>$base,'commit'=>($appliedMap[$base]!==''?substr($appliedMap[$base],0,7):null)];echo '  ✓ '.$base.($appliedMap[$base]!==''?' @ '.substr($appliedMap[$base],0,7):'').PHP_EOL;}
         else{$pendingMigs[]=$base;echo '  ⏳ '.$base.' (bekliyor — scripts/health-check.php uygular)'.PHP_EOL;}
     }
     if($pendingMigs)echo '  NOT: '.count($pendingMigs).' migration bekliyor: '.implode(', ',$pendingMigs).PHP_EOL;
+    $checks['migrations'] = [
+        'status' => $pendingMigs === [] ? 'ok' : 'error',
+        'total' => count($migrationFiles),
+        'legacy_skipped' => $legacyCount,
+        'applied' => $appliedMigs,
+        'pending' => $pendingMigs,
+    ];
     if(strlen((string)($config['app_encryption_key']??''))<32)$errors[]='app_encryption_key eksik veya 32 karakterden kısa.';
     if(!extension_loaded('curl'))$errors[]='PHP cURL etkin değil; iCal aktarımı çalışmaz.';
     if(!extension_loaded('pdo_pgsql'))$errors[]='PDO PostgreSQL etkin değil.';
+    $checks['env'] = [
+        'status' => strlen((string)($config['app_encryption_key']??'')) >= 32 && extension_loaded('curl') && extension_loaded('pdo_pgsql') ? 'ok' : 'error',
+        'app_encryption_key' => strlen((string)($config['app_encryption_key']??'')) >= 32,
+        'curl' => extension_loaded('curl'),
+        'pdo_pgsql' => extension_loaded('pdo_pgsql'),
+    ];
+    if($jsonMode){
+        echo json_encode([
+            'ok' => $errors === [],
+            'ran_at' => gmdate('c'),
+            'checks' => $checks,
+            'errors' => $errors,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+        exit($errors === [] ? 0 : 1);
+    }
     if($errors){foreach($errors as $error)fwrite(STDERR,'HATA: '.$error.PHP_EOL);exit(1);}
     echo 'NEXUS platform doğrulaması başarılı. '.count($requiredTables).' tablo, kolon şemaları ve gerekli PHP uzantıları hazır.'.PHP_EOL;
-} catch(Throwable $e) { fwrite(STDERR,'HATA: Veritabanı doğrulaması yapılamadı: '.$e->getMessage().PHP_EOL); exit(1); }
+} catch(Throwable $e) {
+    if($jsonMode){echo json_encode(['ok'=>false,'ran_at'=>gmdate('c'),'checks'=>$checks??[],'errors'=>['Veritabanı doğrulaması yapılamadı: '.$e->getMessage()]], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES).PHP_EOL;exit(1);}
+    fwrite(STDERR,'HATA: Veritabanı doğrulaması yapılamadı: '.$e->getMessage().PHP_EOL); exit(1); }
