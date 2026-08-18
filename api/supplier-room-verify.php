@@ -107,16 +107,39 @@ try {
     $dateMin = date('Y-m-d', strtotime('-30 days'));
     $dateMax = date('Y-m-d');
     $seriesQ = $pdo->prepare(
-        "SELECT request_payload FROM channel_sync_logs
+        "SELECT request_payload, fx_audit FROM channel_sync_logs
          WHERE channel_connection_id=? AND property_id=? AND direction='pull'
            AND request_payload->'entries' @> ?::jsonb
          ORDER BY id ASC"
     );
     $seriesQ->execute([$connId, $propId, $needle]);
     $seriesMap = [];
+    $rateByDate = [];   // tarih -> kullanılan kur (rates_by_date; yoksa özet rate)
+    $convToCur = '';    // dönüşüm hedef birimi (fx_audit 'to')
     foreach ($seriesQ->fetchAll() as $sl) {
         $pl = json_decode((string) $sl['request_payload'], true);
         if (!is_array($pl) || !is_array($pl['entries'] ?? null)) continue;
+        // fx_audit: bu işlemde kullanılan kurlar (girdi bazlı kur kaydı — b6fa4e8).
+        $fxA = json_decode((string) ($sl['fx_audit'] ?? '[]'), true);
+        if (is_array($fxA)) {
+            foreach ($fxA as $fx) {
+                if (!is_array($fx)) continue;
+                $rbd = (array) ($fx['rates_by_date'] ?? []);
+                $to = strtoupper((string) ($fx['to'] ?? ''));
+                if ($rbd !== []) {
+                    foreach ($rbd as $rd => $rv) {
+                        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $rd)) {
+                            $rateByDate[(string) $rd] = (float) $rv;
+                            if ($to !== '') $convToCur = $to;
+                        }
+                    }
+                } elseif ((float) ($fx['rate'] ?? 0) > 0 && isset($fx['first_date'])) {
+                    // Eski kayıt: tek kur, dönem başına uygulanır.
+                    $rateByDate[(string) $fx['first_date']] = (float) $fx['rate'];
+                    if ($to !== '') $convToCur = $to;
+                }
+            }
+        }
         foreach ($pl['entries'] as $en) {
             if (!is_array($en) || (string) ($en['external_room_id'] ?? '') !== $code) continue;
             $d = (string) ($en['date'] ?? '');
@@ -129,8 +152,21 @@ try {
     ksort($seriesMap);
     $seriesMap = array_slice($seriesMap, -30, 30, true);
     $seriesOut = [];
+    $defaultConvCur = ($planInfo['currency'] ?? $convToCur) !== '' ? ($planInfo['currency'] ?? $convToCur) : '';
     foreach ($seriesMap as $d => $v) {
-        $seriesOut[] = ['date' => $d, 'price' => $v['price'], 'allotment' => $v['allotment']];
+        // Dönüştürülmüş fiyat: o tarihte kullanılan kur (girdi bazlı) ile orijinal fiyat.
+        $converted = null;
+        $convCur = $defaultConvCur;
+        if ($v['price'] !== null && isset($rateByDate[$d])) {
+            $converted = round($v['price'] * $rateByDate[$d], 2);
+        }
+        $seriesOut[] = [
+            'date' => $d,
+            'price' => $v['price'],
+            'allotment' => $v['allotment'],
+            'converted' => $converted,
+            'conv_currency' => $convCur,
+        ];
     }
 
     // fx_audit'ten bu girdi için kullanılan kur ve dönüştürülmüş fiyat.
