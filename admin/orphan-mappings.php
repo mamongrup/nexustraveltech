@@ -200,6 +200,40 @@ del-btn:hover{background:#ffe2de;border-color:#b0301a;color:#b0301a}
 <?php endforeach; ?>
 </table>
 </section>
+
+<?php
+// 26 haftalık yetim trend grafiği
+$orphanHist = (array) platform_setting('distribution_health_orphan_history', []);
+if ($orphanHist !== []):
+    ksort($orphanHist);
+    $histMax = max(1, max($orphanHist));
+    $histWeeks = array_slice($orphanHist, -26, null, true);
+?>
+<section class="card">
+<h2>📈 Yetim trendi — son <?= count($histWeeks) ?> hafta</h2>
+<p style="color:#64716d;font-size:12px">Haftalık dağıtım sağlığı özetindeki toplam yetim eşleştirme sayısı.</p>
+<div style="display:flex;align-items:flex-end;gap:3px;height:80px;margin:10px 0">
+<?php foreach ($histWeeks as $wk => $cnt): $h = max(2, (int) round($cnt / $histMax * 70)); ?>
+<div title="<?= htmlspecialchars($wk) ?>: <?= $cnt ?> yetim" style="flex:1;background:<?= $cnt > 0 ? '#e8a33d' : '#e1e5de' ?>;height:<?= $h ?>px;border-radius:2px 2px 0 0;min-width:5px"></div>
+<?php endforeach; ?>
+</div>
+<div style="display:flex;justify-content:space-between;font-size:10px;color:#64716d">
+<span><?= htmlspecialchars(array_key_first($histWeeks)) ?></span>
+<span><?= htmlspecialchars(array_key_last($histWeeks)) ?></span>
+</div>
+<div style="margin-top:8px;font-size:12px;color:#64716d">
+<?php
+$histTotal = array_sum($histWeeks);
+$histAvg = count($histWeeks) > 0 ? round($histTotal / count($histWeeks), 1) : 0;
+$histNonZero = count(array_filter($histWeeks, fn($v) => $v > 0));
+echo htmlspecialchars((string) $histTotal) . ' satır haftalık toplam · ';
+echo htmlspecialchars((string) $histAvg) . ' ortalama · ';
+echo $histNonZero . '/' . count($histWeeks) . ' haftada temizlik';
+if ($histMax > 0) echo ' · en yüksek: ' . $histMax;
+?>
+</div>
+</section>
+<?php endif; ?>
 <?php endif; ?>
 
 </main>
