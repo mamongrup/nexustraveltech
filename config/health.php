@@ -1238,6 +1238,12 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     // devredilip yeniden denenir; bu bayrak tüm migration döngüsünde yalnızca bir kez
     // devir girişimi yapılmasını garantiler (sonsuz döngü yok).
     $ownershipRetried = false;
+    // 'Kayıtlı ama etkisiz' tespiti — schema_migrations'ta ✓ görünen bir dosyanın kurması
+    // beklenen tablo/kolonlar gerçekte yoksa uyarı üretilir. Tipik neden: CREATE TABLE
+    // IF NOT EXISTS, tablo eski/yabancı şemada zaten var olduğu için sessizce atlanır
+    // (örn. 045 channel_room_mappings) ya da tablo sonradan silinmiş ama kayıt duruyor.
+    $ineffectiveMigs = [];
+    $ineffColStmt = $pdo->prepare("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?");
     foreach ($migrationFiles as $file) {
         $base = basename($file);
         // Onarım modunda düşürülen tabloların migration'ları schema_migrations'ta kayıtlı olsa
@@ -1246,6 +1252,21 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         $forceReapply = isset($reapplyMigrations[$base]);
         if (!$forceReapply && isset($appliedMap[$base])) {
             $out .= '✓ ' . $base . (($appliedMap[$base] !== '') ? ' @ ' . substr($appliedMap[$base], 0, 7) : '') . "\n";
+            // Dosyanın CREATE/ALTER ettiği her tabloda beklenen kolonlar gerçekte var mı?
+            if (isset($migText[$base])) {
+                foreach (health_parse_migration_columns($migText[$base]) as $t => $cset) {
+                    if (in_array($t, $missingTables, true)) {
+                        $ineffectiveMigs[] = $base . ' → ' . $t . ': tablo yok (kayıt duruyor) — --repair kurar';
+                        continue;
+                    }
+                    $ineffColStmt->execute([$t]);
+                    $existing = array_flip($ineffColStmt->fetchAll(PDO::FETCH_COLUMN));
+                    $miss = array_values(array_diff(array_keys($cset), array_keys($existing)));
+                    if ($miss !== []) {
+                        $ineffectiveMigs[] = $base . ' → ' . $t . ': eksik kolon(lar) ' . implode(', ', $miss) . ' — CREATE atlanmış (eski şema), --repair düzeltir';
+                    }
+                }
+            }
             continue;
         }
         if ($ownershipBlocked) {
@@ -1327,13 +1348,29 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     if ($failedMigs) {
         $out .= "Başarısız migration'lar: " . implode(', ', $failedMigs) . "\n";
     }
+    if ($ineffectiveMigs !== []) {
+        $out .= "⚠ " . count($ineffectiveMigs) . " kayıtlı ama ETKİSİZ migration (dosya schema_migrations'ta ✓ ama hedef tablo/kolon gerçekte yok):\n";
+        foreach (array_slice($ineffectiveMigs, 0, 8) as $im) {
+            $out .= "  · " . $im . "\n";
+        }
+        if (count($ineffectiveMigs) > 8) {
+            $out .= "  … +" . (count($ineffectiveMigs) - 8) . " daha\n";
+        }
+        $out .= "  → Çözüm: scripts/health-check.php --repair (boşsa düşürüp yeniden kurar; DOLUysa otomatik veri taşıma dener)\n";
+    }
     $checks['migrations'] = [
         'status' => $failedMigs === [] && $pendingMigs === [] ? 'ok' : ($failedMigs !== [] ? 'error' : 'pending'),
         'commit' => $commitNow !== '' ? substr($commitNow, 0, 7) : '',
         'applied' => $appliedMigs,
         'pending' => $pendingMigs,
         'failed' => $failedMigs,
+        'ineffective' => $ineffectiveMigs,
     ];
+    if ($ineffectiveMigs !== []) {
+        // Etkisiz migration ayrı bir hata satırı değildir (tablo/kolon eksikliği zaten 1-2
+        // bölümlerinde HATA sayılır); kök nedeni açıklayan bilgilendirme uyarısıdır.
+        $out .= "· Not: etkisiz migration'lar ayrı HATA sayılmaz — eksik tablo/kolon zaten yukarıda raporlandı.\n";
+    }
 
     // --- 3b) Onarım sonrası doğrulama — düşürülüp yeniden kurulan tabloların beklenen
     // kolonları tekrar kontrol edilir. Migration bölümü az önce bittiği için tablolar
