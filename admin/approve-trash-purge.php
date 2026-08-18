@@ -13,6 +13,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/platform_settings.php';
 require_once __DIR__ . '/../config/feature_lists.php';
 require_once __DIR__ . '/../config/audit.php';
+require_once __DIR__ . '/../config/trash-helpers.php';
 
 $token = (string) ($_GET['token'] ?? '');
 $bulkToken = (string) ($_GET['bulk_token'] ?? '');
@@ -158,14 +159,11 @@ if ($bulkToken !== '') {
     $out = 'Geçersiz bağlantı.';
 }
 
-// Kalıcı silme tarihi (özel tarih veya silinme + TTL) — özet ekranı için ortak yardımcı.
+// trash_effective_purge() config/trash-helpers.php tarafından sağlanır.
+// Mevcut çağrı noktası ['date', 'custom'] bekliyor — wrapper eşleme yapıyor.
 $effPurge = function (array $feat) {
-    $ttlDays = max(7, (int) platform_setting('feature_trash_ttl_days', 30));
-    $delTs = strtotime((string) ($feat['deleted_at'] ?? '')) ?: time();
-    $custom = !empty($feat['purge_at']);
-    $purgeTs = $custom ? (strtotime((string) $feat['purge_at']) ?: 0) : 0;
-    if ($purgeTs <= 0) $purgeTs = $delTs + $ttlDays * 86400;
-    return ['date' => date('Y-m-d', $purgeTs), 'days' => max(0, (int) ceil(($purgeTs - time()) / 86400)), 'custom' => $custom];
+    $p = trash_effective_purge($feat);
+    return ['date' => $p['date'], 'days' => $p['remain_days'], 'custom' => $p['custom']];
 };
 ?>
 <!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Çöp kutusu onayı | NEXUS Admin</title><style>body{font-family:Arial;background:#f7f7f2;color:#10211f;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}.card{background:#fff;border:1px solid #e1e5de;border-radius:10px;padding:28px 32px;max-width:560px;width:calc(100% - 48px);box-shadow:0 4px 18px rgba(0,0,0,.05)}h1{font-size:20px;margin:0 0 10px}.ok{background:#e6f8c7;padding:12px;border-radius:6px}.no{background:#ffe2de;padding:12px;border-radius:6px}.warn{background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:12px;margin:14px 0}.warn ul{margin:8px 0 0;padding-left:18px}.back{display:inline-block;margin-top:14px;color:#10211f}.danger{background:#9d3b1c;color:#fff;border:0;padding:12px 18px;font-size:15px;font-weight:bold;border-radius:6px;cursor:pointer;margin-right:10px}button{cursor:pointer}</style></head><body><div class="card">
