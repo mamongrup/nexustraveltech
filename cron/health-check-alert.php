@@ -16,7 +16,23 @@ require_once __DIR__ . '/../config/mailer.php';
 require_once __DIR__ . '/../config/platform_settings.php';
 
 $adminEmail = trim((string) platform_setting('admin_alert_email', ''));
-$result = health_check_run(false);
+// Günlük görevde onarım modu: eksik tablo/kolonu düzelt, yetim eşleştirmeleri temizle.
+// --yes: onay istemeden otomatik temizlik.
+$orphanBefore = 0;
+try {
+    $orphanBefore = (int) db()->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE m.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))")->fetchColumn()
+        + (int) db()->query("SELECT COUNT(*) FROM channel_rate_plan_mappings m LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL")->fetchColumn()
+        + (int) db()->query("SELECT COUNT(*) FROM channel_property_mappings m LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE p.id IS NULL OR c.id IS NULL")->fetchColumn();
+} catch (Throwable $e) {}
+$result = health_check_run(false, true); // repair=true: onarım + yetim temizliği
+// Yetim temizliği sonrası sayım — fark e-postada gösterilir.
+$orphanAfter = 0;
+try {
+    $orphanAfter = (int) db()->query("SELECT COUNT(*) FROM channel_room_mappings m LEFT JOIN room_types rt ON rt.id=m.room_type_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id WHERE m.room_type_id>0 AND (rt.id IS NULL OR c.id IS NULL OR rt.property_id<>m.property_id OR (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)))")->fetchColumn()
+        + (int) db()->query("SELECT COUNT(*) FROM channel_rate_plan_mappings m LEFT JOIN rate_plans rp ON rp.id=m.rate_plan_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE (m.rate_plan_id IS NOT NULL AND (rp.id IS NULL OR rp.property_id<>m.property_id)) OR c.id IS NULL")->fetchColumn()
+        + (int) db()->query("SELECT COUNT(*) FROM channel_property_mappings m LEFT JOIN properties p ON p.id=m.property_id LEFT JOIN channel_connections c ON c.id=m.channel_connection_id WHERE p.id IS NULL OR c.id IS NULL")->fetchColumn();
+} catch (Throwable $e) {}
+$orphanCleaned = max(0, $orphanBefore - $orphanAfter);
 
 // Son 24 saatte uygulanan migration'lar — deploy günü "o gün ne uygulandı" görünürlüğü.
 // Migration başarıyla uygulanıp başka sorun yoksa bile e-posta gider (sessiz deploy onayı).
@@ -195,15 +211,19 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
             . '<tr><th style="text-align:left;padding:7px 12px;border:1px solid #e1e5de;background:#f4f6f1">Sorun</th></tr>'
             . $rowsHtml . $extra
             . '</table>' : '')
+        . ($orphanCleaned > 0
+            ? '<p style="background:#e6f8c7;border:1px solid #bcd98a;border-radius:8px;padding:10px 12px;margin-top:14px"><b style="color:#2e7d32">🧹 Yetim temizliği:</b> ' . $orphanCleaned . ' satır otomatik temizlendi' . ($orphanAfter > 0 ? ' · kalan: ' . $orphanAfter : ' · tüm yetimler temizlendi') . '</p>'
+            : ($orphanBefore > 0 ? '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;margin-top:14px">🧹 <b>' . $orphanBefore . ' yetim eşleştirme</b> mevcut (otomatik temizlenmedi — onay gerekli).</p>' : ''))
         . $orphanBlock
         . $migBlock
         . $runsBlock
         . $opsBlock
         . '<p style="margin-top:18px">Tam çıktı için sunucuda: <code style="background:#f2f4ef;padding:2px 5px">/opt/plesk/php/8.5/bin/php scripts/health-check.php</code></p>'
         . '</div>';
-    $subject = $result['errors'] !== []
-        ? '⚠ Sağlık kontrolü: ' . count($result['errors']) . ' sorun'
-        : '✅ Sağlık kontrolü: ' . count($migApplied) . ' migration uygulandı';
+    $orphanNote = $orphanCleaned > 0 ? ' · ' . $orphanCleaned . ' yetim temizlendi' : '';
+$subject = $result['errors'] !== []
+        ? '⚠ Sağlık kontrolü: ' . count($result['errors']) . ' sorun' . $orphanNote
+        : '✅ Sağlık kontrolü: ' . count($migApplied) . ' migration uygulandı' . $orphanNote;
     queue_email($adminEmail, $subject, $body, 'health_check_alert');
     echo " Admin e-postası kuyruğa eklendi.\n";
 } else {
