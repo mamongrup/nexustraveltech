@@ -349,6 +349,31 @@ function channel_webhook_apply(array $log, array $payload): array
         if ($scope === 'reservations') {
             $qty = max(1, (int) ($entry['qty'] ?? 1));
             $sellSt->execute([$qty, $roomId, $entryPlanId, $date]);
+            // Kanal rezervasyonu → PMS kaydı: supplier_bookings + booking_folios.
+            // Satışı takip edilebilir yapar (folio/fatura/muhasebe akışları). Tablolar
+            // yoksa (migration bekliyor) veya kanal tedarikçiye bağlı değilse sessizce
+            // atlanır — sold artışı yine yapılır; asıl webhook işlemi bozulmaz.
+            try {
+                if (!isset($supplierId)) {
+                    $sQ = $pdo->prepare('SELECT supplier_id FROM channel_connections WHERE id=?');
+                    $sQ->execute([$connId]);
+                    $supplierId = (int) ($sQ->fetchColumn() ?: 0);
+                }
+                if ($supplierId > 0) {
+                    $ref = 'WHK-' . gmdate('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 8));
+                    $cur = (string) ($entryPlan['currency'] ?? 'EUR');
+                    $bkIns = $pdo->prepare('INSERT INTO supplier_bookings(supplier_id, property_id, booking_reference, status, check_in, check_out, total_amount, currency) VALUES(?,?,?,?,?,?,0,?) RETURNING id');
+                    $bkIns->execute([$supplierId, $propertyId, $ref, 'confirmed', $date, $date, $cur]);
+                    $bookingId = (int) $bkIns->fetchColumn();
+                    if ($bookingId > 0) {
+                        $folIns = $pdo->prepare('INSERT INTO booking_folios(booking_id, folio_type, currency, status) VALUES(?,?,?,?)');
+                        $folIns->execute([$bookingId, 'guest', $cur, 'open']);
+                        $reservationBookings = ($reservationBookings ?? 0) + 1;
+                    }
+                }
+            } catch (Throwable $e) {
+                // PMS kaydı oluşturulamadı — satış yine uygulandı; ana akış sessiz devam eder.
+            }
             $applied++;
             continue;
         }
@@ -446,7 +471,8 @@ function channel_webhook_apply(array $log, array $payload): array
         if ($seenParts2) $suggestNote .= ': ' . implode(', ', array_slice($seenParts2, 0, 5)) . (count($seenParts2) > 5 ? ' … +' . (count($seenParts2) - 5) . ' daha' : '');
         $suggestNote .= ')';
     }
-    return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount, 'suggested_plans' => $suggestedPlanCount, 'fx_audit' => array_values($fxAudit)];
+    $resNote = ($scope === 'reservations' && ($reservationBookings ?? 0) > 0) ? ' (' . (int) $reservationBookings . ' booking_folios kaydı oluşturuldu)' : '';
+    return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $resNote . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount, 'suggested_plans' => $suggestedPlanCount, 'reservation_bookings' => (int) ($reservationBookings ?? 0), 'fx_audit' => array_values($fxAudit)];
 }
 
 /**

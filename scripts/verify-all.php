@@ -322,6 +322,40 @@ try {
                 }
             }
 
+            // Test B2 (--deep) — rezervasyon kapsamı: geçici onaylı eşleştirmeyle sold artışı
+            // + supplier_bookings/booking_folios PMS kaydı (tek transaction, rollback).
+            if ($deep) {
+                $rdate = date('Y-m-d', strtotime('+64 days'));
+                $codeR = 'VER-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+                $pdo->beginTransaction();
+                try {
+                    // Takvim satırı önceden var olmalı (sold artışı UPDATE yapar).
+                    $pdo->prepare("INSERT INTO inventory_calendar(room_type_id, rate_plan_id, stay_date, allotment, sold, base_price, min_stay, max_stay, stop_sale) VALUES(?,?,?,10,0,0,1,1,false) ON CONFLICT(room_type_id, rate_plan_id, stay_date) DO UPDATE SET sold=0, allotment=10")
+                        ->execute([(int) $roomId, (int) $planRow['id'], $rdate]);
+                    $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status) VALUES(?,?,?,?,'confirmed')")
+                        ->execute([(int) $conn['id'], $propId, (int) $roomId, (int) $planRow['id'], $codeR]);
+                    $logR = ['channel_connection_id' => (int) $conn['id'], 'property_id' => $propId];
+                    $payloadR = ['scope' => 'reservations', 'entries' => [['external_room_id' => $codeR, 'date' => $rdate, 'qty' => 3]]];
+                    $resR = channel_webhook_apply($logR, $payloadR);
+                    // sold artışı doğrula
+                    $soldQ = $pdo->prepare('SELECT sold FROM inventory_calendar WHERE room_type_id=? AND rate_plan_id=? AND stay_date=?');
+                    $soldQ->execute([(int) $roomId, (int) $planRow['id'], $rdate]);
+                    $soldAfter = (int) $soldQ->fetchColumn();
+                    $okSold = ($resR['ok'] ?? false) && $soldAfter === 3;
+                    $okSold ? vok("rezervasyon kapsamı: sold +3 (şu an {$soldAfter}) — qty=3 uygulandı") : vbad("rezervasyon kapsamı: sold beklenen 3 değil (şu an {$soldAfter}, ok=" . var_export($resR['ok'] ?? null, true) . ' · ' . (string) ($resR['message'] ?? '') . ')');
+                    // booking_folios + supplier_bookings PMS kaydı doğrula
+                    $folioQ = $pdo->prepare('SELECT COUNT(*) FROM booking_folios f JOIN supplier_bookings b ON b.id=f.booking_id WHERE b.property_id=? AND b.check_in=? AND b.status=\'confirmed\'');
+                    $folioQ->execute([$propId, $rdate]);
+                    $folioCount = (int) $folioQ->fetchColumn();
+                    $okFolio = $folioCount >= 1;
+                    $okFolio
+                        ? vok("rezervasyon PMS kaydı: {$folioCount} supplier_bookings + booking_folios (check_in={$rdate}) — dönüş reservation_bookings=" . (int) ($resR['reservation_bookings'] ?? 0))
+                        : vbad('rezervasyon PMS kaydı: supplier_bookings/booking_folios bulunamadı');
+                } finally {
+                    $pdo->rollBack();
+                }
+            }
+
             // Test C (--http) — canlı HTTP ucu üzerinden kuyruğa alma + temizlik.
             if ($http) {
                 $ext = '';
