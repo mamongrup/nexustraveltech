@@ -101,6 +101,10 @@ if ($toRequest && $canNotify) {
         . '<p>Kalıcı silme vadesi dolan aşağıdaki özellikler onaylanırsa silinir (geri alınamaz). Vade: özel tarih verilenler için o tarih, diğerleri için silinme + ' . $ttlDays . ' gün. Onaylamak istemiyorsanız bağlantıya tıklamayın — özellik çöp kutusunda kalır; bağlantılar <b>3 gün</b> geçerlidir, süre dolunca bu e-posta yeniden istenir.</p>'
         . '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px"><a href="' . $bulkLink . '" style="color:#8a6100;font-weight:bold;font-size:15px;text-decoration:none">✅ Hepsini onayla (' . count($toRequest) . ' özellik) →</a><br><span style="color:#6b7774;font-size:12px">Tek tıkla tüm bekleyen özelliklerin kalıcı silinmesini onaylar (3 gün geçerli, tek kullanımlık).</span></p>'
         . '<ul>' . $rowsHtml . '</ul>'
+        . '<div style="margin:16px 0 8px;padding:12px 14px;background:#f4f6f1;border:1px solid #d5dccf;border-radius:8px;font-size:13px">'
+        . '<p style="margin:0 0 6px">⚠️ <b>Bu e-postayı yanlışlıkla aldıysanız</b> — lütfen herhangi bir bağlantıya tıklamayın. Bu e-posta yalnızca NEXUS platform yöneticilerine gönderilir ve özellik silme onayları içerir. Bağlantılara tıklamamanız durumunda hiçbir işlem yapılmaz; özellikler çöp kutusunda güvende kalır.</p>'
+        . '<p style="margin:0">⏳ <b>Geri yükleme kısayolu:</b> Silinen bir özelliği geri almak isterseniz <a href="https://nexustraveltech.com/admin/ozellik-listeleri#trash" style="color:#405b13;font-weight:bold">Katalog & çöp kutusu</a> sayfasından tek tıkla geri yükleyebilirsiniz — ilanlara aynı bölüm ve fiyat durumuyla eklenir. Geri yükleme süresi: silinme + ' . $ttlDays . ' gün.</p>'
+        . '</div>'
         . '<p><a href="https://nexustraveltech.com/admin/ozellik-listeleri" style="color:#b0301a">Katalog & sınıflandırma yönetimi →</a></p>'
         . '</div>';
     queue_email($adminEmail, 'Son şans: ' . count($toRequest) . ' özellik kalıcı silinmek üzere (onay gerekli)', $body, 'trash_purge_approval', count($toRequest));
