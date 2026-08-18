@@ -208,7 +208,7 @@ function channel_webhook_apply(array $log, array $payload): array
                     if ($supplierId > 0 && (int) $planSuggestSt->rowCount() === 1) {
                         notify_supplier_users_with_email($supplierId, 'channel_plan_mapping_suggestion',
                             'Kanal webhook\'undan tanınmayan fiyat planı kodu geldi: "' . $planHintTrim . '" → "' . ($planNames[$planId] ?? ('#' . $planId)) . '" için eşleştirme önerisi oluşturuldu (oda önerisiyle birlikte). Veri onaylanana kadar yazılmadı.',
-                            '/nexustraveltech/tedarikci/dagitim-merkezi',
+                            '/nexustraveltech/tedarikci/dagitim-merkezi?connection_id=' . (int) $connId . '&property_id=' . (int) $propertyId . '#sec-room-map',
                             'NEXUS: onay bekleyen fiyat planı eşleştirme önerisi');
                     }
                 }
@@ -223,7 +223,7 @@ function channel_webhook_apply(array $log, array $payload): array
                 // rowCount 1 = yeni INSERT (ilk kez); 2 = ON CONFLICT güncellemesi (tekrar) → bildirim yalnızca ilkinde.
                 notify_supplier_users_with_email($supplierId, 'channel_mapping_suggestion',
                     'Kanal webhook\'undan tanınmayan oda kodu geldi: "' . $ext . '" → "' . ($roomByName[$match['room']] ?? ('#' . $match['room'])) . '" için eşleştirme önerisi oluşturuldu' . ($match['score'] > 0 ? ' (benzerlik %' . $match['score'] . ')' : '') . ($planId ? ' · plan: ' . ($planNames[$planId] ?? ('#' . $planId)) : '') . ' — bu kod toplam <b>' . $sCnt . '</b> kez görüldü' . $seenTxt . '. Veri onaylanana kadar yazılmadı.',
-                    '/nexustraveltech/tedarikci/dagitim-merkezi',
+                    '/nexustraveltech/tedarikci/dagitim-merkezi?connection_id=' . (int) $connId . '&property_id=' . (int) $propertyId . '#sug-' . (int) $match['room'],
                     'NEXUS: onay bekleyen eşleştirme önerisi');
             }
             $roomMap[$ext] = ['room' => 0, 'plan' => null]; // bu yükte bir daha deneme
@@ -280,7 +280,7 @@ function channel_webhook_apply(array $log, array $payload): array
                 // rowCount 1 = yeni INSERT (ilk kez); 2 = ON CONFLICT güncellemesi (tekrar) → bildirim yalnızca ilkinde.
                 notify_supplier_users_with_email($supplierId, 'channel_plan_mapping_suggestion',
                     'Kanal webhook\'undan tanınmayan fiyat planı kodu geldi: "' . $ext . '" → "' . ($planNames[$match['plan']] ?? ('#' . $match['plan'])) . '" için eşleştirme önerisi oluşturuldu' . ($match['score'] > 0 ? ' (benzerlik %' . $match['score'] . ')' : '') . ' — bu kod toplam <b>' . $pCnt . '</b> kez görüldü' . $pSeenTxt . '. Veri onaylanana kadar yazılmadı.',
-                    '/nexustraveltech/tedarikci/dagitim-merkezi',
+                    '/nexustraveltech/tedarikci/dagitim-merkezi?connection_id=' . (int) $connId . '&property_id=' . (int) $propertyId . '#sec-room-map',
                     'NEXUS: onay bekleyen fiyat planı eşleştirme önerisi');
             }
             $planMap[$ext] = -1; // bu yükte bir daha öneri/deneme yok
