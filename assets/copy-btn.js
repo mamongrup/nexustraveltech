@@ -56,6 +56,14 @@
     }
   }
 
+  /* ── Token maskeleme: URL'deki token=... parametresini gizle ── */
+  function maskUrlToken(url) {
+    if (!url) return url;
+    return url.replace(/(token=)([^&]{4})([^&]{0,})([^&]{4})(.*)/g, function (m, pfx, head, mid, tail, rest) {
+      return pfx + head + '\u2022'.repeat(Math.min(mid.length, 12)) + tail + rest;
+    });
+  }
+
   /* ══════════════════════════════════════════════════════════
      ÖZEL ARAÇ İPUCU (tooltip) — native title yerine
      ══════════════════════════════════════════════════════════ */
@@ -118,7 +126,7 @@
   document.querySelectorAll('.ical-copy-btn, .copy-icon-btn').forEach(function (b) {
     var origHTML = b.innerHTML;
     var url = b.getAttribute('data-copy') || '';
-    bindTip(b, function () { return url; });
+    bindTip(b, function () { return maskUrlToken(url); });
     b.addEventListener('click', function (e) {
       e.preventDefault();
       copyText(url, b, origHTML);
