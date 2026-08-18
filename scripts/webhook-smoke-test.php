@@ -427,4 +427,14 @@ try {
     echo "SONUÇ: 1 hata (betik tamamlanamadı)\n";
 }
 
+// Sonucu platform ayarina kaydet (dagitim sagligi haftalik ozetinde gorunur).
+try {
+    save_platform_setting('last_webhook_smoke_test', [
+        'date' => date('c'),
+        'status' => $failures === 0 ? 'pass' : 'fail',
+        'failures' => (int) $failures,
+        'checks' => (int) $checks,
+    ]);
+} catch (Throwable $ignored) {}
+
 exit($failures > 0 ? 1 : 0);

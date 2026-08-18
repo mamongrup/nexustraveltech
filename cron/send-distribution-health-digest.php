@@ -303,6 +303,29 @@ if ($planMissingRows) {
     $planHtml .= '</div>';
 }
 
+
+// --- 7) Webhook smoke test sonucu (platform ayarindan) ---
+$smokeTest = platform_setting('last_webhook_smoke_test', []);
+$smokeTestAge = !empty($smokeTest['date']) ? (int) floor((time() - strtotime((string) $smokeTest['date'])) / 86400) : null;
+$smokeTestHtml = '';
+if (!empty($smokeTest['status'])) {
+    $isPass = $smokeTest['status'] === 'pass';
+    $smokeColor = $isPass ? '#0d7a4a' : '#b0301a';
+    $smokeBg = $isPass ? '#e6f8c7' : '#fdecea';
+    $smokeBorder = $isPass ? '#b8e09a' : '#f0c4bc';
+    $ageTxt = $smokeTestAge !== null ? ($smokeTestAge <= 0 ? 'bugün' : $smokeTestAge . ' gün önce') : 'bilinmiyor';
+    $smokeTestHtml = '<div style="margin-top:14px;padding:10px 14px;background:' . $smokeBg . ';border:1px solid ' . $smokeBorder . ';border-radius:8px">'
+        . '<h3 style="margin:0 0 4px;font-size:13px;color:' . $smokeColor . '">' . ($isPass ? '✅' : '❌') . ' Webhook smoke testi: <b>' . ($isPass ? 'GEÇTİ' : 'BAŞARISIZ') . '</b> — ' . $ageTxt . '</h3>'
+        . '<p style="margin:3px 0;font-size:12px;color:#64716d">' . (int)($smokeTest['checks'] ?? 0) . ' kontrol çalıştırıldı' . ((int)($smokeTest['failures'] ?? 0) > 0 ? ', <b style="color:#b0301a">' . (int)$smokeTest['failures'] . ' kalıcı hata</b>' : ', 0 hata') . '.</p>';
+    if ((int)($smokeTest['failures'] ?? 0) > 0) {
+        $smokeTestHtml .= '<p style="margin:4px 0 0;font-size:12px;color:#b0301a">Sunucuda <code>scripts/webhook-smoke-test.php</code> çalıştırarak detaylı hata raporunu görüntüleyin.</p>';
+    }
+    $smokeTestHtml .= '</div>';
+} else {
+    $smokeTestHtml = '<div style="margin-top:14px;padding:10px 14px;background:#f2f4ef;border:1px solid #d5dccf;border-radius:8px">'
+        . '<h3 style="margin:0 0 4px;font-size:13px;color:#64716d">🔍 Webhook smoke testi: henüz çalıştırılmadı</h3>'
+        . '<p style="margin:3px 0;font-size:12px;color:#64716d">Smoke testi son 7 günde hiç çalıştırılmadı. Sunucuda <code>scripts/webhook-smoke-test.php</code> ile çalıştırın.</p></div>';
+}
 // Konum bazlı kırılım: sorunlu iCal ilanlarını şehir/limana göre grupla (en çok sorun üstte).
 $locGroups = [];
 foreach ($problems as $p) {
@@ -366,6 +389,7 @@ $body = '<div style="font-family:Arial,sans-serif;color:#10211f">'
     . $pendingHtml
     . $planHtml
     . $pausedIcalHtml
+    . $smokeTestHtml
     . $orphanHtml
     . '<p style="margin:14px 0 0;font-size:12px;color:#64716d">Gerçek zamanlı uyarılar (15 dk) tedarikçi panellerine ayrıca gider. Kırmızı durumlar için ilgili tedarikçiyle iletişime geçin veya iCal takvimler / Dağıtım & kanal merkezi sayfalarını denetleyin.</p>'
     . '<p style="margin-top:18px"><a href="https://nexustraveltech.com/admin/tedarikci-onaylari" style="color:#0d7a4a">Tedarikçi yönetimi →</a></p>'
@@ -395,7 +419,7 @@ if ($pdf !== null) {
     $attBase64 = base64_encode($pdf);
 }
 
-$subject = 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')' . ($pendingTotal > 0 ? ' · ⏳ ' . $pendingTotal . ' öneri' : '') . ($planMissingRows ? ' · ⚠ ' . count($planMissingRows) . ' planı eksik' : '') . (($pausedTotal + $errorTotal) > 0 ? ' · ⏸ ' . ($pausedTotal + $errorTotal) . ' iCal duraklatıldı' : '') . ($orphanTotal > 0 ? ' · 🧹 ' . $orphanTotal . ' yetim' : '');
+$subject = 'Dağıtım sağlığı özeti: ' . count($problems) . ' sorun (iCal ' . $icalCount . ' · kanal ' . $channelCount . ')' . ($pendingTotal > 0 ? ' · ⏳ ' . $pendingTotal . ' öneri' : '') . ($planMissingRows ? ' · ⚠ ' . count($planMissingRows) . ' planı eksik' : '') . (($pausedTotal + $errorTotal) > 0 ? ' · ⏸ ' . ($pausedTotal + $errorTotal) . ' iCal duraklatıldı' : '') . ($orphanTotal > 0 ? ' · 🧹 ' . $orphanTotal . ' yetim' : '') . (!empty($smokeTest['status']) && $smokeTest['status'] === 'fail' ? ' · ❌ smoke test başarısız' : '');
 queue_email($to, $subject, $body, 'distribution_health_digest', (int) str_replace('-', '', $week), $attName, $attBase64);
 save_platform_setting('distribution_health_week', $week);
 echo "Dağıtım sağlık özeti kuyruğa eklendi: " . count($problems) . " sorun (iCal {$icalCount}, kanal {$channelCount}" . ($pendingTotal > 0 ? ", ⏳ {$pendingTotal} onay bekleyen öneri" : '') . ($planMissingRows ? ', ⚠ ' . count($planMissingRows) . ' planı eksik eşleştirme' : '') . (($pausedTotal + $errorTotal) > 0 ? ', ⏸ ' . $pausedTotal . ' duraklatıldı + ' . $errorTotal . ' hata' : '') . ($orphanTotal > 0 ? ', 🧹 ' . $orphanTotal . ' yetim eşleştirme' : '') . ($attName ? ', PDF ekli' : ', PDF yok — TCPDF kurulu değil, HTML gövde gönderildi') . ").\n";
