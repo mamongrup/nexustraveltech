@@ -125,6 +125,33 @@ try {
         $missing = array_values(array_filter($cols, fn($c) => !vcolumn_exists($pdo, $tbl, $c)));
         $missing === [] ? vok("$tbl kolonları tam (" . count($cols) . ')') : vbad("$tbl eksik kolon: " . implode(', ', $missing));
     }
+    // Yeni entegrasyon kolonları özeti — verify-platform ile aynı 11 kolon (047-055/061).
+    // Hepsi tam değilse sonuçta HATA sayılır (günlük verify-all görevi e-posta üretir).
+    $newCols = [
+        'channel_sync_logs.fx_audit' => '048',
+        'channel_room_mappings.status' => '047',
+        'channel_room_mappings.suggested_at' => '047',
+        'channel_room_mappings.suggestion_count' => '047',
+        'channel_room_mappings.rate_plan_id' => '049',
+        'channel_room_mappings.suggestion_score' => '052',
+        'product_type_catalog.step_targets' => '053',
+        'channel_rate_plan_mappings.external_rate_plan_id' => '054',
+        'fx_audit_daily.audit_date' => '055',
+        'channel_room_mappings.approved_by_type' => '061',
+        'channel_room_mappings.approved_at' => '061',
+    ];
+    $newMissing = [];
+    foreach ($newCols as $colPath => $mig) {
+        [$nt, $nc] = explode('.', $colPath, 2);
+        if (!vtable_exists($pdo, $nt) || !vcolumn_exists($pdo, $nt, $nc)) {
+            $newMissing[] = $colPath . ' (migration ' . $mig . ') ';
+        }
+    }
+    if ($newMissing === []) {
+        vok('yeni entegrasyon kolonları (047-055/061): ' . count($newCols) . '/' . count($newCols) . ' hazır');
+    } else {
+        vbad((count($newCols) - count($newMissing)) . '/' . count($newCols) . ' entegrasyon kolonu hazır — eksik: ' . implode(', ', $newMissing) . ' (scripts/health-check.php migration 047-055/061 uygular)');
+    }
     // Migration durumu (schema_migrations + glob karşılaştırması — sağlık kontrolüyle aynı yöntem).
     try {
         $pdo->exec('CREATE TABLE IF NOT EXISTS schema_migrations (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, file VARCHAR(190) NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())');
