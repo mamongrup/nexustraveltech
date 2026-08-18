@@ -366,5 +366,148 @@ sudo -u postgres psql -d nexus_traveltech -c "SELECT action, details, created_at
 
 ---
 
+## 10) Platform ayarları referansı (Kontrol merkezi)
+
+Admin → **Kontrol merkezi** sayfasından yönetilen tüm ayarlar. Her ayar `platform_settings` tablosunda saklanır; alteration `audit_saved_setting()` ile denetim kaydına yazılır.
+
+### Genel
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `admin_alert_email` | `''` | Uyarı/sağlık/test e-postalarının gönderileceği adres |
+| `supplier_notify_email` | `false` | Tedarikçi kullanıcılarına e-posta bildirimi gönderilsin mi |
+| `tooltip_language` | `tr` | Arayüz ipuçları dili (tr/en/de/ru/ar/fr) |
+
+### Webhook & Kanal
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `channel_webhook_auto_map` | `true` | Tanınmayan oda kodu gelince otomatik öneri oluştur (kapalıysa ilk aktif oda tipine yazar) |
+| `channel_webhook_default_currency` | `EUR` | Kanal birim göndermezse kullanılacak varsayılan para birimi |
+| `channel_webhook_loop_threshold` | `3` | Aynı yük bu kadar kez başarısız olunca döngü uyarısı |
+| `channel_webhook_max_retries` | `3` | Başarısız webhook yükü için maks yeniden deneme sayısı |
+| `channel_webhook_similarity_threshold` | `45` | Otomatik öneri için isim benzerlik eşiği (%) — altında önerilen kod ilk aktif oda tipine yazılır |
+| `channel_suggestion_ttl_days` | `30` | Onay bekleyen öneri süresi (gün) — süresi dolanlar temizlenir |
+
+### iCal
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `ical_url_published_only` | `false` | iCal URL'sini yalnızca yayındaki ilanlarda göster |
+| `ical_repeat_threshold` | `3` | Aynı hata bu kadar kez tekrarlanınca iCal tekrar uyarısı |
+| `ical_auto_pause_repeat` | `false` | iCal tekrar hatası eşiği aşılınca bağlantıyı otomatik duraklat |
+
+### Kur (FX)
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `fx_tcmb_last_ok` | `null` | Son başarılı TCMB kur çekme tarihi (otomatik) |
+| `fx_tcmb_last_fail` | `null` | Son başarısız kur çekme tarihi (otomatik) |
+| `fx_tcmb_last_error` | `''` | Son kur çekme hata mesajı (otomatik) |
+
+### Çöp kutusu & Özellikler
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `feature_trash_ttl_days` | `30` | Özellik çöp kutusunda kalma süresi (7-365 gün) |
+| `trash_upcoming_warning_days` | `3` | Kalıcı silmeden önce uyarı penceresi (gün) |
+| `orphan_cleanup_require_password` | `false` | Yetim temizleme onayında admin parolası istensin mi |
+| `orphan_cleanup_approve` | `null` | Tek tıkla toplu temizleme onay tokenı |
+| `trash_bulk_approve` | `null` | Toplu çöp kutusu işlem onay tokenı |
+| `trash_token_attempts` | `[]` | Kaba kuvvet koruması: hata sayacı (JSON) |
+
+### Sağlık uyarıları (eşikler)
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `health_warn_error_logs` | `20` | error_logs tablosunda bu kadar satır olunca uyarı |
+| `health_warn_email_queue` | `50` | email_outbox kuyruğunda bu kadar bekleyen olunca uyarı |
+| `health_warn_webhook_fail` | `10` | Son 24 saatte bu kadar başarısız webhook olunca uyarı |
+| `health_warn_ical_fail` | `3` | Son 24 saatte bu kadar başarısız iCal senkron olunca uyarı |
+
+### Hazırlık (readiness)
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `readiness_all_auto_open` | `false` | Hazırlık skoru eşik altındaysa tüm bölümleri otomatik aç |
+| `readiness_all_auto_open_threshold` | `70` | Otomatik açma eşiği (skor bu değerin altındaysa) |
+
+### Görsel & AI
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `gemini_visual_similarity_threshold` | `90` | Görsel benzerlik eşiği (%) — bu aşımda Gemini uyarı üretir |
+| `gemini_auto_pause_duplicate` | `false` | Benzer görsel tespit edilince ilanı otomatik duraklat |
+
+### KPS kimlik doğrulama
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `kps_identity_verification_enabled` | `false` | KPS kimlik doğrulama aktif mi |
+
+### Ziyaretçi sohbeti
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `chat_min_length` | `5` | Minimum mesaj uzunluğu (karakter) |
+| `chat_require_space` | `true` | Mesajda boşluk olmalı mı (bot koruması) |
+| `chat_blocklist` | `[]` | Yasaklı kelimeler listesi (JSON) |
+| `chat_topic_instant` | `true` | Konu bazlı anlık yanıtlar aktif mi |
+| `chat_topic_responses` | `{}` | Konu bazlı özel yanıtlar (JSON: `{topic: {text, link}}`) |
+
+### SMS (Netgsm)
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `netgsm_sms_enabled` | `false` | SMS gönderimi aktif mi |
+
+### Dağıtım sağlığı (otomatik, haftalık)
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `distribution_health_week` | `''` | Son haftalık özet haftası (otomatik, ör. `2026-W33`) |
+| `distribution_health_orphan_history` | `{}` | Haftalık yetim sayısı tarihçesi (JSON) |
+| `distribution_health_pending_history` | `{}` | Haftalık onay bekleyen öneri tarihçesi (JSON) |
+| `distribution_health_plan_missing_history` | `{}` | Haftalık planı eksik eşleştirme tarihçesi (JSON) |
+| `orphan_daily_channel_history` | `{}` | Günlük kanal bazında yetim tarihçesi (JSON) |
+
+### Otomatik sistem (otomatik, ReadOnly)
+
+| Anahtar | Varsayılan | Açıklama |
+|---|---|---|
+| `tick_token` | `''` | tick.php URL erişim belirteci (otomatik üretilir) |
+| `scheduler_last_tick_at` | `''` | Son başarılı tick zamanı (otomatik) |
+| `last_alert_test_at` | `''` | Son test e-postası çalışma zamanı |
+| `last_alert_test_channels` | `0` | Son testte doğrulanan kanal sayısı |
+| `last_alert_test_code` | `''` | Son test doğrulama kodu |
+| `last_alert_test_mode` | `''` | Son test modu (`send`/`dry`) |
+| `last_alert_test_status` | `''` | Son test durumu (`delivered`/`pending`/`missed`) |
+| `last_alert_test_reason` | `''` | Son test durum nedeni |
+| `last_alert_test_delivered_code` | `''` | Teslim edilen kod (doğrulama) |
+| `last_alert_test_delivered_at` | `''` | Teslim tarihi |
+| `last_alert_test_retry_at` | `''` | Son otomatik yeniden deneme zamanı |
+| `last_alert_test_retry_count` | `0` | Toplam yeniden deneme sayısı |
+| `last_webhook_smoke_test` | `null` | Son webhook smoke test sonucu (JSON) |
+| `alert_test_history` | `[]` | Test koşu tarihçesi (son 20, JSON) |
+| `panel_weekly_digest` | `{}` | Haftalık panel özeti katılımcıları (JSON) |
+
+### Komutla yönetim
+
+```bash
+# Tek ayarı oku
+/opt/plesk/php/8.5/bin/php -r "require 'config/platform_settings.php'; echo var_export(platform_setting('admin_alert_email',''), true);"
+
+# Tek ayarı değiştir
+/opt/plesk/php/8.5/bin/php -r "require 'config/platform_settings.php'; require 'config/database.php'; save_platform_setting('channel_webhook_auto_map', false); echo 'OK';"
+
+# Tüm ayarları listele
+sudo -u postgres psql -d nexus_traveltech -c "SELECT setting_key, LEFT(setting_value::text, 80) AS value FROM platform_settings ORDER BY setting_key;"
+
+# Denetim kayıtlarını göster
+sudo -u postgres psql -d nexus_traveltech -c "SELECT action, details->>'key' AS ayar, details->>'old' AS eski, details->>'new' AS yeni, created_at FROM admin_audit_logs WHERE action='platform.setting_change' ORDER BY id DESC LIMIT 20;"
+```
+
+---
+
 *Güncellenme: bu dosya, kullanım kılavuzunun kalıcı kopyasıdır; komutlardaki değişiklikler
 kod güncellemeleriyle birlikte buraya da işlenmelidir.*
