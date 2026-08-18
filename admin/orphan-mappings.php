@@ -233,7 +233,74 @@ if ($histMax > 0) echo ' · en yüksek: ' . $histMax;
 ?>
 </div>
 </section>
+
+<?php
+// Günlük kanal/ürün bazında yetim trendi
+$dailyHist = (array) platform_setting('orphan_daily_channel_history', []);
+if ($dailyHist !== []):
+    ksort($dailyHist);
+    // Kanal/ürün bazında toplam hesapla
+    $dailyTotals = [];
+    $dailyByChannel = []; // channel_name => [date => count]
+    foreach ($dailyHist as $date => $entries) {
+        $dayTotal = 0;
+        foreach ($entries as $e) {
+            $dayTotal += (int) ($e['total'] ?? 0);
+            $ch = (string) ($e['channel'] ?? '—');
+            if (!isset($dailyByChannel[$ch])) $dailyByChannel[$ch] = [];
+            $dailyByChannel[$ch][$date] = ($dailyByChannel[$ch][$date] ?? 0) + (int) ($e['total'] ?? 0);
+        }
+        $dailyTotals[$date] = $dayTotal;
+    }
+    $dMax = max(1, max($dailyTotals));
+?>
+<section class="card">
+<h2>📅 Günlük kanal bazında yetim — son <?= count($dailyTotals) ?> gün</h2>
+<p style="color:#64716d;font-size:12px">Denetim görevinin her gün kaydettiği kanal/ürün bazında yetim sayıları.</p>
+<div style="display:flex;align-items:flex-end;gap:2px;height:60px;margin:10px 0">
+<?php foreach ($dailyTotals as $date => $cnt): $h = max(2, (int) round($cnt / $dMax * 50)); ?>
+<div title="<?= htmlspecialchars($date) ?>: <?= $cnt ?> yetim" style="flex:1;background:<?= $cnt > 0 ? '#e8a33d' : '#e1e5de' ?>;height:<?= $h ?>px;border-radius:2px 2px 0 0;min-width:4px"></div>
+<?php endforeach; ?>
+</div>
+<div style="display:flex;justify-content:space-between;font-size:10px;color:#64716d">
+<span><?= htmlspecialchars(array_key_first($dailyTotals)) ?></span>
+<span><?= htmlspecialchars(array_key_last($dailyTotals)) ?></span>
+</div>
+<?php
+$dTotal = array_sum($dailyTotals);
+$dAvg = count($dailyTotals) > 0 ? round($dTotal / count($dailyTotals), 1) : 0;
+$dNonZero = count(array_filter($dailyTotals, fn($v) => $v > 0));
+?>
+<div style="margin-top:8px;font-size:12px;color:#64716d">
+<?= $dTotal ?> satır günlük toplam · <?= $dAvg ?> ortalama · <?= $dNonZero ?>/<?= count($dailyTotals) ?> günde yetim
+</div>
+
+<?php if (count($dailyByChannel) > 0): ?>
+<h3 style="margin:14px 0 6px;font-size:13px">Kanal / ürün bazında son durum</h3>
+<table style="border-collapse:collapse;width:100%;font-size:12px">
+<tr><th style="text-align:left;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Kanal</th>
+<th style="text-align:right;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Son gün</th>
+<th style="text-align:right;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">7 gün ort.</th>
+<th style="text-align:right;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">30 gün</th></tr>
+<?php
+$lastDate = array_key_last($dailyTotals);
+$weekAgo = date('Y-m-d', strtotime('-7 days'));
+foreach ($dailyByChannel as $ch => $dates) {
+    $lastVal = $dates[$lastDate] ?? 0;
+    $weekDates = array_filter($dates, fn($d) => $d >= $weekAgo);
+    $weekAvg = count($weekDates) > 0 ? round(array_sum($weekDates) / count($weekDates), 1) : 0;
+    $monthTotal = array_sum($dates);
+    $color = $lastVal > 0 ? '#b0301a' : '#2e7d32';
+    echo '<tr><td style="padding:4px 8px;border:1px solid #e1e5de"><b>' . htmlspecialchars($ch) . '</b></td>';
+    echo '<td style="padding:4px 8px;border:1px solid #e1e5de;text-align:right;color:' . $color . '"><b>' . $lastVal . '</b></td>';
+    echo '<td style="padding:4px 8px;border:1px solid #e1e5de;text-align:right">' . $weekAvg . '</td>';
+    echo '<td style="padding:4px 8px;border:1px solid #e1e5de;text-align:right">' . $monthTotal . '</td></tr>';
+}
+?>
+</table>
 <?php endif; ?>
+</section>
+<?php endif; ?><?php endif; ?>
 <?php endif; ?>
 
 </main>

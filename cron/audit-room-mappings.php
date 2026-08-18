@@ -101,6 +101,28 @@ foreach ($allOrphans as $tbl => $rows) {
     }
 }
 
+
+// Günlük yetim sayılarını kanal/ürün bazında kaydet — admin paneli zaman çizelgesi için.
+$dailyByChannel = [];
+foreach ($allOrphans as $tbl => $rows) {
+    foreach ($rows as $o) {
+        $key = (int) $o['channel_connection_id'] . '|' . (int) $o['property_id'];
+        $chanName = trim((string) ($o['channel_name'] ?? '')) !== '' ? (string) $o['channel_name'] : 'Kanal #' . (int) $o['channel_connection_id'];
+        $propName = trim((string) ($o['property_name'] ?? '')) !== '' ? (string) $o['property_name'] : 'Ürün #' . (int) $o['property_id'];
+        if (!isset($dailyByChannel[$key])) {
+            $dailyByChannel[$key] = ['channel' => $chanName, 'property' => $propName, 'conn_id' => (int) $o['channel_connection_id'], 'prop_id' => (int) $o['property_id'], 'total' => 0, 'tables' => []];
+        }
+        $dailyByChannel[$key]['total']++;
+        $dailyByChannel[$key]['tables'][$tbl] = ($dailyByChannel[$key]['tables'][$tbl] ?? 0) + 1;
+    }
+}
+// Tarihçe: son 30 gün, gün bazında {date => [{channel, property, total, tables}]}.
+$dailyHistory = platform_setting('orphan_daily_channel_history', []);
+if (!is_array($dailyHistory)) $dailyHistory = [];
+$today = date('Y-m-d');
+$dailyHistory[$today] = array_values($dailyByChannel);
+if (count($dailyHistory) > 30) $dailyHistory = array_slice($dailyHistory, -30, null, true);
+save_platform_setting('orphan_daily_channel_history', $dailyHistory);
 // Admin e-postası
 if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
     $summaryParts = [];
