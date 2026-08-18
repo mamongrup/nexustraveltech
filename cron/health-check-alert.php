@@ -197,7 +197,9 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
             $approveToken = bin2hex(random_bytes(32));
             save_platform_setting('orphan_cleanup_approve', ['token' => $approveToken, 'expires_at' => date('Y-m-d H:i:s', time() + 3 * 86400)]);
             $approveLink = 'https://nexustraveltech.com/admin/approve-orphan-cleanup.php?token=' . $approveToken;
-            $orphanBlock = '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;margin-top:14px"><a href="' . $approveLink . '" style="color:#8a6100;font-weight:bold;font-size:15px;text-decoration:none">🧹 ' . $orphanCount . ' yetim eşleştirmeyi temizle →</a><br><span style="color:#6b7774;font-size:12px">Silinmiş oda tipi / fiyat planı / kanal / ürüne işaret eden satırlar; onay sayfası önce listeyi gösterir, tek tıkla temizler (3 gün geçerli, tek kullanımlık).</span></p>';
+            $orphanViewLink = 'https://nexustraveltech.com/admin/orphan-mappings';
+            $orphanBlock = '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;margin-top:14px"><a href="' . $orphanViewLink . '" style="color:#8a6100;font-weight:bold;font-size:15px;text-decoration:none">🧹 ' . $orphanCount . ' yetim eşleştirmeleri gör →</a><br><span style="color:#6b7774;font-size:12px">Silinmiş oda tipi / fiyat planı / kanal / ürüne işaret eden satırlar; listeye tıklayınca tüm yetimler tek sayfada görünür.</span></p>'
+            . '<p style="margin:6px 0 0"><a href="' . $approveLink . '" style="color:#2e7d32;font-weight:bold;font-size:13px;text-decoration:none">✅ Tek tıkla toplu temizle →</a> <span style="color:#6b7774;font-size:12px">(3 gün geçerli, tek kullanımlık)</span></p>';
         }
     } catch (Throwable $e) {
         $orphanBlock = '';
@@ -294,7 +296,7 @@ if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
             . '</table>' : '')
         . ($orphanCleaned > 0
             ? '<p style="background:#e6f8c7;border:1px solid #bcd98a;border-radius:8px;padding:10px 12px;margin-top:14px"><b style="color:#2e7d32">🧹 Yetim temizliği:</b> ' . $orphanCleaned . ' satır otomatik temizlendi' . ($orphanAfter > 0 ? ' · kalan: ' . $orphanAfter : ' · tüm yetimler temizlendi') . '</p>'
-            : ($orphanBefore > 0 ? '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;margin-top:14px">🧹 <b>' . $orphanBefore . ' yetim eşleştirme</b> mevcut (otomatik temizlenmedi — onay gerekli).</p>' : ''))
+            : ($orphanBefore > 0 ? '<p style="background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;margin-top:14px">🧹 <b>' . $orphanBefore . ' yetim eşleştirme</b> mevcut (otomatik temizlenmedi — <a href="https://nexustraveltech.com/admin/orphan-mappings" style="color:#8a6100;font-weight:bold">listeyi gör →</a>).</p>' : ''))
         . $orphanBlock
         . $migBlock
         . $runsBlock
