@@ -1007,63 +1007,6 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             $out .= "⚠ Sahiplik denetimi yapılamadı: " . $e->getMessage() . "\n";
         }
 
-        // --- Onarım sonrası özet e-postası ---
-        // --repair tam modda (dry-run değil) ve en az bir işlem yapıldıysa
-        // admin_alert_email'e yapılanların özeti gider — düşürülen tablolar, DOLU
-        // (elle müdahale) tablolar, yetim temizliği, otomatik öneri onayları, yedek.
-        if (!$dryRun && ($dropped > 0 || $skippedNonEmpty !== [] || (int) ($orphanRes['removed'] ?? 0) > 0 || $staleConfirmNote !== '' || $ownershipTransferred > 0)) {
-            try {
-                $adminEmail = trim((string) platform_setting('admin_alert_email', ''));
-                if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
-                    $rows = '';
-                    if ($dropped > 0) {
-                        foreach ($rebuiltTables as $rt => $rspec) {
-                            $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">' . htmlspecialchars((string) $rt) . '</td><td style="padding:7px 12px;border:1px solid #e1e5de">Düşürüldü + yeniden kuruldu</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">' . htmlspecialchars(implode(', ', $rspec['migs'])) . '</td></tr>';
-                        }
-                    }
-                    foreach ($skippedNonEmpty as $sn) {
-                        $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">' . htmlspecialchars((string) $sn) . '</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#8e2410">DOLU — elle müdahale</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">—</td></tr>';
-                    }
-                    $orphanN = (int) ($orphanRes['removed'] ?? 0);
-                    if ($orphanN > 0) {
-                        $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">Yetim eşleştirme</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . $orphanN . ' satır temizlendi</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">oda / fiyat planı / ürün</td></tr>';
-                    }
-                    if ($staleConfirmNote !== '') {
-                        foreach (explode(';', rtrim($staleConfirmNote, ';')) as $scBit) {
-                            if ($scBit === '') continue;
-                            [$scT, $scN] = array_pad(explode(':', $scBit), 2, '0');
-                            $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">' . htmlspecialchars((string) $scT) . '</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . (int) $scN . ' hedefi dolmuş öneri confirmed</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">otomatik</td></tr>';
-                        }
-                    }
-                    if ($backupFile !== null) {
-                        $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">Şema yedeği</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . count($backedUp) . ' tablo</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">' . htmlspecialchars(basename((string) $backupFile)) . '</td></tr>';
-                    }
-                    if ($ownershipTransferred > 0) {
-                        $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">Sahiplik devri</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . $ownershipTransferred . ' nesne</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">tablo/dizi/görünüm → ' . htmlspecialchars((string) $curUser) . '</td></tr>';
-                    }
-                    $summary = $dropped . ' tablo düşürülüp yeniden kuruldu'
-                        . ($skippedNonEmpty !== [] ? ' · ' . count($skippedNonEmpty) . ' DOLU tablo elle müdahale bekliyor' : '')
-                        . ($orphanN > 0 ? ' · ' . $orphanN . ' yetim temizlendi' : '')
-                        . ($staleConfirmNote !== '' ? ' · öneri onayları otomatik tamamlandı' : '')
-                        . ($ownershipTransferred > 0 ? ' · ' . $ownershipTransferred . ' nesnenin sahipliği devredildi' : '');
-                    queue_email($adminEmail,
-                        'NEXUS: sağlık onarımı tamamlandı — ' . $summary,
-                        '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto">'
-                        . '<h2 style="color:#1c2b3a;margin-bottom:6px">✅ Sağlık onarımı tamamlandı</h2>'
-                        . '<p style="color:#4b5a68;margin-top:0">' . gmdate('d.m.Y H:i') . ' UTC · <code>health-check --repair</code> tam modda çalıştı ve aşağıdaki işlemleri yaptı.</p>'
-                        . '<table style="border-collapse:collapse;width:100%;font-size:13px">'
-                        . '<tr><th style="padding:7px 12px;border:1px solid #c9d3cc;background:#eef2ee;text-align:left">Nesne</th><th style="padding:7px 12px;border:1px solid #c9d3cc;background:#eef2ee;text-align:left">İşlem</th><th style="padding:7px 12px;border:1px solid #c9d3cc;background:#eef2ee;text-align:left">Detay</th></tr>'
-                        . $rows
-                        . '</table>'
-                        . '<p style="color:#64716d;font-size:12px;margin-top:14px">Tam konsol çıktısı için sunucuda <code>scripts/health-check.php --repair</code> çalıştırın. Denetim kayıtları: <code>health.repair_drop</code> / <code>health.repair_orphan_cleanup</code> / <code>health.repair_stale_confirm</code>.</p>'
-                        . '</div>',
-                        'health_check', null, null, null);
-                    $out .= "→ Onarım özeti kuyruğa alındı → " . $adminEmail . "\n";
-                }
-            } catch (Throwable $e) {
-                $out .= "⚠ Onarım özeti e-postası kuyruğa alınamadı: " . $e->getMessage() . "\n";
-            }
-        }
         // --json: onarım değişiklik özeti — hangi tablo düşürüldü/atlandı, tekrar uygulanacak
         // migration zinciri, yedek durumu ve ek işlemler (yetim/öneri/sahiplik). İnsan çıktısıyla
         // birebir aynı kararları makinece okunabilir yapıda taşır.
@@ -1292,6 +1235,7 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
     // kurulmuş durumdadır; eksik kalan kolon varsa HATA sayılır (onarım başarısız demektir).
     // Dry-run'da hiçbir tablo düşürülmediği için bu bölüm atlanır. --repair --yes ile
     // koşan günlük görev de bu doğrulamayı görür — sorun varsa e-posta uyarısına düşer.
+    $postFail = []; // 3b çalışmadıysa (düşürülen tablo yok) özet e-postası için boş kalır
     if ($repair && !$dryRun && $rebuiltTables !== []) {
         $out .= "\n=== 3b) ONARIM SONRASI DOĞRULAMA (" . count($rebuiltTables) . " tablo) ===\n";
         $postColStmt = $pdo->prepare("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?");
@@ -1336,6 +1280,72 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
             'failed' => $postFail,
             'tables' => array_keys($rebuiltTables),
         ];
+    }
+
+    // --- Onarım sonrası özet e-postası ---
+    // --repair tam modda (dry-run değil) ve en az bir işlem yapıldıysa admin_alert_email'e
+    // özet gider. Migration uygulaması ve 3b doğrulaması BİTTİKTEN sonra gönderilir; böylece
+    // düşürülen tabloların gerçekten yeniden kurulup kurulmadığı (✓/✗) e-postaya yansır.
+    // İçerik: düşürülen + yeniden kurulan tablolar, DOLU (elle müdahale) tablolar,
+    // yetim temizliği, otomatik öneri onayları, yedek, sahiplik devri.
+    if (!$dryRun && ($dropped > 0 || $skippedNonEmpty !== [] || (int) ($orphanRes['removed'] ?? 0) > 0 || $staleConfirmNote !== '' || $ownershipTransferred > 0)) {
+        try {
+            $adminEmail = trim((string) platform_setting('admin_alert_email', ''));
+            if ($adminEmail !== '' && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+                $rows = '';
+                if ($dropped > 0) {
+                    foreach ($rebuiltTables as $rt => $rspec) {
+                        // 3b doğrulaması: tablo beklenen kolonlarla kuruldu mu? ($postFail listesinde mi?)
+                        $rebuiltOk = true;
+                        foreach ($postFail as $pf) {
+                            if (str_starts_with($pf, $rt . ' (')) { $rebuiltOk = false; break; }
+                        }
+                        $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">' . htmlspecialchars((string) $rt) . '</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . ($rebuiltOk ? '<b style="color:#2e7d32">Düşürüldü + yeniden kuruldu ✓</b>' : '<b style="color:#b0301a">Düşürüldü — yeniden KURULAMADI ✗</b>') . '</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">' . htmlspecialchars(implode(', ', $rspec['migs'])) . '</td></tr>';
+                    }
+                }
+                foreach ($skippedNonEmpty as $sn) {
+                    $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">' . htmlspecialchars((string) $sn) . '</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#8e2410">DOLU — elle müdahale</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">—</td></tr>';
+                }
+                $orphanN = (int) ($orphanRes['removed'] ?? 0);
+                if ($orphanN > 0) {
+                    $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">Yetim eşleştirme</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . $orphanN . ' satır temizlendi</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">oda / fiyat planı / ürün</td></tr>';
+                }
+                if ($staleConfirmNote !== '') {
+                    foreach (explode(';', rtrim($staleConfirmNote, ';')) as $scBit) {
+                        if ($scBit === '') continue;
+                        [$scT, $scN] = array_pad(explode(':', $scBit), 2, '0');
+                        $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">' . htmlspecialchars((string) $scT) . '</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . (int) $scN . ' hedefi dolmuş öneri confirmed</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">otomatik</td></tr>';
+                    }
+                }
+                if ($backupFile !== null) {
+                    $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">Şema yedeği</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . count($backedUp) . ' tablo</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">' . htmlspecialchars(basename((string) $backupFile)) . '</td></tr>';
+                }
+                if ($ownershipTransferred > 0) {
+                    $rows .= '<tr><td style="padding:7px 12px;border:1px solid #e1e5de">Sahiplik devri</td><td style="padding:7px 12px;border:1px solid #e1e5de">' . $ownershipTransferred . ' nesne</td><td style="padding:7px 12px;border:1px solid #e1e5de;color:#64716d">tablo/dizi/görünüm → ' . htmlspecialchars((string) $curUser) . '</td></tr>';
+                }
+                $summary = $dropped . ' tablo düşürülüp yeniden kuruldu'
+                    . ($postFail ? ' · ' . count($postFail) . ' KURULAMADI' : '')
+                    . ($skippedNonEmpty !== [] ? ' · ' . count($skippedNonEmpty) . ' DOLU tablo elle müdahale bekliyor' : '')
+                    . ($orphanN > 0 ? ' · ' . $orphanN . ' yetim temizlendi' : '')
+                    . ($staleConfirmNote !== '' ? ' · öneri onayları otomatik tamamlandı' : '')
+                    . ($ownershipTransferred > 0 ? ' · ' . $ownershipTransferred . ' nesnenin sahipliği devredildi' : '');
+                queue_email($adminEmail,
+                    'NEXUS: sağlık onarımı tamamlandı — ' . $summary,
+                    '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto">'
+                    . '<h2 style="color:#1c2b3a;margin-bottom:6px">✅ Sağlık onarımı tamamlandı</h2>'
+                    . '<p style="color:#4b5a68;margin-top:0">' . gmdate('d.m.Y H:i') . ' UTC · <code>health-check --repair</code> tam modda çalıştı, migration uygulaması ve doğrulama bitti.</p>'
+                    . '<table style="border-collapse:collapse;width:100%;font-size:13px">'
+                    . '<tr><th style="padding:7px 12px;border:1px solid #c9d3cc;background:#eef2ee;text-align:left">Nesne</th><th style="padding:7px 12px;border:1px solid #c9d3cc;background:#eef2ee;text-align:left">İşlem</th><th style="padding:7px 12px;border:1px solid #c9d3cc;background:#eef2ee;text-align:left">Detay</th></tr>'
+                    . $rows
+                    . '</table>'
+                    . '<p style="color:#64716d;font-size:12px;margin-top:14px">Tam konsol çıktısı için sunucuda <code>scripts/health-check.php --repair</code> çalıştırın. Denetim kayıtları: <code>health.repair_drop</code> / <code>health.repair_verify</code> / <code>health.repair_orphan_cleanup</code> / <code>health.repair_stale_confirm</code>.</p>'
+                    . '</div>',
+                    'health_check', null, null, null);
+                $out .= "→ Onarım özeti kuyruğa alındı → " . $adminEmail . "\n";
+            }
+        } catch (Throwable $e) {
+            $out .= "⚠ Onarım özeti e-postası kuyruğa alınamadı: " . $e->getMessage() . "\n";
+        }
     }
 
     // --- 4) Operasyonel uyarılar (son 24 saat) ---
