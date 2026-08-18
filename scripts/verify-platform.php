@@ -261,6 +261,24 @@ try {
         'total' => $orphanTotal,
         'parts' => $orphanParts,
     ];
+    // Webhook hata sınıflandırması — son 24 saatteki başarısız yüklerin kategorisi.
+    try {
+        $hasFcCol = (bool) $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='channel_sync_logs' AND column_name='failure_category'")->fetchColumn();
+        if ($hasFcCol) {
+            $fcRows = $pdo->query("SELECT failure_category, COUNT(*) AS cnt FROM channel_sync_logs WHERE status='failed' AND failure_category IS NOT NULL AND created_at >= now() - interval '24 hours' GROUP BY failure_category ORDER BY cnt DESC")->fetchAll();
+            $fcParts = [];
+            $fcTotal = 0;
+            foreach ($fcRows as $fr) {
+                $cat = (string) $fr['failure_category'];
+                $cnt = (int) $fr['cnt'];
+                $fcTotal += $cnt;
+                $icon = $cat === 'expected' ? '⏳' : ($cat === 'permanent' ? '🔴' : '🟡');
+                $fcParts[] = $icon . ' ' . $cat . ': ' . $cnt;
+            }
+            echo 'Webhook hata sınıflandırması (24 saat): ' . ($fcParts ? implode(' · ', $fcParts) : '—') . ' → toplam: ' . $fcTotal . PHP_EOL;
+            $checks['failure_categories'] = ['status' => $fcTotal === 0 ? 'ok' : 'info', 'total' => $fcTotal, 'parts' => $fcParts];
+        }
+    } catch (Throwable $e) {}
     // Zamanlayıcı kilidi — tick.php bayat kilit durumu.
     try {
         require_once __DIR__ . '/../config/tick_lock.php';

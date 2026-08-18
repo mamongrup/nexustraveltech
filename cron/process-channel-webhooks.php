@@ -35,7 +35,7 @@ foreach ($rows as $job) {
     $result = channel_webhook_apply($job, $payload);
 
     if ($result['ok']) {
-        $pdo->prepare("UPDATE channel_sync_logs SET status='success', response_payload=?::jsonb, fx_audit=?::jsonb, error_message=NULL, completed_at=now() WHERE id=?")
+        $pdo->prepare("UPDATE channel_sync_logs SET status='success', response_payload=?::jsonb, fx_audit=?::jsonb, failure_category=NULL, error_message=NULL, completed_at=now() WHERE id=?")
             ->execute([json_encode(['applied' => $result['applied'], 'message' => $result['message']]), json_encode($result['fx_audit'] ?? []), $jobId]);
         // Bağlantının son senkron zamanını tazele (sağlık kartları/özetler için).
         $pdo->prepare('UPDATE channel_connections SET last_sync_at=now(), last_error=NULL, last_sync_status=? WHERE id=?')
@@ -44,8 +44,9 @@ foreach ($rows as $job) {
         echo 'Webhook #' . $jobId . ' uygulandı: ' . $result['message'] . "\n";
     } else {
         $errMsg = $result['message'] . (isset($result['errors']) ? ' [' . implode(',', array_slice($result['errors'], 0, 4)) . ']' : '');
-        $pdo->prepare("UPDATE channel_sync_logs SET status='failed', error_message=?, response_payload=?::jsonb, fx_audit=?::jsonb, completed_at=now() WHERE id=?")
-            ->execute([mb_substr($errMsg, 0, 1000), json_encode(['message' => $result['message']]), json_encode($result['fx_audit'] ?? []), $jobId]);
+        $failCat = (string) ($result['failure_category'] ?? 'transient');
+        $pdo->prepare("UPDATE channel_sync_logs SET status='failed', failure_category=?, error_message=?, response_payload=?::jsonb, fx_audit=?::jsonb, completed_at=now() WHERE id=?")
+            ->execute([$failCat, mb_substr($errMsg, 0, 1000), json_encode(['message' => $result['message']]), json_encode($result['fx_audit'] ?? []), $jobId]);
         // Geçici eşleştirme hataları bağlantının sağlık durumunu bozmasın; yalnızca log'a düşer.
         $failed++;
         echo 'Webhook #' . $jobId . ' BAŞARISIZ: ' . $errMsg . "\n";

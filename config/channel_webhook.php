@@ -474,7 +474,7 @@ function channel_webhook_apply(array $log, array $payload): array
     }
 
     if ($applied === 0 && $suggestedCount === 0 && $suggestedPlanCount === 0) {
-        return ['ok' => false, 'message' => 'Hiçbir satır uygulanamadı. ' . implode('; ', array_slice($errors, 0, 5)), 'applied' => 0, 'errors' => $errors, 'fx_audit' => array_values($fxAudit)];
+        return ['ok' => false, 'message' => 'Hiçbir satır uygulanamadı. ' . implode('; ', array_slice($errors, 0, 5)), 'applied' => 0, 'errors' => $errors, 'failure_category' => webhook_failure_category($errors, $suggestedCount), 'fx_audit' => array_values($fxAudit)];
     }
     $suggestNote = '';
     if ($suggestedCount > 0) {
@@ -496,7 +496,32 @@ function channel_webhook_apply(array $log, array $payload): array
         $suggestNote .= ')';
     }
     $resNote = ($scope === 'reservations' && ($reservationBookings ?? 0) > 0) ? ' (' . (int) $reservationBookings . ' booking_folios kaydı oluşturuldu)' : '';
-    return ['ok' => true, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $resNote . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount, 'suggested_plans' => $suggestedPlanCount, 'reservation_bookings' => (int) ($reservationBookings ?? 0), 'fx_audit' => array_values($fxAudit)];
+    // failure_category: apapplied===0 && suggestion varsa 'expected' (eşleşme bekleniyor);
+    // applied===0 && hata varsa hata türüne göre; applied>0 ise NULL (başarılı).
+    $failureCat = null;
+    if ($applied === 0) {
+        $failureCat = webhook_failure_category($errors, $suggestedCount + $suggestedPlanCount);
+    }
+    return ['ok' => $applied > 0 || $suggestedCount > 0 || $suggestedPlanCount > 0, 'message' => $applied . ' gün ' . $scope . ' kapsamında uygulandı' . $resNote . $suggestNote . '.', 'applied' => $applied, 'errors' => $errors, 'failure_category' => $failureCat, 'auto_mapped' => $suggestedCount, 'suggested' => $suggestedCount, 'suggested_plans' => $suggestedPlanCount, 'reservation_bookings' => (int) ($reservationBookings ?? 0), 'fx_audit' => array_values($fxAudit)];
+}
+
+/**
+ * Akıllı hata sınıflandırıcı: hata dizisinden failure_category üretir.
+ * 'expected' = eşleşme yok / öneriler.pending (tekrar denemek faydasız)
+ * 'transient' = geçici / bilinmeyen (retry faydalı olabilir)
+ * 'permanent' = kalıcı yapılandırma hatası (eksik ürün/plan/tablo)
+ */
+function webhook_failure_category(array $errors, int $suggestedCount): string
+{
+    if ($suggestedCount > 0) return 'expected';
+    $permanent = ['property_not_mapped', 'unsupported_scope', 'no_rooms', 'no_rate_plan', 'invalid_date', 'invalid_schema', 'malformed_payload'];
+    foreach ($errors as $err) {
+        foreach ($permanent as $code) {
+            if (str_contains((string) $err, $code)) return 'permanent';
+        }
+    }
+    if ($errors !== []) return 'transient';
+    return 'expected';
 }
 
 /**

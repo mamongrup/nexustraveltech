@@ -228,16 +228,17 @@ if (!$isDryRun && $existingTables['channel_sync_logs']) {
         if ($res['ok']) {
             $hasFxCol = (bool) $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='channel_sync_logs' AND column_name='fx_audit'")->fetchColumn();
             if ($hasFxCol) {
-                $pdo->prepare("UPDATE channel_sync_logs SET status='success', response_payload=?::jsonb, fx_audit=?::jsonb, error_message=NULL, completed_at=now() WHERE id=?")
+                $pdo->prepare("UPDATE channel_sync_logs SET status='success', response_payload=?::jsonb, fx_audit=?::jsonb, failure_category=NULL, error_message=NULL, completed_at=now() WHERE id=?")
                     ->execute([json_encode(['applied' => $res['applied'], 'message' => $res['message']], JSON_UNESCAPED_UNICODE), json_encode($res['fx_audit'] ?? [], JSON_UNESCAPED_UNICODE), $logId]);
             } else {
-                $pdo->prepare("UPDATE channel_sync_logs SET status='success', response_payload=?::jsonb, error_message=NULL, completed_at=now() WHERE id=?")
+                $pdo->prepare("UPDATE channel_sync_logs SET status='success', response_payload=?::jsonb, failure_category=NULL, error_message=NULL, completed_at=now() WHERE id=?")
                     ->execute([json_encode(['applied' => $res['applied'], 'message' => $res['message']], JSON_UNESCAPED_UNICODE), $logId]);
             }
         } else {
             $errMsg = (string) $res['message'] . (isset($res['errors']) ? ' [' . implode(',', array_slice($res['errors'], 0, 4)) . ']' : '');
-            $pdo->prepare("UPDATE channel_sync_logs SET status='failed', error_message=?, response_payload=?::jsonb, completed_at=now() WHERE id=?")
-                ->execute([mb_substr($errMsg, 0, 1000), json_encode(['message' => $res['message']], JSON_UNESCAPED_UNICODE), $logId]);
+            $failCat = (string) ($res['failure_category'] ?? 'transient');
+            $pdo->prepare("UPDATE channel_sync_logs SET status='failed', failure_category=?, error_message=?, response_payload=?::jsonb, completed_at=now() WHERE id=?")
+                ->execute([$failCat, mb_substr($errMsg, 0, 1000), json_encode(['message' => $res['message']], JSON_UNESCAPED_UNICODE), $logId]);
         }
 
         step('webhook-send', 'Webhook yüklendi', true, "#$logId · " . ($res['ok'] ? 'başarılı' : 'başarısız') . ' · ' . ($res['message'] ?? ''));
@@ -265,6 +266,19 @@ if ($logId > 0 && $existingTables['channel_sync_logs']) {
               ' · tarih: ' . (string) $logRow['created_at']
             : 'Kayıt bulunamadı!';
         step('verify-sync-log', 'channel_sync_logs doğrulama', $logOk, $logDetail);
+        // failure_category kontrolü.
+        $hasFcCol = (bool) $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='channel_sync_logs' AND column_name='failure_category'")->fetchColumn();
+        if ($hasFcCol && $logRow) {
+            $fc = (string) ($logRow['failure_category'] ?? '');
+            if ((string) $logRow['status'] === 'success') {
+                step('verify-fc', 'failure_category (başarılı)', $fc === '' || $fc === 'NULL', 'durum: success → failure_category=' . ($fc ?: 'NULL (beklenen)'));
+            } elseif ($fc !== '') {
+                $fcIcons = ['expected' => '⏳ beklenen', 'permanent' => '🔴 kalıcı', 'transient' => '🟡 geçici'];
+                $fcLabel = $fcIcons[$fc] ?? $fc;
+                $stepFcPass = $fc === 'expected'; // eşlenmemiş kod testi beklenen hata üretmeli
+                step('verify-fc', 'failure_category (sınıflandırma)', $stepFcPass, "durum: failed → kategori: $fcLabel ($fc)");
+            }
+        }
     } catch (Throwable $e) {
         step('verify-sync-log', 'channel_sync_logs', false, 'Hata: ' . $e->getMessage());
     }
