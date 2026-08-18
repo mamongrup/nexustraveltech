@@ -53,8 +53,8 @@
     }
   }
 
-  /* ── .ical-copy-btn: data-copy URL'sini kopyala ── */
-  document.querySelectorAll('.ical-copy-btn').forEach(function (b) {
+  /* ── .ical-copy-btn / .copy-icon-btn: data-copy URL'sini kopyala ── */
+  document.querySelectorAll('.ical-copy-btn, .copy-icon-btn').forEach(function (b) {
     if (!b.title) b.title = b.getAttribute('data-copy') || '';
     var origHTML = b.innerHTML;
     b.addEventListener('click', function () {
