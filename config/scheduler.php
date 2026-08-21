@@ -10,6 +10,43 @@ const SCHEDULER_LOCK_KEY = 424242;
 /** Varsayılan görevleri eksikse ekler (idempotent). */
 function scheduler_seed_defaults(): void
 {
+    try {
+        db()->exec("
+            CREATE TABLE IF NOT EXISTS scheduled_jobs (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                code VARCHAR(80) NOT NULL UNIQUE,
+                name VARCHAR(190) NOT NULL,
+                command TEXT NOT NULL,
+                schedule VARCHAR(60) NOT NULL,
+                enabled BOOLEAN NOT NULL DEFAULT true,
+                last_run_at TIMESTAMPTZ,
+                last_status VARCHAR(40),
+                last_output TEXT,
+                run_count INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE IF NOT EXISTS scheduled_job_runs (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                job_id BIGINT NOT NULL REFERENCES scheduled_jobs(id) ON DELETE CASCADE,
+                status VARCHAR(40) NOT NULL,
+                output TEXT,
+                duration_ms INTEGER NOT NULL DEFAULT 0,
+                trigger_type VARCHAR(20) NOT NULL DEFAULT 'cron',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE IF NOT EXISTS email_templates (
+                code VARCHAR(60) PRIMARY KEY,
+                name VARCHAR(190) NOT NULL,
+                subject VARCHAR(255) NOT NULL,
+                body_html TEXT NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT true,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+        ");
+    } catch (Throwable $e) {}
+
     $defaults = [
         ['nexus-sync-ical', 'iCal senkronizasyonu', 'cron/sync-ical-calendars.php', '*/15 * * * *'],
         ['nexus-revenue-rec', 'Gelir önerisi üretimi', 'cron/generate-revenue-recommendations.php', '15 2 * * *'],
