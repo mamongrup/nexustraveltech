@@ -103,6 +103,8 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         ['section' => $t['sec_management']],
         ['label' => $t['guest_crm'], 'icon' => 'fa-solid fa-users', 'color' => 'purple', 'href' => $baseUri . '/admin/misafir-crm', 'key' => 'misafir-crm'],
         ['label' => $t['housekeeping'], 'icon' => 'fa-solid fa-broom', 'color' => 'orange', 'href' => $baseUri . '/admin/kat-hizmetleri', 'key' => 'kat-hizmetleri'],
+        ['label' => 'Restoran POS & QR Menü', 'icon' => 'fa-solid fa-utensils', 'color' => 'teal', 'href' => $baseUri . '/admin/liox-finans?tab=pos', 'key' => 'liox-finans-pos'],
+        ['label' => 'SPA & Masaj Yönetimi', 'icon' => 'fa-solid fa-spa', 'color' => 'pink', 'href' => $baseUri . '/admin/liox-finans?tab=spa', 'key' => 'liox-finans-spa'],
         ['label' => $t['suppliers'], 'icon' => 'fa-solid fa-hotel', 'color' => 'teal', 'href' => $baseUri . '/admin/tedarikci-ilanlari', 'key' => 'tedarikci-ilanlari'],
         ['label' => $t['agencies'], 'icon' => 'fa-solid fa-briefcase', 'color' => 'indigo', 'href' => $baseUri . '/admin/acenteler', 'key' => 'acenteler'],
         ['label' => $t['approvals'], 'icon' => 'fa-solid fa-clipboard-check', 'color' => 'green', 'href' => $baseUri . '/admin/tedarikci-onaylari', 'key' => 'tedarikci-onaylari'],
