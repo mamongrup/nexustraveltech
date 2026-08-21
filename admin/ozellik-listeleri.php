@@ -517,15 +517,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $code = $_POST['code'] ?? '';
         $label = trim((string) ($_POST['label'] ?? ''));
         $group = trim((string) ($_POST['group'] ?? ''));
-        $isHotelCat = in_array($code, ['amenity', 'activity', 'event'], true);
-        if (!in_array($code, ['villa', 'yacht', 'amenity', 'activity', 'event'], true) || $label === '' || mb_strlen($label) > 120) throw new RuntimeException('Tür ve özellik adı gereklidir (en fazla 120 karakter).');
-        if ($isHotelCat && $group === '') throw new RuntimeException('Otel hizmetleri için grup adı gereklidir.');
+        $allowedCodes = ['villa', 'yacht', 'amenity', 'activity', 'event', 'tour', 'transfer', 'other'];
+        if (!in_array($code, $allowedCodes, true) || $label === '' || mb_strlen($label) > 120) {
+            throw new RuntimeException('Tür ve özellik adı gereklidir (en fazla 120 karakter).');
+        }
         $check = db()->prepare('SELECT id FROM property_feature_catalog WHERE code=? AND label=?');
         $check->execute([$code, $label]);
         if ($check->fetch()) throw new RuntimeException('Bu özellik zaten listede.');
         $max = db()->prepare('SELECT COALESCE(MAX(sort_order),0)+10 FROM property_feature_catalog WHERE code=? AND group_label=?');
-        $max->execute([$code, $isHotelCat ? $group : '']);
-        db()->prepare('INSERT INTO property_feature_catalog (code,group_label,label,sort_order) VALUES (?,?,?,?)')->execute([$code, $isHotelCat ? $group : '', $label, (int) $max->fetchColumn()]);
+        $max->execute([$code, $group]);
+        db()->prepare('INSERT INTO property_feature_catalog (code,group_label,label,sort_order) VALUES (?,?,?,?)')->execute([$code, $group, $label, (int) $max->fetchColumn()]);
         audit_log('feature.add', 'feature_catalog', (int) db()->lastInsertId(), ['code' => $code, 'label' => $label, 'group' => $group]);
         $msg = 'Özellik eklendi.';
       } elseif ($action === 'delete') {
@@ -887,12 +888,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 $rows = db()->query('SELECT id, code, group_label, label, is_active FROM property_feature_catalog WHERE deleted_at IS NULL ORDER BY code, group_label, sort_order, id')->fetchAll();
-$byCode = ['villa' => [], 'yacht' => [], 'amenity' => [], 'activity' => [], 'event' => []];
-foreach ($rows as $r) $byCode[$r['code']][] = $r;
+$byCode = ['villa' => [], 'yacht' => [], 'amenity' => [], 'activity' => [], 'event' => [], 'tour' => [], 'transfer' => [], 'other' => []];
+foreach ($rows as $r) {
+    if (isset($byCode[$r['code']])) {
+        $byCode[$r['code']][] = $r;
+    } else {
+        $byCode[$r['code']] = [$r];
+    }
+}
 $txRows = db()->query('SELECT id, taxonomy_type, name, is_active FROM hotel_taxonomies ORDER BY taxonomy_type, sort_order, name')->fetchAll();
 $byTx = ['property_type' => [], 'star_rating' => [], 'theme' => []];
 foreach ($txRows as $t) $byTx[$t['taxonomy_type']][] = $t;
-$sectionTitles = ['villa' => 'Villa özellikleri', 'yacht' => 'Yat özellikleri', 'amenity' => 'Otel olanakları', 'activity' => 'Otel aktiviteleri', 'event' => 'Otel etkinlikleri'];
+$sectionTitles = [
+    'amenity'  => '🏨 Otel Olanakları',
+    'activity' => '🎯 Otel Aktiviteleri',
+    'event'    => '🎉 Otel Etkinlikleri',
+    'villa'    => '🏡 Villa Özellikleri',
+    'yacht'    => '⛵ Yat Donanım & Hizmetleri',
+    'tour'     => '🗺️ Tur & Gezi Kapsamı',
+    'transfer' => '🚗 Transfer & VIP Hizmetler',
+    'other'    => '📦 Diğer Hizmetler'
+];
 $trash = db()->query("SELECT f.id, f.code, f.group_label, f.label, f.deleted_at, f.purge_at, COALESCE((SELECT jsonb_array_length(b.affected_properties) FROM feature_delete_backups b WHERE b.feature_id = f.id ORDER BY b.id DESC LIMIT 1), 0) AS affected_count, (SELECT p.expires_at FROM pending_trash_purges p WHERE p.feature_id = f.id AND p.approved_at IS NULL ORDER BY p.expires_at DESC LIMIT 1) AS pending_until FROM property_feature_catalog f WHERE f.deleted_at IS NOT NULL ORDER BY f.deleted_at DESC")->fetchAll();
 // Çöp kutusu zenginleştirme: etkin vade (özel tarih veya TTL) + kalan gün hesaplanır,
 // acil (< 7 gün) olanlar rozete taşınır ve liste başına sıralanır; aynı grupta vadesi
@@ -953,10 +969,38 @@ admin_layout_start('Katalog & Özellik Sınıflandırma Yönetimi', 'ozellik-lis
 <?php if (!empty($deletedAudit)): ?>
 <div class="c" style="border-color:#bcd98a;background:#f4fbea"><h2>✓ "<?= htmlspecialchars($deletedAudit['label']) ?>" silindi</h2><?php if ($deletedAudit['affected']): ?><p>Kaldırıldığı ilanlar (<b><?= count($deletedAudit['affected']) ?></b>):</p><ul><?php foreach ($deletedAudit['affected'] as $a): ?><li><b><?= htmlspecialchars($a['name']) ?></b> <small style="color:#6b7774">(<?= $typeLabel($a['property_type']) ?> · <?= htmlspecialchars($a['company_name']) ?>)</small></li><?php endforeach; ?></ul><?php else: ?><p>Hiçbir ilanda kullanılmıyordu.</p><?php endif; ?><form method="post" style="margin-top:12px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="restore"><input type="hidden" name="id" value="<?= (int) $deletedAudit['id'] ?>"><button style="background:#405b13">↩ Geri al — özelliği ve ilanları geri yükle</button></form></div>
 <?php endif; ?>
-<!-- Yeni Özellik Ekle Formu -->
+<?php
+$currentCat = $_GET['cat'] ?? 'hotel';
+if (!in_array($currentCat, ['hotel', 'villa', 'yacht', 'tour', 'activity', 'event', 'transfer'], true)) {
+    $currentCat = 'hotel';
+}
+
+$categories = [
+    'hotel'    => ['name' => 'Otel & Konaklama', 'icon' => 'fa-solid fa-hotel', 'color' => 'teal', 'badge' => 'Otel'],
+    'villa'    => ['name' => 'Villa & Yazlık', 'icon' => 'fa-solid fa-house-chimney-window', 'color' => 'orange', 'badge' => 'Villa'],
+    'yacht'    => ['name' => 'Yat & Tekne', 'icon' => 'fa-solid fa-ship', 'color' => 'blue', 'badge' => 'Yat'],
+    'tour'     => ['name' => 'Tur & Gezi', 'icon' => 'fa-solid fa-route', 'color' => 'purple', 'badge' => 'Tur'],
+    'activity' => ['name' => 'Aktivite & Spor', 'icon' => 'fa-solid fa-person-hiking', 'color' => 'pink', 'badge' => 'Aktivite'],
+    'event'    => ['name' => 'Etkinlik & Bilet', 'icon' => 'fa-solid fa-ticket', 'color' => 'red', 'badge' => 'Etkinlik'],
+    'transfer' => ['name' => 'Transfer & Ulaşım', 'icon' => 'fa-solid fa-van-shuttle', 'color' => 'indigo', 'badge' => 'Transfer'],
+];
+?>
+
+<!-- Kategori Seçim Sekmeleri (Tabs) -->
+<div style="display:flex;gap:10px;margin-bottom:24px;overflow-x:auto;padding-bottom:6px">
+    <?php foreach ($categories as $catKey => $catInfo): ?>
+        <?php $isActive = ($currentCat === $catKey); ?>
+        <a href="?cat=<?= $catKey ?>" style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;text-decoration:none;font-weight:700;font-size:14px;white-space:nowrap;transition:all 0.2s ease;<?= $isActive ? 'background:linear-gradient(310deg, #7928ca, #ff0080);color:#fff;box-shadow:0 6px 16px rgba(121,40,202,0.35);transform:translateY(-2px)' : 'background:#fff;color:#67748e;border:1px solid #e9ecef' ?>">
+            <i class="<?= $catInfo['icon'] ?>" style="<?= $isActive ? 'color:#fff' : 'color:var(--sui-primary)' ?>"></i>
+            <span><?= htmlspecialchars($catInfo['name']) ?></span>
+        </a>
+    <?php endforeach; ?>
+</div>
+
+<!-- Yeni Özellik Ekle Formu (Seçili Kategoriye Özel) -->
 <div class="sui-card" style="margin-bottom:24px">
     <div class="sui-card-header">
-        <h2 class="sui-card-title">➕ Yeni Özellik / Hizmet Ekle</h2>
+        <h2 class="sui-card-title">➕ <?= htmlspecialchars($categories[$currentCat]['name']) ?> İçin Yeni Özellik / Nitelik Ekle</h2>
     </div>
     <form method="post">
         <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
@@ -965,18 +1009,30 @@ admin_layout_start('Katalog & Özellik Sınıflandırma Yönetimi', 'ozellik-lis
         <div style="display:grid;grid-template-columns:180px 1fr 1fr auto;gap:12px;align-items:center">
             <div>
                 <select name="code" class="sui-input" style="font-weight:700">
-                    <option value="villa">🏡 Villa</option>
-                    <option value="yacht">⛵ Yat</option>
-                    <option value="amenity">🏨 Otel Olanakları</option>
-                    <option value="activity">🎯 Otel Aktiviteleri</option>
-                    <option value="event">🎉 Otel Etkinlikleri</option>
+                    <?php if ($currentCat === 'hotel'): ?>
+                        <option value="amenity">🏨 Otel Olanakları</option>
+                        <option value="activity">🎯 Otel Aktiviteleri</option>
+                        <option value="event">🎉 Otel Etkinlikleri</option>
+                    <?php elseif ($currentCat === 'villa'): ?>
+                        <option value="villa">🏡 Villa Özellikleri</option>
+                    <?php elseif ($currentCat === 'yacht'): ?>
+                        <option value="yacht">⛵ Yat Donanımları</option>
+                    <?php elseif ($currentCat === 'tour'): ?>
+                        <option value="tour">🗺️ Tur Hizmetleri & Kapsam</option>
+                    <?php elseif ($currentCat === 'activity'): ?>
+                        <option value="activity">🪂 Aktivite Ekipman & Koşul</option>
+                    <?php elseif ($currentCat === 'event'): ?>
+                        <option value="event">🎟️ Etkinlik Ayrıcalıkları</option>
+                    <?php elseif ($currentCat === 'transfer'): ?>
+                        <option value="transfer">🚗 Transfer Hizmetleri</option>
+                    <?php endif; ?>
                 </select>
             </div>
             <div>
-                <input name="label" placeholder="Özellik adı (Örn. Özel Havuz, Wi-Fi)" maxlength="120" required class="sui-input">
+                <input name="label" placeholder="Özellik / Hizmet adı (Örn. <?= $currentCat === 'villa' ? 'Özel Havuz, Jakuzi, Barbekü' : ($currentCat === 'yacht' ? 'Kaptan, SeaBob, Şnorkel' : ($currentCat === 'tour' ? 'Rehberlik, Öğle Yemeği' : 'Wi-Fi, Spa, Özel Plaj')) ?>)" maxlength="120" required class="sui-input">
             </div>
             <div>
-                <input name="group" placeholder="Grup (yalnızca otel: Spa, Spor vb.)" maxlength="120" class="sui-input">
+                <input name="group" placeholder="Alt Grup (Örn. Genel, Spor, Lüks, Güvenlik)" maxlength="120" class="sui-input">
             </div>
             <div>
                 <button class="sui-btn sui-btn-primary" type="submit">+ Özellik Ekle</button>
@@ -985,52 +1041,56 @@ admin_layout_start('Katalog & Özellik Sınıflandırma Yönetimi', 'ozellik-lis
     </form>
 </div>
 
-<!-- Otel Sınıflandırmaları -->
-<div style="margin-bottom:28px">
-    <h2 style="font-size:18px;font-weight:700;margin:0 0 16px 0;color:var(--sui-dark)">🏨 Otel Sınıflandırmaları</h2>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:20px">
-        <?php foreach ($taxonomies as $txKey => $txTitle): ?>
-            <div class="sui-card">
-                <div class="sui-card-header">
-                    <h3 class="sui-card-title" style="font-size:15px"><?= htmlspecialchars($txTitle) ?> <span class="sui-badge sui-badge-info" style="font-size:11px"><?= count($byTx[$txKey]) ?></span></h3>
-                </div>
-                
-                <form method="post" style="display:flex;gap:8px;margin-bottom:16px">
-                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
-                    <input type="hidden" name="action" value="taxonomy_add">
-                    <input type="hidden" name="taxonomy_type" value="<?= htmlspecialchars($txKey) ?>">
-                    <input name="name" placeholder="Yeni seçenek adı..." maxlength="120" required class="sui-input" style="flex:1">
-                    <input name="sort_order" type="number" value="100" min="0" title="Sıralama" class="sui-input" style="width:70px;text-align:center">
-                    <button class="sui-btn sui-btn-primary sui-btn-sm" type="submit">+ Ekle</button>
-                </form>
+<?php if ($currentCat === 'hotel'): ?>
+    <!-- Otel Sınıflandırmaları -->
+    <div style="margin-bottom:28px">
+        <h2 style="font-size:18px;font-weight:700;margin:0 0 16px 0;color:var(--sui-dark)">🏨 Otel Sınıflandırmaları</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:20px">
+            <?php foreach ($taxonomies as $txKey => $txTitle): ?>
+                <div class="sui-card">
+                    <div class="sui-card-header">
+                        <h3 class="sui-card-title" style="font-size:15px"><?= htmlspecialchars($txTitle) ?> <span class="sui-badge sui-badge-info" style="font-size:11px"><?= count($byTx[$txKey] ?? []) ?></span></h3>
+                    </div>
+                    
+                    <form method="post" style="display:flex;gap:8px;margin-bottom:16px">
+                        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                        <input type="hidden" name="action" value="taxonomy_add">
+                        <input type="hidden" name="taxonomy_type" value="<?= htmlspecialchars($txKey) ?>">
+                        <input name="name" placeholder="Yeni seçenek adı..." maxlength="120" required class="sui-input" style="flex:1">
+                        <input name="sort_order" type="number" value="100" min="0" title="Sıralama" class="sui-input" style="width:70px;text-align:center">
+                        <button class="sui-btn sui-btn-primary sui-btn-sm" type="submit">+ Ekle</button>
+                    </form>
 
-                <div style="display:flex;flex-wrap:wrap;gap:8px">
-                    <?php foreach (($byTx[$txKey] ?? []) as $tx): ?>
-                        <span class="chip <?= $tx['is_active'] ? '' : 'off' ?>" style="display:inline-flex;align-items:center;gap:6px;background:var(--sui-bg);border:1px solid var(--sui-border);border-radius:20px;padding:4px 10px;font-size:12px">
-                            <b><?= htmlspecialchars($tx['name']) ?></b>
-                            <form method="post" style="display:inline;margin:0">
-                                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
-                                <input type="hidden" name="action" value="taxonomy_toggle">
-                                <input type="hidden" name="id" value="<?= (int) $tx['id'] ?>">
-                                <button type="submit" style="background:none;border:none;cursor:pointer;font-size:11px;color:<?= $tx['is_active'] ? 'var(--sui-danger)' : 'var(--sui-success)' ?>;font-weight:700">
-                                    <?= $tx['is_active'] ? 'Pasif' : 'Aktif' ?>
-                                </button>
-                            </form>
-                        </span>
-                    <?php endforeach; ?>
-                    <?php if (!$byTx[$txKey]): ?>
-                        <p style="color:var(--sui-muted);font-size:13px;margin:0">Liste henüz boş.</p>
-                    <?php endif; ?>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px">
+                        <?php foreach (($byTx[$txKey] ?? []) as $tx): ?>
+                            <span class="chip <?= $tx['is_active'] ? '' : 'off' ?>" style="display:inline-flex;align-items:center;gap:6px;background:var(--sui-bg);border:1px solid var(--sui-border);border-radius:20px;padding:4px 10px;font-size:12px">
+                                <b><?= htmlspecialchars($tx['name']) ?></b>
+                                <form method="post" style="display:inline;margin:0">
+                                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                    <input type="hidden" name="action" value="taxonomy_toggle">
+                                    <input type="hidden" name="id" value="<?= (int) $tx['id'] ?>">
+                                    <button type="submit" style="background:none;border:none;cursor:pointer;font-size:11px;color:<?= $tx['is_active'] ? 'var(--sui-danger)' : 'var(--sui-success)' ?>;font-weight:700">
+                                        <?= $tx['is_active'] ? 'Pasif' : 'Aktif' ?>
+                                    </button>
+                                </form>
+                            </span>
+                        <?php endforeach; ?>
+                        <?php if (empty($byTx[$txKey])): ?>
+                            <p style="color:var(--sui-muted);font-size:13px;margin:0">Liste henüz boş.</p>
+                        <?php endif; ?>
+                    </div>
                 </div>
-            </div>
-        <?php endforeach; ?>
+            <?php endforeach; ?>
+        </div>
     </div>
-</div>
+<?php endif; ?>
 
 <!-- Özellik Katalogları -->
 <div style="margin-bottom:28px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h2 style="font-size:18px;font-weight:700;margin:0;color:var(--sui-dark)">📋 Özellik ve Hizmet Katalogları</h2>
+        <h2 style="font-size:18px;font-weight:700;margin:0;color:var(--sui-dark)">
+            📋 <?= htmlspecialchars($categories[$currentCat]['name']) ?> Özellik & Hizmet Listesi
+        </h2>
     </div>
 
     <!-- Toplu İşlem Çubuğu -->
@@ -1052,12 +1112,35 @@ admin_layout_start('Katalog & Özellik Sınıflandırma Yönetimi', 'ozellik-lis
         <input type="hidden" name="sub" id="bulkSub" value="delete">
     </form>
 
+    <?php
+    // Yalnızca seçili kategoriye ait bölümleri filtrele
+    $filterCodes = [];
+    if ($currentCat === 'hotel') $filterCodes = ['amenity', 'activity', 'event'];
+    elseif ($currentCat === 'villa') $filterCodes = ['villa'];
+    elseif ($currentCat === 'yacht') $filterCodes = ['yacht'];
+    elseif ($currentCat === 'tour') $filterCodes = ['tour'];
+    elseif ($currentCat === 'activity') $filterCodes = ['activity'];
+    elseif ($currentCat === 'event') $filterCodes = ['event'];
+    elseif ($currentCat === 'transfer') $filterCodes = ['transfer'];
+    
+    $activeSectionTitles = array_intersect_key($sectionTitles, array_flip($filterCodes));
+    if (empty($activeSectionTitles)) {
+        $activeSectionTitles = [$currentCat => $categories[$currentCat]['name'] . ' Özellikleri'];
+    }
+    ?>
+
     <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(380px, 1fr));gap:20px">
-        <?php foreach ($sectionTitles as $code => $title): $isHotelCat = in_array($code, ['amenity', 'activity', 'event'], true); $grouped = []; foreach (($byCode[$code] ?? []) as $item) $grouped[$item['group_label'] ?: 'Genel'][] = $item; ?>
+        <?php foreach ($activeSectionTitles as $code => $title): 
+            $isHotelCat = in_array($code, ['amenity', 'activity', 'event'], true); 
+            $grouped = []; 
+            foreach (($byCode[$code] ?? []) as $item) {
+                $grouped[$item['group_label'] ?: 'Genel'][] = $item;
+            }
+        ?>
             <div class="sui-card" style="padding:0;overflow:hidden">
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:var(--sui-bg);border-bottom:1px solid var(--sui-border);cursor:pointer" onclick="toggleCat('<?= htmlspecialchars($code) ?>')">
                     <h3 style="margin:0;font-size:15px;font-weight:700">
-                        <?= $title ?> <span class="sui-badge sui-badge-info" style="font-size:11px"><?= count($byCode[$code]) ?></span>
+                        <?= $title ?> <span class="sui-badge sui-badge-info" style="font-size:11px"><?= count($byCode[$code] ?? []) ?></span>
                     </h3>
                     <span id="catArrow-<?= htmlspecialchars($code) ?>" style="color:var(--sui-muted);font-size:12px">▾ Daralt</span>
                 </div>
@@ -1066,10 +1149,12 @@ admin_layout_start('Katalog & Özellik Sınıflandırma Yönetimi', 'ozellik-lis
                         <input type="checkbox" class="selall" data-code="<?= htmlspecialchars($code) ?>"> Bu kategorideki tümünü seç
                     </label>
                     
+                    <?php if (empty($grouped)): ?>
+                        <p style="color:var(--sui-muted);font-size:13px;margin:8px 0">Bu kategoriye henüz özellik eklenmemiş. Yukarıdaki formdan ekleyebilirsiniz.</p>
+                    <?php endif; ?>
+
                     <?php foreach ($grouped as $groupName => $groupItems): ?>
-                        <?php if ($isHotelCat): ?>
-                            <div style="font-size:12px;font-weight:700;color:var(--sui-primary);margin:12px 0 6px 0;text-transform:uppercase"><?= htmlspecialchars($groupName) ?></div>
-                        <?php endif; ?>
+                        <div style="font-size:12px;font-weight:700;color:var(--sui-primary);margin:12px 0 6px 0;text-transform:uppercase"><?= htmlspecialchars($groupName) ?></div>
                         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
                             <?php foreach ($groupItems as $item): ?>
                                 <span class="chip <?= $item['is_active'] ? '' : 'off' ?>" id="feat-<?= (int) $item['id'] ?>" style="display:inline-flex;align-items:center;gap:6px;background:var(--sui-bg);border:1px solid var(--sui-border);border-radius:20px;padding:4px 10px;font-size:12px">
