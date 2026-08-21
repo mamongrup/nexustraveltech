@@ -32,7 +32,7 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         ['label' => 'Kanal Sihirbazı', 'icon' => 'fa-solid fa-wand-magic-sparkles', 'color' => 'teal', 'href' => $baseUri . '/admin/kanal-sihirbazi', 'key' => 'kanal-sihirbazi'],
         ['label' => 'Hazırlık Özeti', 'icon' => 'fa-solid fa-chart-simple', 'color' => 'blue', 'href' => $baseUri . '/admin/hazirlik-ozet', 'key' => 'hazirlik-ozet'],
         ['label' => 'Yetim Eşleştirmeler', 'icon' => 'fa-solid fa-link-slash', 'color' => 'red', 'href' => $baseUri . '/admin/orphan-mappings', 'key' => 'orphan-mappings'],
-        ['label' => 'Rezervasyon Widget', 'icon' => 'fa-solid fa-globe', 'color' => 'pink', 'href' => $baseUri . '/widget/booking-engine.php?property_id=1', 'key' => 'booking-engine'],
+        ['label' => 'Rezervasyon Widget', 'icon' => 'fa-solid fa-globe', 'color' => 'pink', 'href' => $baseUri . '/admin/rezervasyon-widget', 'key' => 'rezervasyon-widget'],
         
         ['section' => 'Ayarlar'],
         ['label' => 'Ürün Şablonları', 'icon' => 'fa-solid fa-layer-group', 'color' => 'teal', 'href' => $baseUri . '/admin/urun-turleri', 'key' => 'urun-turleri'],
