@@ -34,4 +34,91 @@ $configured = !empty($current['encrypted_api_key']);
 $enabled = (bool) platform_setting('netgsm_sms_enabled', false);
 $queue = db()->query("SELECT status,COUNT(*) AS total FROM sms_outbox GROUP BY status ORDER BY status")->fetchAll();
 ?>
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Netgsm SMS | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial}.wrap{width:min(760px,calc(100% - 32px));margin:40px auto}.card{background:#fff;border:1px solid #e1e5de;padding:24px;margin-top:18px}.form{display:grid;gap:14px}.form input,.form button{padding:11px;border:1px solid #d8ded8;font:inherit}.form button{background:#10211f;color:#fff;font-weight:bold}.notice{background:#e6f8c7;padding:10px}.error{background:#ffe2de;padding:10px}.muted{color:#64716d;line-height:1.5}.back{color:#10211f}.status{display:flex;gap:9px;flex-wrap:wrap}.tag{background:#edf1eb;padding:6px 9px}</style></head><body><main class="wrap"><a class="back" href="/nexustraveltech/admin/">← Yönetim paneli</a><div class="card"><h1>Netgsm SMS merkezi</h1><p class="muted">Rezervasyon bildirimleri için Netgsm API hesabınızı tanımlayın. Anahtar bilgileri AES-256-GCM ile şifrelenir ve kayıttan sonra tekrar gösterilmez. Ticari iletiler için İYS yükümlülüklerinin işletmenizde kontrol edilmesi gerekir.</p><p>Yapılandırma: <b><?= $configured ? 'hazır' : 'bekliyor' ?></b> · Gönderim: <b><?= $enabled ? 'açık' : 'kapalı' ?></b></p><?php if($message): ?><p class="notice"><?= htmlspecialchars($message) ?></p><?php endif; ?><?php if($error): ?><p class="error"><?= htmlspecialchars($error) ?></p><?php endif; ?><form method="post" class="form"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><label>Netgsm API kullanıcı adı<input name="usercode" autocomplete="off" placeholder="Mevcut bilgiyi korumak için boş bırakın"></label><label>Netgsm API şifresi<input type="password" name="password" autocomplete="new-password" placeholder="Mevcut bilgiyi korumak için boş bırakın"></label><label>Onaylı gönderici başlığı<input name="header" maxlength="11" placeholder="Örn. NEXUS" ></label><label>API adresi<input name="endpoint" value="<?= htmlspecialchars((string)($current['model'] ?? 'https://api.netgsm.com.tr/sms/send/get/')) ?>"></label><label><input type="checkbox" name="enabled" <?= $enabled ? 'checked' : '' ?>> SMS gönderimini aktif et</label><button>Netgsm ayarlarını kaydet</button></form></div><div class="card"><h2>Kuyruk durumu</h2><div class="status"><?php if(!$queue): ?><span class="tag">Kuyruk boş</span><?php else: foreach($queue as $item): ?><span class="tag"><?= htmlspecialchars($item['status']) ?>: <?= (int)$item['total'] ?></span><?php endforeach; endif; ?></div><p class="muted">Paket, kredi ve bildirim telefonu tanımları için <a href="/nexustraveltech/admin/sms-yonetimi">SMS paket yönetimini</a> kullanın.</p></div></main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Netgsm SMS Entegrasyonu', 'netgsm-ayarlari');
+?>
+
+<?php if ($message): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:20px">
+    <!-- Ayarlar -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <div>
+                <h2 class="sui-card-title">📱 Netgsm API Ayarları</h2>
+                <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                    Rezervasyon ve 2FA SMS bildirimleri için Netgsm hesabı.
+                </p>
+            </div>
+            <span class="sui-badge <?= $configured ? 'sui-badge-success' : 'sui-badge-warning' ?>">
+                <?= $configured ? 'Yapılandırıldı' : 'Yapılandırılmadı' ?>
+            </span>
+        </div>
+
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+
+            <div style="margin-bottom:14px">
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Netgsm API Kullanıcı Adı</label>
+                <input name="usercode" class="sui-input" autocomplete="off" placeholder="<?= $configured ? 'Mevcut bilgiyi korumak için boş bırakın' : '850xxxxxxx' ?>">
+            </div>
+
+            <div style="margin-bottom:14px">
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Netgsm API Şifresi</label>
+                <input type="password" name="password" class="sui-input" autocomplete="new-password" placeholder="<?= $configured ? 'Mevcut şifreyi korumak için boş bırakın' : '••••••••' ?>">
+            </div>
+
+            <div style="margin-bottom:14px">
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Onaylı Gönderici Başlığı (Originator / Header)</label>
+                <input name="header" class="sui-input" maxlength="11" placeholder="NEXUS">
+            </div>
+
+            <div style="margin-bottom:16px">
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">API Endpoint Adresi</label>
+                <input name="endpoint" class="sui-input" value="<?= htmlspecialchars((string)($current['model'] ?? 'https://api.netgsm.com.tr/sms/send/get/')) ?>">
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px">
+                <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+                    <input type="checkbox" name="enabled" <?= $enabled ? 'checked' : '' ?>> SMS Gönderimini Aktif Et
+                </label>
+                <button class="sui-btn sui-btn-primary">Ayarları Kaydet</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Kuyruk Durumu -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">📬 SMS Giden Kuyruğu (Outbox)</h2>
+        </div>
+        
+        <div style="display:grid;gap:10px;margin-bottom:20px">
+            <?php if (!$queue): ?>
+                <div style="padding:14px;background:var(--sui-bg);border-radius:6px;color:var(--sui-muted);font-size:13px">
+                    Kuyrukta bekleyen veya işlenen SMS yok.
+                </div>
+            <?php else: ?>
+                <?php foreach ($queue as $item): ?>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--sui-bg);border-radius:6px">
+                        <span style="font-weight:600;font-size:13px"><?= htmlspecialchars($item['status']) ?></span>
+                        <span class="sui-badge sui-badge-info"><?= (int)$item['total'] ?> Adet</span>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+
+        <p style="font-size:13px;color:var(--sui-muted);line-height:1.5">
+            Tedarikçi ve acentelere SMS kredisi tanımlamak için <a href="sms-yonetimi" style="color:var(--sui-primary);font-weight:600">SMS Paket & Hak Yönetimi</a> sayfasını kullanabilirsiniz.
+        </p>
+    </div>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

@@ -51,109 +51,94 @@ $lowCount = count(array_filter($results, fn($r) => $r['score'] < 50));
 $typeLabel = fn($t) => ['hotel' => 'Otel', 'villa' => 'Villa', 'yacht' => 'Yat'][$t] ?? $t;
 
 ?>
-<!doctype html>
-<html lang="tr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hazırlık Özeti | NEXUS Admin</title>
-<style>
-body{font-family:Arial;background:#f7f7f2;color:#10211f;margin:0}
-.w{width:min(1100px,calc(100% - 32px));margin:35px auto}
-.c{background:#fff;border:1px solid #e1e5de;padding:20px;margin:16px 0;border-radius:8px}
-table{width:100%;border-collapse:collapse;margin-top:10px}
-th{text-align:left;padding:8px 10px;border-bottom:2px solid #e1e5de;font-size:11px;text-transform:uppercase;color:#64716d;cursor:pointer;user-select:none}
-th:hover{color:#10211f}
-th.sorted{color:#10211f;border-bottom-color:#5f9008}
-td{padding:8px 10px;border-bottom:1px solid #eef0ea;font-size:13px}
-.score-bar{display:inline-block;width:50px;height:6px;border-radius:3px;background:#e1e5de;overflow:hidden;vertical-align:middle;margin-right:6px}
-.score-bar i{display:block;height:100%;border-radius:3px}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
-.badge-high{background:#e6f8c7;color:#2c7a1f}
-.badge-mid{background:#fff8e1;color:#8a6100}
-.badge-low{background:#ffe2de;color:#b0301a}
-.miss-label{font-size:12px;color:#64716d}
-.stats{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0}
-.stat{background:#f4f6f1;border:1px solid #e1e5de;border-radius:8px;padding:12px 18px;font-size:13px}
-.stat b{font-size:20px;display:block;margin-bottom:2px}
-a{color:#405b13;text-decoration:none}
-a:hover{text-decoration:underline}
-</style>
-</head>
-<body>
-<main class="w">
-<a href="/nexustraveltech/admin/">← Panele dön</a>
-<h1>📊 Hazırlık Özeti — Tüm İlanlar</h1>
-<p style="color:#64716d;font-size:13px">Tüm tedarikçilerin ilanları için hazırlık skorları ve en kritik eksik kalemler. Skora tıklayarak ilanın hazırlık paneline gidin.</p>
-
-<div class="stats">
-  <div class="stat"><b><?= $total ?></b>Toplam ilan</div>
-  <div class="stat"><b style="color:#2c7a1f"><?= $readyCount ?></b>Yayına hazır</div>
-  <div class="stat"><b style="color:#8a6100"><?= $total - $readyCount ?></b>Eksik var</div>
-  <div class="stat"><b style="color:#b0301a"><?= $lowCount ?></b>Kritik (< 50)</div>
-  <div class="stat"><b><?= $avgScore ?></b>Ortalama skor</div>
-</div>
-
-<div class="c">
-<h2 style="margin-top:0">İlan Listesi</h2>
-<table>
-<thead>
-<tr>
-  <th data-sort="name">İlan</th>
-  <th data-sort="type">Tür</th>
-  <th data-sort="supplier">Tedarikçi</th>
-  <th data-sort="score" class="sorted">Skor ↓</th>
-  <th>En ağır eksik</th>
-  <th data-sort="ok">Tamam</th>
-  <th data-sort="miss">Eksik</th>
-</tr>
-</thead>
-<tbody>
-<?php foreach ($results as $r): ?>
 <?php
-$p = $r['prop'];
-$score = $r['score'];
-$color = $score >= 100 ? '#2c7a1f' : ($score >= 70 ? '#5f9008' : '#b0301a');
-$badgeCls = $score >= 100 ? 'badge-high' : ($score >= 70 ? 'badge-mid' : 'badge-low');
-$editBase = $p['property_type'] === 'hotel'
-    ? '/nexustraveltech/tedarikci/otel-detay?product=' . (int) $p['id']
-    : '/nexustraveltech/tedarikci/villa-detay?product=' . (int) $p['id'];
+require_once __DIR__ . '/layout.php';
+admin_layout_start('İlan Hazırlık ve Kalite Özeti', 'hazirlik-ozet');
 ?>
-<tr>
-  <td>
-    <a href="<?= htmlspecialchars($editBase) ?>" target="_blank" title="<?= htmlspecialchars($p['name']) ?>">
-      <b><?= htmlspecialchars($p['name']) ?></b>
-    </a>
-    <small style="color:#999">#<?= (int) $p['id'] ?></small>
-  </td>
-  <td><?= $typeLabel($p['property_type']) ?></td>
-  <td><small><?= htmlspecialchars($p['company_name']) ?></small></td>
-  <td>
-    <span class="score-bar"><i style="width:<?= $score ?>%;background:<?= $color ?>"></i></span>
-    <span class="badge <?= $badgeCls ?>"><?= $score ?></span>
-  </td>
-  <td>
-    <?php if ($r['heaviest_miss']): ?>
-      <span class="miss-label" title="<?= htmlspecialchars($r['heaviest_miss']['detail'] ?? '') ?>">
-        <?= htmlspecialchars($r['heaviest_miss']['label']) ?>
-        <small style="color:<?= $color ?>">(+<?= $r['heaviest_weight'] ?>)</small>
-      </span>
-    <?php elseif ($score >= 100): ?>
-      <span style="color:#2c7a1f;font-size:12px">✓ Tamam</span>
-    <?php else: ?>
-      <span class="miss-label">—</span>
-    <?php endif; ?>
-  </td>
-  <td style="text-align:center;color:#2c7a1f"><?= $r['ok_count'] ?></td>
-  <td style="text-align:center;<?= $r['missing_count'] > 0 ? 'color:#b0301a' : '' ?>"><?= $r['missing_count'] ?></td>
-</tr>
-<?php endforeach; ?>
-<?php if ($results === []): ?>
-<tr><td colspan="7" style="text-align:center;color:#999;padding:20px">Henüz ilan yok.</td></tr>
-<?php endif; ?>
-</tbody>
-</table>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:24px">
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Toplam İlan</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= $total ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-success);font-weight:600">Yayına Hazır (%100)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-success);margin-top:4px"><?= $readyCount ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-warning);font-weight:600">Eksik Kalem Var</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-warning);margin-top:4px"><?= $total - $readyCount ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-danger);font-weight:600">Kritik Seviye (< %50)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-danger);margin-top:4px"><?= $lowCount ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-primary);font-weight:600">Ortalama Skor</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-primary);margin-top:4px">%<?= $avgScore ?></div>
+    </div>
 </div>
-</main>
-</body>
-</html>
+
+<div class="sui-card">
+    <div class="sui-card-header">
+        <h2 class="sui-card-title">📊 Tesis & İlan Hazırlık Denetimi</h2>
+    </div>
+    <div style="overflow-x:auto">
+        <table class="sui-table">
+            <thead>
+                <tr>
+                    <th>İlan / Tesis Adı</th>
+                    <th>Tür</th>
+                    <th>Tedarikçi</th>
+                    <th>Hazırlık Skoru</th>
+                    <th>Kritik Eksik Kalem</th>
+                    <th style="text-align:center">Tamam</th>
+                    <th style="text-align:center">Eksik</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($results as $r): 
+                    $p = $r['prop'];
+                    $score = $r['score'];
+                    $badgeCls = $score >= 80 ? 'sui-badge-success' : ($score >= 50 ? 'sui-badge-warning' : 'sui-badge-danger');
+                ?>
+                    <tr>
+                        <td>
+                            <b><?= htmlspecialchars($p['name']) ?></b>
+                            <div style="font-size:11px;color:var(--sui-muted)">#<?= (int) $p['id'] ?> · <?= htmlspecialchars((string) ($p['city'] ?? '—')) ?></div>
+                        </td>
+                        <td><?= $typeLabel($p['property_type']) ?></td>
+                        <td><?= htmlspecialchars($p['company_name']) ?></td>
+                        <td>
+                            <span class="sui-badge <?= $badgeCls ?>">%<?= $score ?></span>
+                        </td>
+                        <td>
+                            <?php if ($r['heaviest_miss']): ?>
+                                <span style="font-size:12px;color:var(--sui-muted)">
+                                    <?= htmlspecialchars($r['heaviest_miss']['label']) ?>
+                                    <b style="color:var(--sui-danger)">(+<?= $r['heaviest_weight'] ?> puan)</b>
+                                </span>
+                            <?php elseif ($score >= 100): ?>
+                                <span style="color:var(--sui-success);font-size:12px;font-weight:600">✓ Eksiksiz Hazır</span>
+                            <?php else: ?>
+                                <span style="color:var(--sui-muted);font-size:12px">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="text-align:center;color:var(--sui-success);font-weight:600"><?= $r['ok_count'] ?></td>
+                        <td style="text-align:center;color:var(--sui-danger);font-weight:600"><?= $r['missing_count'] ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if ($results === []): ?>
+                    <tr><td colspan="7" style="text-align:center;color:var(--sui-muted);padding:20px">Henüz kayıtlı ilan bulunmuyor.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

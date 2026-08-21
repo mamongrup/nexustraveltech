@@ -1,2 +1,93 @@
 <?php
-declare(strict_types=1); require __DIR__.'/../config/auth.php'; require __DIR__.'/../config/database.php'; require __DIR__.'/../config/ai_settings.php'; require_admin(); if(empty($_SESSION['admin_csrf']))$_SESSION['admin_csrf']=bin2hex(random_bytes(32));$message='';$error='';$current=db()->query("SELECT encrypted_api_key,model FROM ai_provider_settings WHERE provider='gemini' LIMIT 1")->fetch()?:[];if($_SERVER['REQUEST_METHOD']==='POST'){if(!hash_equals($_SESSION['admin_csrf'],(string)($_POST['csrf']??'')))$error='Güvenlik doğrulaması geçersiz.';else try{$key=trim((string)($_POST['api_key']??''));$model=trim((string)($_POST['model']??''))?:'gemini-3.6-flash';if($key!==''&&strlen($key)<16)throw new RuntimeException('Geçerli Gemini API anahtarı girin.');if($key===''&&empty($current['encrypted_api_key']))throw new RuntimeException('İlk kurulumda API anahtarı zorunludur.');if($key!=='')db()->prepare("INSERT INTO ai_provider_settings(provider,encrypted_api_key,model,updated_at) VALUES('gemini',?,?,now()) ON CONFLICT(provider) DO UPDATE SET encrypted_api_key=EXCLUDED.encrypted_api_key,model=EXCLUDED.model,updated_at=now()")->execute([encrypt_ai_secret($key),$model]);else db()->prepare("UPDATE ai_provider_settings SET model=?,updated_at=now() WHERE provider='gemini'")->execute([$model]);$message='Gemini görsel AI ayarları kaydedildi.';}catch(Throwable $e){$error=$e->getMessage();}$current=db()->query("SELECT encrypted_api_key,model FROM ai_provider_settings WHERE provider='gemini' LIMIT 1")->fetch()?:[];}$has=!empty($current['encrypted_api_key']);?><!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gemini görsel AI | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial}.wrap{width:min(700px,calc(100% - 32px));margin:40px auto}.card{background:#fff;border:1px solid #e1e5de;padding:24px;margin-top:20px}.form{display:grid;gap:13px}.form input,.form button{padding:11px;border:1px solid #d8ded8;font:inherit}.form button{background:#10211f;color:#fff;font-weight:bold}.notice{background:#e6f8c7;padding:10px}.error{background:#ffe2de;padding:10px}.muted{color:#64716d;line-height:1.5}.back{color:#10211f}</style></head><body><main class="wrap"><a class="back" href="/nexustraveltech/admin/">← Panele dön</a><div class="card"><h1>Gemini görsel AI</h1><p class="muted">Fotoğraf benzerliği ve ürün tekrarı analizi. Anahtar şifreli tutulur, tekrar görüntülenmez. Durum: <b><?= $has?'aktif':'anahtar bekliyor' ?></b></p><?php if($message):?><p class="notice"><?=htmlspecialchars($message)?></p><?php endif;?><?php if($error):?><p class="error"><?=htmlspecialchars($error)?></p><?php endif;?><form method="post" class="form"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><label>Gemini API anahtarı<input type="password" name="api_key" autocomplete="new-password" placeholder="<?= $has?'Değiştirmek için yeni anahtarı girin':'AIza...'?>"></label><label>Model<input name="model" value="<?=htmlspecialchars((string)($current['model']??'gemini-3.6-flash'))?>"></label><button>Gemini ayarlarını kaydet</button></form></div></main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>
+declare(strict_types=1);
+
+require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/ai_settings.php';
+require_once __DIR__ . '/layout.php';
+
+require_admin();
+
+if (empty($_SESSION['admin_csrf'])) {
+    $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
+}
+
+$message = '';
+$error = '';
+$current = db()->query("SELECT encrypted_api_key, model FROM ai_provider_settings WHERE provider='gemini' LIMIT 1")->fetch() ?: [];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!hash_equals($_SESSION['admin_csrf'], (string) ($_POST['csrf'] ?? ''))) {
+        $error = 'Güvenlik doğrulaması geçersiz.';
+    } else {
+        try {
+            $key = trim((string) ($_POST['api_key'] ?? ''));
+            $model = trim((string) ($_POST['model'] ?? '')) ?: 'gemini-1.5-flash';
+            if ($key !== '' && strlen($key) < 16) {
+                throw new RuntimeException('Geçerli bir Gemini API anahtarı girin.');
+            }
+            if ($key === '' && empty($current['encrypted_api_key'])) {
+                throw new RuntimeException('İlk kurulumda API anahtarı zorunludur.');
+            }
+            if ($key !== '') {
+                db()->prepare("INSERT INTO ai_provider_settings(provider, encrypted_api_key, model, updated_at) VALUES('gemini', ?, ?, now()) ON CONFLICT(provider) DO UPDATE SET encrypted_api_key=EXCLUDED.encrypted_api_key, model=EXCLUDED.model, updated_at=now()")
+                    ->execute([encrypt_ai_secret($key), $model]);
+            } else {
+                db()->prepare("UPDATE ai_provider_settings SET model=?, updated_at=now() WHERE provider='gemini'")
+                    ->execute([$model]);
+            }
+            $message = 'Google Gemini görsel AI ayarları başarıyla kaydedildi.';
+        } catch (Throwable $e) {
+            $error = $e->getMessage();
+        }
+        $current = db()->query("SELECT encrypted_api_key, model FROM ai_provider_settings WHERE provider='gemini' LIMIT 1")->fetch() ?: [];
+    }
+}
+
+$has = !empty($current['encrypted_api_key']);
+
+admin_layout_start('Google Gemini Görsel AI', 'gemini-ayarlari');
+?>
+
+<?php if ($message): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+<div class="sui-card" style="max-width:700px">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">✨ Google Gemini Görsel & Multimodal AI</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                Otel fotoğrafları kalite denetimi, oda tipleri eşleme ve görsel benzerlik tespiti.
+            </p>
+        </div>
+        <span class="sui-badge <?= $has ? 'sui-badge-success' : 'sui-badge-warning' ?>">
+            <?= $has ? 'Aktif' : 'Anahtar Bekliyor' ?>
+        </span>
+    </div>
+
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+
+        <div style="margin-bottom:16px">
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">Gemini API Anahtarı (AES-256 Şifrelenir)</label>
+            <input type="password" name="api_key" class="sui-input" autocomplete="new-password" placeholder="<?= $has ? '••••••••••••••••••••••••••••••••' : 'AIza...' ?>">
+            <small style="color:var(--sui-muted);font-size:11px;display:block;margin-top:4px">
+                <?= $has ? '✓ Anahtar güvenli saklanıyor. Değiştirmek istemiyorsanız boş bırakın.' : 'Google AI Studio üzerinden oluşturduğunuz API Key.' ?>
+            </small>
+        </div>
+
+        <div style="margin-bottom:16px">
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">Model Seçimi</label>
+            <input type="text" name="model" class="sui-input" value="<?= htmlspecialchars((string) ($current['model'] ?? 'gemini-1.5-flash')) ?>" placeholder="gemini-1.5-flash">
+        </div>
+
+        <button class="sui-btn sui-btn-primary">Gemini Ayarlarını Kaydet</button>
+    </form>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

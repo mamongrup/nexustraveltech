@@ -237,50 +237,148 @@ if (isset($_GET['view_fx_email'])) {
     $viewFxEmail = $veq->fetch();
 }
 ?>
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Döviz kuru yönetimi | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(980px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.back{color:#10211f}.notice,.error{padding:11px}.notice{background:#e6f8c7}.error{background:#ffe2de}.card{background:#fff;border:1px solid #e1e5de;padding:20px;margin-top:16px}.form{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.form input,.form button{padding:10px;border:1px solid #d8ded8;font:inherit}.form button{background:#10211f;color:#fff;font-weight:700;border:0;cursor:pointer}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:9px 10px;font-size:13px}th{font-size:11px;text-transform:uppercase;color:#64716d}.btn-tcmb{background:#0d7a4a;color:#fff;border:0;padding:10px 14px;font-weight:700;cursor:pointer;margin-top:12px}.btn-fill{background:#b26a00;color:#fff;border:0;padding:10px 14px;font-weight:700;cursor:pointer;margin-top:8px;display:inline-block}.tcmb-status{display:block;font-size:12px;margin-top:8px}.tcmb-ok{color:#0d7a4a}.tcmb-err{color:#b0301a;font-weight:700}.quick{display:grid;gap:8px;max-width:440px}.quick-row{display:flex;align-items:center;gap:10px}.quick-row label{min-width:120px;font-size:13px;font-weight:700}.quick-row input{flex:1;padding:9px;border:1px solid #d8ded8;font:inherit}.quick button{padding:10px;background:#10211f;color:#fff;font-weight:700;border:0;cursor:pointer;justify-self:start}.fx-hist{display:flex;align-items:flex-end;gap:3px;height:90px;margin-top:12px;overflow-x:auto}.fx-hist-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:14px;flex:1}.fx-hist-bar{width:10px;border-radius:2px 2px 0 0}.fx-hist-bar.miss{background:#b0301a}.fx-hist-bar.stale{background:#e0a800}.fx-hist-day{font-size:9px;color:#64716d;margin-top:3px;white-space:nowrap}.fx-hist-mail{font-size:9px;color:#0d7a4a;margin-top:2px;line-height:1}.fx-hist-wrap{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}.fx-legend{font-size:12px;color:#64716d;margin-top:6px}.report-link{display:inline-block;margin-top:10px;color:#0d7a4a;font-weight:700;text-decoration:none}.report-link:hover{text-decoration:underline}@media(max-width:700px){.form{grid-template-columns:1fr 1fr}}</style></head><body><main class="wrap"><div class="top"><div><div class="brand">N<span>∿</span>XUS Admin</div><p>Döviz kuru tablosu — EUR/TRY/USD dönüşümleri buradan beslenir</p></div><div style="text-align:right"><a class="back" href="/nexustraveltech/admin/">← Panele dön</a><br><a class="report-link" href="/nexustraveltech/admin/fx-rapor.php">📊 Aylık dönüşüm raporu →</a></div></div>
-<?php if ($message): ?><p class="notice"><?=htmlspecialchars($message)?></p><?php endif; ?>
-<?php if ($error): ?><p class="error"><?=htmlspecialchars($error)?></p><?php endif; ?>
-<section class="card"><h2 style="margin:0 0 12px;font-size:18px">Manuel kur ekle</h2>
-<form method="post" class="form"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="save">
-<input name="base_currency" placeholder="EUR" maxlength="3" required><input name="quote_currency" placeholder="TRY" maxlength="3" required><input name="rate" type="number" step="0.000001" min="0.000001" placeholder="Kur" required><input name="rate_date" type="date" value="<?=date('Y-m-d')?>" required>
-<button style="grid-column:1/-1">Kur kaydet</button></form>
-</section>
-<section class="card"><h2 style="margin:0 0 6px;font-size:18px">TCMB bugünkü kuru</h2><p style="color:#64716d;margin:0 0 12px;font-size:13px">USD / EUR / GBP / CHF ↔ TRY pariteleri resmî TCMB XML'inden çekilir. <b>Eksik çiftleri doldur</b>, günlük denetimin bildirdiği (aktif planlar + görülen gelen birimler arasındaki) eksik çiftleri TCMB kuru üzerinden çapraz hesaplayıp otomatik ekler.</p>
-<form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="tcmb"><button class="btn-tcmb" type="submit">TCMB bugünkü kurları çek</button></form>
-<form method="post" style="display:inline;margin-left:8px"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="fill_missing"><button class="btn-fill" type="submit">⚡ Eksik çiftleri TCMB'den doldur</button></form>
-<?php if ($tcmbOk !== null): ?><span class="tcmb-status tcmb-ok">✅ Son başarılı çekme: <?=htmlspecialchars(date('d.m.Y H:i', strtotime((string) $tcmbOk)))?> · kaynak: TCMB<?= $tcmbLastDate ? ' (kur tarihi ' . htmlspecialchars((string) $tcmbLastDate) . ')' : '' ?></span><?php endif; ?>
-<?php if ($tcmbBad): ?><span class="tcmb-status tcmb-err">⚠ Son çekme başarısız (<?=htmlspecialchars(date('d.m.Y H:i', strtotime((string) $tcmbFail)))?>): <?=htmlspecialchars($tcmbErr !== '' ? $tcmbErr : 'bilinmeyen hata')?></span><?php endif; ?>
-<?php if ($tcmbOk === null && $tcmbFail === null): ?><span class="tcmb-status" style="color:#64716d">Henüz TCMB çekmesi yapılmadı — ilk çekme sonrası burada durum görünür.</span><?php endif; ?>
-</section>
-<section class="card"><h2 style="margin:0 0 6px;font-size:18px">📋 Son denetim bulguları <span style="font-size:12px;color:#64716d;font-weight:400">(fx_missing_audit)</span></h2>
-<?php if ($lastAudit): ?><p style="color:#64716d;margin:0 0 10px;font-size:13px">Günlük görevin en son çalıştırma sonucu: <b><?=htmlspecialchars((string) $lastAudit['audit_date'])?></b> — <?=(int) $lastAudit['missing_count']?> eksik · <?=(int) $lastAudit['stale_count']?> bayat. Eksik çiftlerde fiyat satırı yazılmaz; çoğu <b>⚡ Eksik çiftleri TCMB'den doldur</b> ile tek tıkla eklenir.</p>
-<?php if (!$lastAuditMissing && !$lastAuditStale): ?><p style="color:#0d7a4a;font-weight:700;margin:0">✓ Son denetim temiz — bekleyen eksik/bayat çift yok.</p>
-<?php else: ?><div style="display:grid;gap:6px;margin-top:8px">
-<?php foreach ($lastAuditMissing as $pk => $pv): $reason = is_array($pv) ? 'kanıt · ' . (int) ($pv['count'] ?? 0) . ' başarısız işlem (' . date('d.m H:i', (int) ($pv['first'] ?? time())) . ' → ' . date('d.m H:i', (int) ($pv['last'] ?? time())) . ')' : 'önleyici · ' . (string) $pv; $peMail = $pairEmail[$pk] ?? null; ?>
-<div style="display:flex;gap:8px;align-items:baseline;font-size:13px"><span style="color:#b0301a">●</span><b><?=htmlspecialchars((string) $pk)?></b><span style="color:#64716d"><?=htmlspecialchars($reason)?></span><span style="color:#b0301a;font-size:12px">eksik</span><?php if ($peMail): ?><a href="?view_fx_email=<?=(int)$peMail?>" title="Bu çifti içeren son fx_missing_audit e-postasını gör" style="color:#0d7a4a;text-decoration:none;font-size:12px">📧 e-posta</a><?php endif; ?></div>
-<?php endforeach; ?>
-<?php foreach ($lastAuditStale as $pk => $pv): $peMailS = $pairEmail[$pk] ?? null; ?>
-<div style="display:flex;gap:8px;align-items:baseline;font-size:13px;flex-wrap:wrap"><span style="color:#e0a800">●</span><b><?=htmlspecialchars((string) $pk)?></b><span style="color:#64716d"><?=htmlspecialchars((string) $pv)?></span><span style="color:#8a6d00;font-size:12px">bayat</span><?php if ($peMailS): ?><a href="?view_fx_email=<?=(int)$peMailS?>" title="Bu çifti içeren son fx_missing_audit e-postasını gör" style="color:#0d7a4a;text-decoration:none;font-size:12px">📧 e-posta</a><?php endif; ?><form method="post" style="display:inline;margin:0"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="refresh_pair"><input type="hidden" name="pair" value="<?=htmlspecialchars((string) $pk)?>"><button type="submit" style="border:1px solid #d8ded8;background:#fff;border-radius:4px;padding:1px 8px;font-size:11px;cursor:pointer;color:#0d7a4a" title="Bu çiftin kurunu TCMB bugünkü kurundan güncelle ve denetimi yeniden çalıştır">↻ Yenile</button></form></div>
-<?php endforeach; ?>
-</div><?php endif; ?>
-<?php if ($viewFxEmail): ?><div id="fx-email-view" style="margin-top:14px;border:1px dashed #b7c4bd;border-radius:8px;padding:12px 14px;background:#fbfdfa"><p style="margin:0 0 6px;font-size:12px;color:#64716d">📧 E-posta #<?=(int)$viewFxEmail['id']?> — <b><?=htmlspecialchars((string)$viewFxEmail['subject'])?></b> (<?=htmlspecialchars(date('d.m.Y H:i', strtotime((string)$viewFxEmail['created_at'])))?>) · <a href="?" style="color:#0d7a4a">kapat ✕</a></p><div style="max-height:340px;overflow:auto;border:1px solid #e1e5de;border-radius:6px;background:#fff;padding:10px"><?=$viewFxEmail['body_html']?></div></div><?php endif; ?>
-<?php elseif ($lastAuditEmail): ?><p style="color:#64716d;margin:0;font-size:13px">Denetim henüz fx_audit_daily'ye yazmadı (görev 055 sonrası ilk kez çalışmadı). En son e-posta bulgusu: <b><?=htmlspecialchars((string) $lastAuditEmail['subject'])?></b> (<?=htmlspecialchars(date('d.m.Y H:i', strtotime((string) $lastAuditEmail['created_at'])))?>).</p>
-<?php else: ?><p style="color:#64716d;margin:0;font-size:13px">Henüz denetim bulgusu yok — günlük görev (nexus-fx-missing-audit) ilk çalıştığında burada görünür.</p><?php endif; ?>
-</section>
-<section class="card"><h2 style="margin:0 0 6px;font-size:18px">Hızlı giriş — EUR / USD / GBP → TRY</h2><p style="color:#64716d;margin:0 0 12px;font-size:13px">TCMB dışında günlük kurları elle girmek için opsiyonel satırlar; her satır <b>TRY → ters kuru</b> da otomatik yazar (çapraz kur hesaplarında kullanılır). Boş bırakılan satır kaydedilmez. <b>Kutular son kaydedilen değerlerle önceden doludur</b> — bugünün kuru aynıysa olduğu gibi "Hızlı kurları kaydet" ile güncelleyebilirsiniz.</p>
-<form method="post" class="quick"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="quick"><input type="hidden" name="rate_date" value="<?=date('Y-m-d')?>">
-<div class="quick-row"><label>EUR → TRY</label><input name="quick_eur" type="number" step="0.000001" min="0.000001" placeholder="Örn. 38.50" value="<?=htmlspecialchars($quickPrefill['EUR'] ?? '')?>"></div>
-<div class="quick-row"><label>USD → TRY</label><input name="quick_usd" type="number" step="0.000001" min="0.000001" placeholder="Örn. 33.20" value="<?=htmlspecialchars($quickPrefill['USD'] ?? '')?>"></div>
-<div class="quick-row"><label>GBP → TRY</label><input name="quick_gbp" type="number" step="0.000001" min="0.000001" placeholder="Örn. 42.80" value="<?=htmlspecialchars($quickPrefill['GBP'] ?? '')?>"></div>
-<button>Hızlı kurları kaydet</button></form>
-</section>
-<section class="card"><h2 style="margin:0;font-size:18px">Güncel kurlar (<?=htmlspecialchars((string) ($latest[0]['rate_date'] ?? date('Y-m-d')))?>)</h2>
-<table><tr><th>Çift</th><th>Kur</th><th>Kaynak</th></tr><?php foreach ($latest as $l): ?><tr><td><?=htmlspecialchars($l['base_currency'])?> → <?=htmlspecialchars($l['quote_currency'])?></td><td><?=htmlspecialchars(rtrim(rtrim(number_format((float) $l['rate'], 6, '.', ''), '0'), '.'))?></td><td><?=htmlspecialchars($l['source'])?></td></tr><?php endforeach; ?></table></section>
-<section class="card"><h2 style="margin:0;font-size:18px">Denetim geçmişi — günlük eksik/bayat kur</h2><p style="color:#64716d;margin:4px 0 0;font-size:13px">cron/audit-fx-missing.php her gün çalıştığında sonucu fx_audit_daily'ye yazar (temiz günler dahil). Kırmızı = eksik çift, kehribar = 7+ gün eski kur. Çubuğa gelince o günün detayını görürsünüz. ✉ = o gün uyarı e-postası gönderildi (0/0 günlerde e-posta gitmez — betik erken döner).</p>
-<?php if ($history): ?><div class="fx-hist"><?php foreach (array_reverse($history) as $h): $hEmailSent = isset($histEmailDays[(string) $h['audit_date']]); ?><div class="fx-hist-col" title="<?=htmlspecialchars((string) $h['audit_date'])?>: <?=(int) $h['missing_count']?> eksik · <?=(int) $h['stale_count']?> bayat<?= $hEmailSent ? ' · ✉ e-posta gönderildi' : ' · e-posta yok (temiz gün)' ?>"><div class="fx-hist-wrap"><?php if ((int) $h['missing_count'] > 0): ?><div class="fx-hist-bar miss" style="height:<?=max(3, (int) round(((int) $h['missing_count'] / $histMax) * 60))?>px"></div><?php endif; ?><?php if ((int) $h['stale_count'] > 0): ?><div class="fx-hist-bar stale" style="height:<?=max(3, (int) round(((int) $h['stale_count'] / $histMax) * 60))?>px"></div><?php endif; ?><?php if ((int) $h['missing_count'] === 0 && (int) $h['stale_count'] === 0): ?><div class="fx-hist-bar miss" style="height:2px;background:#d8ded8"></div><?php endif; ?></div><?php if ($hEmailSent): ?><span class="fx-hist-mail" title="Bu gün uyarı e-postası kuyruğa alındı">✉</span><?php endif; ?><span class="fx-hist-day"><?=htmlspecialchars(substr((string) $h['audit_date'], 8, 2))?>.<?=htmlspecialchars(substr((string) $h['audit_date'], 5, 2))?></span></div><?php endforeach; ?></div>
-<div class="fx-legend">■ eksik · ■ bayat · 0/0 günler gri nokta · ✉ e-posta gönderildi</div>
-<table><tr><th>Tarih</th><th>Eksik</th><th>Bayat</th><th>E-posta</th><th>Detay</th></tr><?php foreach ($history as $h): $det = json_decode((string) ($h['details'] ?? '{}'), true); $det = is_array($det) ? $det : []; $hEmailSent = isset($histEmailDays[(string) $h['audit_date']]); ?><tr><td><?=htmlspecialchars((string) $h['audit_date'])?></td><td><?=(int) $h['missing_count']?></td><td><?=(int) $h['stale_count']?></td><td><?= $hEmailSent ? '<span style="color:#0d7a4a;font-weight:700" title="fx_missing_audit e-postası kuyruğa alındı">✉ gönderildi</span>' : '<span style="color:#9aa7a3" title="Bu gün uyarı e-postası gitmedi (temiz gün veya görev çalışmadı)">—</span>' ?></td><td style="font-size:12px;color:#64716d"><?php $items = array_merge(array_keys((array) ($det['missing'] ?? [])), array_map(fn($k) => $k . ' (bayat)', array_keys((array) ($det['stale'] ?? [])))); echo $items ? htmlspecialchars(implode(', ', $items)) : 'temiz'; ?></td></tr><?php endforeach; ?></table>
-<?php else: ?><p style="color:#64716d">Henüz denetim kaydı yok — günlük görev ilk çalıştığında burada görünür.</p><?php endif; ?></section>
-<section class="card"><h2 style="margin:0;font-size:18px">Son kayıtlar</h2>
-<table><tr><th>Tarih</th><th>Çift</th><th>Kur</th><th>Kaynak</th></tr><?php foreach ($recent as $l): ?><tr><td><?=htmlspecialchars((string) $l['rate_date'])?></td><td><?=htmlspecialchars($l['base_currency'])?> → <?=htmlspecialchars($l['quote_currency'])?></td><td><?=htmlspecialchars((string) $l['rate'])?></td><td><?=htmlspecialchars($l['source'])?></td></tr><?php endforeach; ?></table></section>
-</main><?php require_once __DIR__ . '/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); ?></body></html>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Döviz Kuru ve Çapraz Kur Yönetimi', 'kur-yonetimi');
+?>
+
+<?php if ($message): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+<!-- TCMB ve Aksiyon Kartı -->
+<div class="sui-card" style="margin-bottom:24px">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">🏦 TCMB Canlı Döviz Kurları</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                USD / EUR / GBP / CHF ↔ TRY pariteleri resmî TCMB XML servisinden çekilir.
+            </p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <form method="post" style="margin:0">
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                <input type="hidden" name="action" value="tcmb">
+                <button class="sui-btn sui-btn-success sui-btn-sm" type="submit">🔄 TCMB Kurlarını Çek</button>
+            </form>
+            <form method="post" style="margin:0">
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                <input type="hidden" name="action" value="fill_missing">
+                <button class="sui-btn sui-btn-primary sui-btn-sm" type="submit">⚡ Eksik Çiftleri TCMB'den Doldur</button>
+            </form>
+        </div>
+    </div>
+    
+    <?php if ($tcmbOk !== null): ?>
+        <p style="font-size:12px;color:var(--sui-success);margin:0">
+            ✓ Son başarılı çekme: <b><?= htmlspecialchars(date('d.m.Y H:i', strtotime((string) $tcmbOk))) ?></b>
+            <?= $tcmbLastDate ? ' (Kur Tarihi: ' . htmlspecialchars((string) $tcmbLastDate) . ')' : '' ?>
+        </p>
+    <?php endif; ?>
+    <?php if ($tcmbBad): ?>
+        <p style="font-size:12px;color:var(--sui-danger);margin:4px 0 0 0">
+            ⚠ Son çekme başarısız (<?= htmlspecialchars(date('d.m.Y H:i', strtotime((string) $tcmbFail))) ?>): <?= htmlspecialchars($tcmbErr ?: 'bilinmeyen hata') ?>
+        </p>
+    <?php endif; ?>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:20px;margin-bottom:24px">
+    <!-- Manuel Kur Girişi -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">➕ Manuel Kur Ekle</h2>
+        </div>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+            <input type="hidden" name="action" value="save">
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Kaynak (Base)</label>
+                    <input name="base_currency" class="sui-input" placeholder="EUR" maxlength="3" required>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Hedef (Quote)</label>
+                    <input name="quote_currency" class="sui-input" placeholder="TRY" maxlength="3" required>
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Kur Değeri</label>
+                    <input name="rate" type="number" step="0.000001" min="0.000001" class="sui-input" placeholder="38.500000" required>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Kur Tarihi</label>
+                    <input name="rate_date" type="date" value="<?= date('Y-m-d') ?>" class="sui-input" required>
+                </div>
+            </div>
+
+            <button class="sui-btn sui-btn-primary" style="width:100%">Kuru Kaydet</button>
+        </form>
+    </div>
+
+    <!-- Hızlı Giriş -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">⚡ Hızlı Kur Girişi (TRY)</h2>
+        </div>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+            <input type="hidden" name="action" value="quick">
+            <input type="hidden" name="rate_date" value="<?= date('Y-m-d') ?>">
+
+            <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;margin-bottom:14px">
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">EUR → TRY</label>
+                    <input name="quick_eur" type="number" step="0.000001" min="0.000001" class="sui-input" placeholder="38.50" value="<?= htmlspecialchars($quickPrefill['EUR'] ?? '') ?>">
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">USD → TRY</label>
+                    <input name="quick_usd" type="number" step="0.000001" min="0.000001" class="sui-input" placeholder="33.20" value="<?= htmlspecialchars($quickPrefill['USD'] ?? '') ?>">
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">GBP → TRY</label>
+                    <input name="quick_gbp" type="number" step="0.000001" min="0.000001" class="sui-input" placeholder="42.80" value="<?= htmlspecialchars($quickPrefill['GBP'] ?? '') ?>">
+                </div>
+            </div>
+
+            <button class="sui-btn sui-btn-outline" style="width:100%">Hızlı Kurları Kaydet</button>
+        </form>
+    </div>
+</div>
+
+<!-- Güncel Kurlar -->
+<div class="sui-card">
+    <div class="sui-card-header">
+        <h2 class="sui-card-title">📈 Güncel Kurlar (<?= htmlspecialchars((string) ($latest[0]['rate_date'] ?? date('Y-m-d'))) ?>)</h2>
+        <a href="fx-rapor.php" class="sui-btn sui-btn-outline sui-btn-sm">📊 Aylık Dönüşüm Raporu →</a>
+    </div>
+
+    <div style="overflow-x:auto">
+        <table class="sui-table">
+            <thead>
+                <tr>
+                    <th>Döviz Çifti</th>
+                    <th>Kur Değeri</th>
+                    <th>Kaynak</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($latest as $l): ?>
+                    <tr>
+                        <td><b><?= htmlspecialchars($l['base_currency']) ?> → <?= htmlspecialchars($l['quote_currency']) ?></b></td>
+                        <td style="font-size:14px;font-weight:700"><?= htmlspecialchars(rtrim(rtrim(number_format((float) $l['rate'], 6, '.', ''), '0'), '.')) ?></td>
+                        <td><span class="sui-badge <?= $l['source'] === 'tcmb' ? 'sui-badge-info' : 'sui-badge-warning' ?>"><?= htmlspecialchars($l['source']) ?></span></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

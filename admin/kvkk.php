@@ -78,33 +78,90 @@ if ($guestId > 0) {
 }
 if (empty($_SESSION['admin_csrf'])) $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
 ?>
-<!doctype html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KVKK veri aracı | NEXUS Admin</title>
-  <style>
-    body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(960px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}input,button{padding:9px;font:inherit;border:1px solid #d8ded8}.ok{background:#e6f8c7;padding:9px}.er{background:#ffe2de;padding:9px}button{background:#10211f;color:#fff;border:0;cursor:pointer;margin-top:8px}button.warn{background:#8e2410}
-  </style>
-</head>
-<body>
-<main class="w"><a href="/nexustraveltech/admin/">← Panel</a><h1>KVKK veri aracı</h1>
-<p class="muted">Misafir başına veri dışa aktarma (taşınabilirlik) ve anonimleştirme (silme). Anonimleştirme kalıcıdır; rezervasyon kayıtları yasal saklama süresi nedeniyle tutulur.</p>
-<?php if ($msg): ?><p class="ok"><?= htmlspecialchars($msg) ?></p><?php endif; ?>
-<?php if ($err): ?><p class="er"><?= htmlspecialchars($err) ?></p><?php endif; ?>
-<section class="c"><h2>Misafir ara</h2>
-<form method="get"><input name="q" value="<?= htmlspecialchars($q) ?>" placeholder="E-posta, telefon veya ad soyad" style="width:320px" required><button>Ara</button></form>
-<?php if ($q !== ''): ?><h3><?= count($matches) ?> sonuç</h3>
-<?php foreach ($matches as $g): ?><p><a href="kvkk.php?guest=<?= (int) $g['id'] ?>"><b><?= htmlspecialchars((string) $g['first_name'] . ' ' . (string) $g['last_name']) ?></b></a> · <?= htmlspecialchars((string) ($g['email'] ?? '')) ?> · <?= htmlspecialchars((string) ($g['phone'] ?? '')) ?> · tedarikçi: <?= htmlspecialchars((string) ($g['supplier_name'] ?? '—')) ?></p><?php endforeach; ?>
-<?php endif; ?></section>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('KVKK & Veri Gizliliği Yönetimi', 'kvkk');
+?>
+
+<?php if ($msg): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($msg) ?></div><?php endif; ?>
+<?php if ($err): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
+
+<div class="sui-card" style="margin-bottom:24px">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">🔍 KVKK Misafir Verisi Sorgulama</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                Misafir başına veri dışa aktarma (taşınabilirlik) ve unutulma hakkı (anonimleştirme) işlemleri.
+            </p>
+        </div>
+    </div>
+    <form method="get" style="display:flex;gap:8px;max-width:500px">
+        <input name="q" value="<?= htmlspecialchars($q) ?>" class="sui-input" placeholder="E-posta, telefon veya ad soyad..." required>
+        <button class="sui-btn sui-btn-primary">Ara</button>
+    </form>
+
+    <?php if ($q !== ''): ?>
+        <div style="margin-top:20px;border-top:1px solid var(--sui-border);padding-top:16px">
+            <h3 style="font-size:14px;margin:0 0 12px 0;color:var(--sui-text)"><?= count($matches) ?> Arama Sonucu</h3>
+            <div style="display:grid;gap:8px">
+                <?php foreach ($matches as $g): ?>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--sui-bg);border-radius:6px">
+                        <div>
+                            <b><?= htmlspecialchars((string) $g['first_name'] . ' ' . (string) $g['last_name']) ?></b>
+                            <span style="font-size:12px;color:var(--sui-muted);margin-left:8px">
+                                <?= htmlspecialchars((string) ($g['email'] ?? '—')) ?> · <?= htmlspecialchars((string) ($g['phone'] ?? '—')) ?>
+                            </span>
+                            <span style="font-size:11px;color:var(--sui-primary);margin-left:8px">
+                                [<?= htmlspecialchars((string) ($g['supplier_name'] ?? 'Genel')) ?>]
+                            </span>
+                        </div>
+                        <a href="kvkk?guest=<?= (int) $g['id'] ?>&q=<?= urlencode($q) ?>" class="sui-btn sui-btn-outline sui-btn-sm">
+                            İncele / İşlem Yap →
+                        </a>
+                    </div>
+                <?php endforeach; ?>
+                <?php if (!$matches): ?>
+                    <div style="color:var(--sui-muted);font-size:13px">Eşleşen misafir kaydı bulunamadı.</div>
+                <?php endif; ?>
+            </div>
+        </div>
+    <?php endif; ?>
+</div>
+
 <?php if ($detail): ?>
-<section class="c"><h2>Misafir #<?= (int) $detail['id'] ?> — <?= htmlspecialchars((string) $detail['first_name'] . ' ' . (string) $detail['last_name']) ?></h2>
-<p class="muted">E-posta: <?= htmlspecialchars((string) ($detail['email'] ?? '—')) ?> · telefon: <?= htmlspecialchars((string) ($detail['phone'] ?? '—')) ?> · kimlik: <?= htmlspecialchars((string) ($detail['identity_number'] ?? '—')) ?> · pazarlama izni: <?= $detail['marketing_consent'] ? 'var' : 'yok' ?></p>
-<form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="export"><input type="hidden" name="guest_id" value="<?= (int) $detail['id'] ?>"><button>JSON dışa aktar (KVKK taşınabilirlik)</button></form>
-<form method="post" style="display:inline" onsubmit="return confirm('Bu işlem kalıcıdır: kimlik alanları silinir. Devam edilsin mi?')"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="anonymize"><input type="hidden" name="guest_id" value="<?= (int) $detail['id'] ?>"><button class="warn">Anonimleştir (KVKK silme)</button></form>
-</section>
+    <div class="sui-card" style="border-left:4px solid var(--sui-primary)">
+        <div class="sui-card-header">
+            <div>
+                <h2 class="sui-card-title">👤 Misafir Profil #<?= (int) $detail['id'] ?> — <?= htmlspecialchars((string) $detail['first_name'] . ' ' . (string) $detail['last_name']) ?></h2>
+                <div style="font-size:12px;color:var(--sui-muted);margin-top:4px">
+                    E-posta: <b><?= htmlspecialchars((string) ($detail['email'] ?? '—')) ?></b> · 
+                    Telefon: <b><?= htmlspecialchars((string) ($detail['phone'] ?? '—')) ?></b> · 
+                    TC/Pasaport: <b><?= htmlspecialchars((string) ($detail['identity_number'] ?? '—')) ?></b> · 
+                    Pazarlama İzni: <span class="sui-badge <?= $detail['marketing_consent'] ? 'sui-badge-success' : 'sui-badge-warning' ?>"><?= $detail['marketing_consent'] ? 'Mevcut' : 'Yok' ?></span>
+                </div>
+            </div>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+            <form method="post" style="margin:0">
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                <input type="hidden" name="action" value="export">
+                <input type="hidden" name="guest_id" value="<?= (int) $detail['id'] ?>">
+                <button class="sui-btn sui-btn-primary">📥 JSON Dışa Aktar (KVKK Taşınabilirlik)</button>
+            </form>
+            <form method="post" style="margin:0" onsubmit="return confirm('Bu işlem GERİ ALINAMAZ: Tüm kişisel kimlik ve iletişim bilgileri maskelenecektir. Devam edilsin mi?');">
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                <input type="hidden" name="action" value="anonymize">
+                <input type="hidden" name="guest_id" value="<?= (int) $detail['id'] ?>">
+                <button class="sui-btn sui-btn-danger">🛡️ Anonimleştir (Unutulma Hakkı)</button>
+            </form>
+        </div>
+    </div>
 <?php endif; ?>
-</main>
-<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
-</html>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

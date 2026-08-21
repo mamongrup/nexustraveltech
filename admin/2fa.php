@@ -70,58 +70,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
+<?php
+require_once __DIR__ . '/layout.php';
+
+if ($pending) {
+?>
 <!doctype html>
 <html lang="tr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>İki adımlı doğrulama | NEXUS Admin</title>
-  <style>
-    body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(520px,calc(100% - 32px));margin:45px auto}.c{background:#fff;border:1px solid #ddd;padding:22px;margin-top:16px}input,button{padding:10px;font:inherit;border:1px solid #d8ded8}.er{color:#8e2410;background:#ffe2de;padding:9px}.ok{background:#e6f8c7;padding:9px}button{background:#10211f;color:#fff;border:0;cursor:pointer;margin-top:10px}
-  </style>
+  <title>2FA Giriş Doğrulama | NEXUS Admin</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/nexustraveltech/assets/admin-softui.css">
 </head>
-<body>
-<main class="w"><a href="/nexustraveltech/admin/">← Panel</a><h1>İki adımlı doğrulama</h1>
-<?php if ($message): ?><p class="ok"><?= htmlspecialchars($message) ?></p><?php endif; ?>
-<?php if ($error): ?><p class="er"><?= htmlspecialchars($error) ?></p><?php endif; ?>
+<body class="sui" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--sui-bg)">
+  <div class="sui-card" style="width:min(420px, 92%);text-align:center;padding:32px">
+    <div style="font-size:36px;margin-bottom:12px">🔐</div>
+    <h2 style="margin:0 0 8px 0;font-size:20px">İki Adımlı Doğrulama</h2>
+    <p style="color:var(--sui-muted);font-size:13px;margin:0 0 20px 0">Kimlik doğrulama uygulamanızdaki 6 haneli güvenlik kodunu girin.</p>
+    
+    <?php if ($error): ?><div class="sui-alert sui-alert-danger" style="text-align:left"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
-<?php if ($pending): ?>
-<section class="c">
-  <h2>Doğrulama kodu</h2>
-  <p>Kimlik doğrulama uygulamanızdaki 6 haneli kodu girin.</p>
-  <form method="post">
-    <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" required>
-    <br><button>Doğrula</button>
-  </form>
-</section>
-<?php else: ?>
-<?php $enabled = (bool) ($row['enabled'] ?? false); ?>
-<section class="c">
-  <?php if ($enabled): ?>
-    <h2>Durum: AÇIK</h2>
-    <p>Admin girişleri doğrulama kodu gerektiriyor.</p>
-    <form method="post"><input type="hidden" name="action" value="disable"><button style="background:#8e2410">Kapat</button></form>
-  <?php else: ?>
-    <h2>Kurulum</h2>
-    <?php if (!$row || $row['secret'] === ''): ?>
-      <form method="post"><input type="hidden" name="action" value="new_secret"><button>Gizli anahtar oluştur</button></form>
-    <?php else: ?>
-      <?php $otpauth = totp_otpauth_url('NEXUS Admin', (string) $row['secret'], 'NEXUS'); ?>
-      <p>1. Google Authenticator / Authy ile QR'ı okutun veya anahtarı elle girin.</p>
-      <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=<?= rawurlencode($otpauth) ?>" alt="QR">
-      <p><code><?= htmlspecialchars((string) $row['secret']) ?></code></p>
-      <form method="post">
-        <input type="hidden" name="action" value="new_secret"><button style="background:#a86026">Yeni anahtar üret</button>
-      </form>
-      <form method="post">
-        <input type="hidden" name="action" value="enable">
-        <input name="code" inputmode="numeric" maxlength="6" placeholder="Uygulamadaki 6 haneli kod" required>
-        <br><button>Kodu doğrula &amp; etkinleştir</button>
-      </form>
-    <?php endif; ?>
-  <?php endif; ?>
-</section>
-<?php endif; ?>
-</main>
-<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
+    <form method="post">
+      <input name="code" class="sui-input" style="font-size:22px;letter-spacing:6px;text-align:center;font-weight:700;margin-bottom:16px" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" autofocus required>
+      <button class="sui-btn sui-btn-primary" style="width:100%">Girişi Doğrula</button>
+    </form>
+  </div>
+</body>
 </html>
+<?php
+exit;
+}
+
+admin_layout_start('İki Adımlı Doğrulama (2FA / MFA)', '2fa');
+?>
+
+<?php if ($message): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+<?php $enabled = (bool) ($row['enabled'] ?? false); ?>
+
+<div class="sui-card" style="max-width:650px">
+    <div class="sui-card-header">
+        <h2 class="sui-card-title">🔐 İki Adımlı Doğrulama (TOTP)</h2>
+        <span class="sui-badge <?= $enabled ? 'sui-badge-success' : 'sui-badge-warning' ?>">
+            <?= $enabled ? 'Aktif' : 'Devre Dışı' ?>
+        </span>
+    </div>
+
+    <?php if ($enabled): ?>
+        <p style="color:var(--sui-muted);font-size:14px;line-height:1.6">
+            Admin paneli girişleriniz iki adımlı doğrulama ile güvence altındadır. Giriş yaparken Authenticator uygulamanızdaki tek kullanımlık 6 haneli kod istenecektir.
+        </p>
+        <form method="post" style="margin-top:20px">
+            <input type="hidden" name="action" value="disable">
+            <button class="sui-btn sui-btn-danger">2FA'yı Devre Dışı Bırak</button>
+        </form>
+    <?php else: ?>
+        <p style="color:var(--sui-muted);font-size:14px">
+            Hesabınızı daha güvenli hale getirmek için Google Authenticator, Microsoft Authenticator veya 1Password uygulamasıyla 2FA kurabilirsiniz.
+        </p>
+        <?php if (!$row || $row['secret'] === ''): ?>
+            <form method="post" style="margin-top:16px">
+                <input type="hidden" name="action" value="new_secret">
+                <button class="sui-btn sui-btn-primary">Gizli Anahtar & QR Kod Oluştur</button>
+            </form>
+        <?php else: ?>
+            <?php $otpauth = totp_otpauth_url('NEXUS Admin', (string) $row['secret'], 'NEXUS'); ?>
+            <div style="background:var(--sui-bg);border-radius:var(--sui-radius-sm);padding:20px;margin:16px 0;text-align:center">
+                <p style="font-weight:600;margin-top:0">1. QR Kodu Uygulamanızla Tarayın</p>
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=<?= rawurlencode($otpauth) ?>" alt="QR" style="border-radius:8px;border:1px solid var(--sui-border);padding:8px;background:#fff">
+                <p style="margin:12px 0 0 0;font-size:12px;color:var(--sui-muted)">Manuel Anahtar: <code><?= htmlspecialchars((string) $row['secret']) ?></code></p>
+            </div>
+            
+            <form method="post" style="margin-top:16px">
+                <input type="hidden" name="action" value="enable">
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px">2. Uygulamada Oluşan 6 Haneli Kodu Girin:</label>
+                <div style="display:flex;gap:8px">
+                    <input name="code" class="sui-input" style="max-width:200px;font-size:18px;letter-spacing:3px" inputmode="numeric" maxlength="6" placeholder="123456" required>
+                    <button class="sui-btn sui-btn-success">Doğrula & Etkinleştir</button>
+                </div>
+            </form>
+            <form method="post" style="margin-top:12px">
+                <input type="hidden" name="action" value="new_secret">
+                <button class="sui-btn sui-btn-outline sui-btn-sm">Farklı Anahtar Üret</button>
+            </form>
+        <?php endif; ?>
+    <?php endif; ?>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

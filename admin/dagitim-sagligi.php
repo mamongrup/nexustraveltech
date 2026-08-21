@@ -105,14 +105,73 @@ if (($_GET['download'] ?? '') !== '') {
 }
 
 $typeLabel = fn($t) => ['hotel' => 'Otel', 'villa' => 'Villa', 'yacht' => 'Yat'][$t] ?? $t;
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Dağıtım Sağlığı İzleme', 'dagitim-sagligi');
 ?>
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dağıtım sağlığı | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1100px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.muted{color:#64716d}.back{color:#10211f}.card{background:#fff;border:1px solid #e1e5de;padding:24px;margin-top:24px}.actions{display:flex;gap:10px;margin-top:14px}.actions a{border:1px solid #d8ded8;background:#fff;padding:9px 14px;color:#10211f;text-decoration:none;font-weight:700}table{width:100%;border-collapse:collapse;margin-top:12px}th{text-align:left;padding:8px 12px;background:#f2f4ef;font-size:11px;text-transform:uppercase;color:#64716d;border-bottom:1px solid #e1e5de}td{padding:8px 12px;border-bottom:1px solid #eef0ea;font-size:13px}td small{color:#64716d}.chip{background:#eef1ea;border-radius:4px;padding:2px 7px;font-size:11px}.red{color:#b0301a;font-weight:700}.yellow{color:#8a6100;font-weight:700}.green{color:#0d7a4a;font-weight:700}.okbox{background:#e6f8c7;padding:10px;border-radius:5px}</style></head><body><main class="wrap"><div class="top"><div><div class="brand">N<span>∿</span>XUS Admin</div><p class="muted">Dağıtım sağlığı — iCal (villa/yat) + kanal (otel) senkron sorunları</p></div><a class="back" href="/nexustraveltech/admin/">← Panele dön</a></div>
-<section class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2 style="margin:0">Sorunlu dağıtım kayıtları <small style="color:#6b7774;font-weight:normal">(<?= count($problems) ?>)</small></h2><div class="actions" style="margin:0"><a href="?download=pdf">PDF indir</a><a href="?download=csv">CSV indir</a></div></div>
-<p class="muted">Kırmızı: pasif bağlantı / 30+ gün eski senkron / hiç senkron yok. Sarı: 7–30 gün eski senkron. Bu tablo haftalık özet e-postasıyla aynı veriyi kullanır.</p>
-<?php if (!$problems): ?><p class="okbox">✓ Sorunlu dağıtım kaydı yok — tüm bağlantılar güncel.</p><?php else: ?>
-<table><tr><th>İlan / Tedarikçi</th><th>Tip</th><th>Durum</th><th>Son senkron</th></tr>
-<?php foreach ($problems as $p): $lastTxt = $p['age'] !== null ? $p['age'] . ' gün önce' : '—'; $cls = $p['cls'] === '#b0301a' ? 'red' : 'yellow'; ?>
-<tr><td><b><?= htmlspecialchars($p['name']) ?></b><br><small><?= htmlspecialchars($p['company']) ?></small></td><td><span class="chip"><?= htmlspecialchars($p['cat']) ?></span></td><td class="<?= $cls ?>"><?= htmlspecialchars($p['status']) ?></td><td><?= $lastTxt ?></td></tr>
-<?php endforeach; ?>
-</table><?php endif; ?>
-</section></main><?php require_once __DIR__ . '/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); ?></body></html>
+
+<div class="sui-card">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">📈 Dağıtım Sağlığı & Senkronizasyon Durumu (<?= count($problems) ?>)</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                iCal (villa/yat) ve OTA Kanal Bağlantılarındaki (otel) gecikme veya kopuklukları anlık denetler.
+            </p>
+        </div>
+        <div style="display:flex;gap:8px">
+            <a href="?download=pdf" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fas fa-file-pdf"></i> PDF İndir</a>
+            <a href="?download=csv" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fas fa-file-csv"></i> CSV İndir</a>
+        </div>
+    </div>
+
+    <?php if (!$problems): ?>
+        <div class="sui-alert sui-alert-success">
+            ✓ Harika! Dağıtımda sorunlu bir kayıt bulunamadı — tüm kanal ve iCal bağlantıları aktif ve güncel.
+        </div>
+    <?php else: ?>
+        <div style="overflow-x:auto">
+            <table class="sui-table">
+                <thead>
+                    <tr>
+                        <th>Tesis / Tedarikçi</th>
+                        <th>Kanal Türü</th>
+                        <th>Durum</th>
+                        <th>Son Senkronizasyon</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($problems as $p): 
+                        $lastTxt = $p['age'] !== null ? $p['age'] . ' gün önce' : '—'; 
+                        $isRed = $p['cls'] === '#b0301a';
+                    ?>
+                        <tr>
+                            <td>
+                                <b><?= htmlspecialchars($p['name']) ?></b>
+                                <div style="font-size:11px;color:var(--sui-muted)"><?= htmlspecialchars($p['company']) ?></div>
+                            </td>
+                            <td>
+                                <span class="sui-badge <?= $p['cat'] === 'Kanal' ? 'sui-badge-primary' : 'sui-badge-info' ?>">
+                                    <?= htmlspecialchars($p['cat']) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <span class="sui-badge <?= $isRed ? 'sui-badge-danger' : 'sui-badge-warning' ?>">
+                                    <?= htmlspecialchars($p['status']) ?>
+                                </span>
+                            </td>
+                            <td style="font-size:13px;color:var(--sui-muted)">
+                                <?= $lastTxt ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

@@ -11,39 +11,40 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
     
     // Aktif sayfayı belirle
     $currentPage = $activePage ?: basename($_SERVER['SCRIPT_NAME'], '.php');
+    $baseUri = (strpos($_SERVER['REQUEST_URI'] ?? '', '/nexustraveltech') === 0) ? '/nexustraveltech' : '';
     
     // Sidebar menüsü
     $navItems = [
         ['section' => 'Genel'],
-        ['label' => 'Dashboard', 'icon' => '📊', 'href' => '/nexustraveltech/admin/', 'key' => 'index'],
-        ['label' => 'Kontrol Merkezi', 'icon' => '⚙️', 'href' => '/nexustraveltech/admin/kontrol-merkezi', 'key' => 'kontrol-merkezi'],
-        ['label' => 'Uyarı Merkezi', 'icon' => '🔔', 'href' => '/nexustraveltech/admin/uyari-merkezi', 'key' => 'uyari-merkezi'],
+        ['label' => 'Dashboard', 'icon' => '📊', 'href' => $baseUri . '/admin/', 'key' => 'index'],
+        ['label' => 'Kontrol Merkezi', 'icon' => '⚙️', 'href' => $baseUri . '/admin/kontrol-merkezi', 'key' => 'kontrol-merkezi'],
+        ['label' => 'Uyarı Merkezi', 'icon' => '🔔', 'href' => $baseUri . '/admin/uyari-merkezi', 'key' => 'uyari-merkezi'],
         ['section' => 'Yönetim'],
-        ['label' => 'Tedarikçiler', 'icon' => '🏨', 'href' => '/nexustraveltech/admin/tedarikci-ilanlari', 'key' => 'tedarikci-ilanlari'],
-        ['label' => 'Acenteler', 'icon' => '🧳', 'href' => '/nexustraveltech/admin/acenteler', 'key' => 'acenteler'],
-        ['label' => 'İlan Yönetimi', 'icon' => '📋', 'href' => '/nexustraveltech/admin/tedarikci-onaylari', 'key' => 'tedarikci-onaylari'],
+        ['label' => 'Tedarikçiler', 'icon' => '🏨', 'href' => $baseUri . '/admin/tedarikci-ilanlari', 'key' => 'tedarikci-ilanlari'],
+        ['label' => 'Acenteler', 'icon' => '🧳', 'href' => $baseUri . '/admin/acenteler', 'key' => 'acenteler'],
+        ['label' => 'İlan Onayları', 'icon' => '📋', 'href' => $baseUri . '/admin/tedarikci-onaylari', 'key' => 'tedarikci-onaylari'],
         ['section' => 'Dağıtım & Kanal'],
-        ['label' => 'Dağıtım Sağlığı', 'icon' => '📈', 'href' => '/nexustraveltech/admin/dagitim-sagligi', 'key' => 'dagitim-sagligi'],
-        ['label' => 'Hazırlık Özeti', 'icon' => '📊', 'href' => '/nexustraveltech/admin/hazirlik-ozet', 'key' => 'hazirlik-ozet'],
-        ['label' => 'Dağıtım Merkezi', 'icon' => '🔄', 'href' => '/nexustraveltech/admin/orphan-mappings', 'key' => 'orphan-mappings'],
+        ['label' => 'Dağıtım Sağlığı', 'icon' => '📈', 'href' => $baseUri . '/admin/dagitim-sagligi', 'key' => 'dagitim-sagligi'],
+        ['label' => 'Hazırlık Özeti', 'icon' => '📊', 'href' => $baseUri . '/admin/hazirlik-ozet', 'key' => 'hazirlik-ozet'],
+        ['label' => 'Yetim Eşleştirmeler', 'icon' => '🔄', 'href' => $baseUri . '/admin/orphan-mappings', 'key' => 'orphan-mappings'],
         ['section' => 'Ayarlar'],
-        ['label' => 'Ürün Şablonları', 'icon' => '📦', 'href' => '/nexustraveltech/admin/urun-turleri', 'key' => 'urun-turleri'],
-        ['label' => 'Katalog Yönetimi', 'icon' => '📑', 'href' => '/nexustraveltech/admin/ozellik-listeleri', 'key' => 'ozellik-listeleri'],
-        ['label' => 'E-posta Şablonları', 'icon' => '✉️', 'href' => '/nexustraveltech/admin/eposta-sablonlari', 'key' => 'eposta-sablonlari'],
-        ['label' => 'Zamanlayıcılar', 'icon' => '⏱', 'href' => '/nexustraveltech/admin/timerlar', 'key' => 'timerlar'],
+        ['label' => 'Ürün Şablonları', 'icon' => '📦', 'href' => $baseUri . '/admin/urun-turleri', 'key' => 'urun-turleri'],
+        ['label' => 'Katalog Yönetimi', 'icon' => '📑', 'href' => $baseUri . '/admin/ozellik-listeleri', 'key' => 'ozellik-listeleri'],
+        ['label' => 'E-posta Şablonları', 'icon' => '✉️', 'href' => $baseUri . '/admin/eposta-sablonlari', 'key' => 'eposta-sablonlari'],
+        ['label' => 'Zamanlayıcılar', 'icon' => '⏱', 'href' => $baseUri . '/admin/timerlar', 'key' => 'timerlar'],
         ['section' => 'Güvenlik & İzleme'],
-        ['label' => 'Denetim Kayıtları', 'icon' => '📝', 'href' => '/nexustraveltech/admin/denetim-kayitlari', 'key' => 'denetim-kayitlari'],
-        ['label' => 'Hata İzleme', 'icon' => '🐛', 'href' => '/nexustraveltech/admin/hata-izleme', 'key' => 'hata-izleme'],
-        ['label' => '2FA Ayarları', 'icon' => '🔐', 'href' => '/nexustraveltech/admin/2fa', 'key' => '2fa'],
+        ['label' => 'Denetim Kayıtları', 'icon' => '📝', 'href' => $baseUri . '/admin/denetim-kayitlari', 'key' => 'denetim-kayitlari'],
+        ['label' => 'Hata İzleme', 'icon' => '🐛', 'href' => $baseUri . '/admin/hata-izleme', 'key' => 'hata-izleme'],
+        ['label' => '2FA Ayarları', 'icon' => '🔐', 'href' => $baseUri . '/admin/2fa', 'key' => '2fa'],
         ['section' => 'AI & Sohbet'],
-        ['label' => 'DeepSeek AI', 'icon' => '🤖', 'href' => '/nexustraveltech/admin/ai-ayarlari', 'key' => 'ai-ayarlari'],
-        ['label' => 'Gemini AI', 'icon' => '🎨', 'href' => '/nexustraveltech/admin/gemini-ayarlari', 'key' => 'gemini-ayarlari'],
-        ['label' => 'Ziyaretçi Sohbet', 'icon' => '💬', 'href' => '/nexustraveltech/admin/ziyaretci-sohbet', 'key' => 'ziyaretci-sohbet'],
+        ['label' => 'DeepSeek AI', 'icon' => '🤖', 'href' => $baseUri . '/admin/ai-ayarlari', 'key' => 'ai-ayarlari'],
+        ['label' => 'Gemini AI', 'icon' => '🎨', 'href' => $baseUri . '/admin/gemini-ayarlari', 'key' => 'gemini-ayarlari'],
+        ['label' => 'Ziyaretçi Sohbet', 'icon' => '💬', 'href' => $baseUri . '/admin/ziyaretci-sohbet', 'key' => 'ziyaretci-sohbet'],
         ['section' => 'Sistem'],
-        ['label' => 'Migration Durumu', 'icon' => '🗄', 'href' => '/nexustraveltech/admin/migration-durumu', 'key' => 'migration-durumu'],
-        ['label' => 'SMS Yönetimi', 'icon' => '📱', 'href' => '/nexustraveltech/admin/sms-yonetimi', 'key' => 'sms-yonetimi'],
-        ['label' => 'KVKK Veri Aracı', 'icon' => '🗂', 'href' => '/nexustraveltech/admin/kvkk', 'key' => 'kvkk'],
-        ['label' => 'Kullanım Kılavuzu', 'icon' => '📖', 'href' => '/nexustraveltech/admin/kullanim-kilavuzu', 'key' => 'kullanim-kilavuzu'],
+        ['label' => 'Migration Durumu', 'icon' => '🗄', 'href' => $baseUri . '/admin/migration-durumu', 'key' => 'migration-durumu'],
+        ['label' => 'SMS Yönetimi', 'icon' => '📱', 'href' => $baseUri . '/admin/sms-yonetimi', 'key' => 'sms-yonetimi'],
+        ['label' => 'KVKK Veri Aracı', 'icon' => '🗂', 'href' => $baseUri . '/admin/kvkk', 'key' => 'kvkk'],
+        ['label' => 'Kullanım Kılavuzu', 'icon' => '📖', 'href' => $baseUri . '/admin/kullanim-kilavuzu', 'key' => 'kullanim-kilavuzu'],
     ];
 ?>
 <!doctype html>
@@ -53,7 +54,7 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= htmlspecialchars($pageTitle) ?> | NEXUS Admin</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/nexustraveltech/assets/admin-softui.css">
+    <link rel="stylesheet" href="<?= $baseUri ?>/assets/admin-softui.css">
 </head>
 <body class="sui">
 

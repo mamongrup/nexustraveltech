@@ -86,92 +86,119 @@ $tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' .
   <style>
     body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(1080px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}input,button,select{padding:9px;font:inherit;border:1px solid #d8ded8}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #e1e5de;padding:10px;text-align:left;vertical-align:top;font-size:14px}th{font-size:12px;text-transform:uppercase;color:#64716d}.ok{background:#e6f8c7;padding:9px}.er{background:#ffe2de;padding:9px}button{background:#10211f;color:#fff;border:0;cursor:pointer;margin-top:6px}code{background:#f2f4ef;padding:2px 6px;font-size:12px}
   </style>
-</head>
-<body>
-<main class="w"><a href="/nexustraveltech/admin/">← Panel</a><h1>Zamanlayıcılar</h1>
-<p class="muted">Sistem cron'ları yerine panel yönetimli görevler. Tek nabız noktası vadesi gelen görevleri çalıştırır — 8 satır cron yerine <b>1 satır</b> yeterli.</p>
-<?php if ($msg): ?><p class="ok"><?= htmlspecialchars($msg) ?></p><?php endif; ?>
-<?php if ($err): ?><p class="er"><?= htmlspecialchars($err) ?></p><?php endif; ?>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Zamanlayıcılar & Otomatik Görevler', 'timerlar');
+?>
 
-<?php if ($hcJob): ?><section class="c" style="border:2px solid #0d7a4a"><h2>🩺 Sağlık kontrolü</h2><p class="muted">Bekleyen migration'ları uygular, tablo/kolon/ortam/kilit durumunu denetler ve sorunları raporlar. Buton görevi anında çalıştırır; sonuç yukarıda ve görev geçmişinde görünür.</p><form method="post"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="<?= (int) $hcJob['id'] ?>"><button style="padding:10px 20px;background:#0d7a4a;font-size:14px">▶ Sağlık kontrolünü şimdi çalıştır</button> <span class="muted">son çalışma: <?= !empty($hcJob['last_run_at']) ? htmlspecialchars((string) $hcJob['last_run_at']) . ' · <b>' . htmlspecialchars((string) ($hcJob['last_status'] ?? '—')) . '</b>' : '—' ?></span></form><?php if (!empty($hcJob['last_output'])): ?><details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:#0d7a4a">Son çıktıyı göster</summary><pre style="background:#f2f4ef;padding:8px;font-size:12px;white-space:pre-wrap"><?= htmlspecialchars((string) $hcJob['last_output']) ?></pre></details><?php endif; ?></section><?php endif; ?>
+<?php if ($msg): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($msg) ?></div><?php endif; ?>
+<?php if ($err): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
-<section class="c" style="border:1px solid #d8ded8"><h2>🧪 Uyarı e-postası testi</h2><?php $lastTestAt = (string) platform_setting('last_alert_test_at', ''); $lastTestCh = (int) platform_setting('last_alert_test_channels', 0); $lastTestMode = (string) platform_setting('last_alert_test_mode', ''); if ($lastTestAt === ''): ?><p class="muted">Henüz test çalıştırılmadı. Aşağıdaki <code>nexus-admin-alert-test</code> satırında "Şimdi çalıştır" ile kuru test yapın (kanallar hazır mı bakar, e-posta göndermez); gerçek gönderim sunucuda <code>php cron/test-admin-alerts.php --send</code> ile yapılır ve tüm kanallar tek özet e-postada tablo olarak gelir.</p><?php else: ?>  <p class="muted">Son test: <b><?= htmlspecialchars($lastTestAt) ?></b> · <b style="color:#0d7a4a"><?= (int) $lastTestCh ?> kanal ✓</b> · mod: <?= $lastTestMode === 'send' ? 'gerçek gönderim' : 'kuru' ?> · hedef: <?= htmlspecialchars((string) platform_setting('admin_alert_email', '')) ?: 'tanımsız' ?> · kod: <b><?= htmlspecialchars((string) platform_setting('last_alert_test_code', '')) ?: '—' ?></b> · teslim: <?php $delCode = (string) platform_setting('last_alert_test_delivered_code', ''); if ($delCode !== '' && $delCode === (string) platform_setting('last_alert_test_code', '')): ?><b style="color:#0d7a4a">✓ <?= htmlspecialchars((string) platform_setting('last_alert_test_delivered_at', '')) ?></b><?php else: ?><span style="color:#b06a00">bekleniyor</span><?php endif; ?></p>
-  <form method="post" style="margin:10px 0;display:inline-flex;gap:10px;align-items:center;flex-wrap:wrap"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="send_test"><button style="padding:10px 20px;background:#0d7a4a;font-size:14px">📨 Test e-postası gönder — <?= htmlspecialchars((string) platform_setting('admin_alert_email', '')) ?: 'tanımsız' ?></button> <span class="muted">TÜM kanallar tek e-postada → kuyruk işleyicisi 5 dk içinde gönderir</span></form>
-  <?php $verifyJob = null; foreach ($jobs as $vj) if (($vj['code'] ?? '') === 'nexus-alert-test-delivery') { $verifyJob = $vj; break; } ?>
-  <?php if ($verifyJob): ?><form method="post" style="display:inline-flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="<?= (int) $verifyJob['id'] ?>"><button style="padding:10px 20px;background:#a86026;font-size:14px">🔍 Teslimatı şimdi doğrula</button> <span class="muted">Son test kodunu kontrol eder (30 dk penceresi) — son çalışma: <?= $verifyJob['last_run_at'] ? htmlspecialchars((string) $verifyJob['last_run_at']) . ' · <b>' . htmlspecialchars((string) ($verifyJob['last_status'] ?? '—')) . '</b>' : '—' ?></span></form><?php endif; ?>
-  <?php $alertHist = platform_setting('alert_test_history', []); if (!is_array($alertHist)) $alertHist = []; if ($alertHist): ?>
-  <div style="margin-top:14px;border-top:1px solid #e1e5de;padding-top:12px">
-    <h3 style="margin:0 0 8px;font-size:13px;color:#374957">📬 Son test koşuları <span style="font-weight:normal;color:#64716d">(son <?= min(8, count($alertHist)) ?> / <?= count($alertHist) ?>)</span></h3>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d">Kod</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d">Tarih</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d">Mod</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d">Durum</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d">Teslim</th></tr>
-      <?php foreach (array_slice(array_reverse($alertHist), 0, 8) as $h): if (!is_array($h)) continue; $st = (string) ($h['status'] ?? '?'); $stColor = $st === 'delivered' ? '#2e7d32' : ($st === 'missed' ? '#b0301a' : ($st === 'pending' ? '#8a6100' : '#64716d')); $stBg = $st === 'delivered' ? '#e6f8c7' : ($st === 'missed' ? '#ffe2de' : ($st === 'pending' ? '#fdf3e3' : '#f2f4ef')); $stIcon = $st === 'delivered' ? '✓' : ($st === 'missed' ? '✗' : ($st === 'pending' ? '⏳' : '?')); ?>
-      <tr>
-        <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea"><code><?= htmlspecialchars((string) ($h['code'] ?? '—')) ?></code></td>
-        <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;white-space:nowrap"><?= htmlspecialchars((string) ($h['at'] ?? '—')) ?></td>
-        <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:<?= ($h['mode'] ?? '') === 'send' ? '#e6f8c7;color:#2e7d32' : '#f2f4ef;color:#64716d' ?>"><?= htmlspecialchars(($h['mode'] ?? '') === 'send' ? 'gerçek' : 'kuru') ?></span></td>
-        <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea"><span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:8px;background:<?= $stBg ?>;color:<?= $stColor ?>;font-weight:700;font-size:11px"><?= $stIcon ?> <?= htmlspecialchars($st) ?></span></td>
-        <td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;color:#64716d"><?= htmlspecialchars((string) ($h['delivered_at'] ?? '—')) ?><?= !empty($h['retried']) ? ' <span style="display:inline-block;background:#fff6ef;border:1px solid #e0c9a3;border-radius:8px;padding:1px 6px;font-size:10px;color:#6b3a12" title="yeniden gönderildi: ' . htmlspecialchars((string) ($h['retry_at'] ?? '')) . '">🔄 retry</span>' : '' ?></td>
-      </tr>
-      <?php endforeach; ?>
-    </table>
-  </div>
-  <?php endif; ?>
-  <?php endif; ?></section>
+<div class="sui-card" style="margin-bottom:24px;border-left:4px solid var(--sui-success)">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">🩺 Sağlık & Bütünlük Kontrolü</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                Veritabanı tabloları, eksik migration'lar ve platform kilitlerini denetler.
+            </p>
+        </div>
+        <?php if ($hcJob): ?>
+            <form method="post" style="margin:0">
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                <input type="hidden" name="action" value="run">
+                <input type="hidden" name="id" value="<?= (int) $hcJob['id'] ?>">
+                <button class="sui-btn sui-btn-success sui-btn-sm">▶ Şimdi Çalıştır</button>
+            </form>
+        <?php endif; ?>
+    </div>
+    <?php if ($hcJob && !empty($hcJob['last_run_at'])): ?>
+        <p style="font-size:12px;color:var(--sui-muted);margin:0">
+            Son çalışma: <?= htmlspecialchars((string) $hcJob['last_run_at']) ?> · Durum: <b><?= htmlspecialchars((string) ($hcJob['last_status'] ?? '—')) ?></b>
+        </p>
+    <?php endif; ?>
+</div>
 
-<section class="c" style="border:1px solid #d8ded8"><h2>📊 Son otomatik modül testi</h2><?php $atJson = platform_setting('last_auto_test_json', null); $atAt = (string) platform_setting('last_auto_test_at', ''); if ($atJson && is_array($atJson)): $atOk = $atJson['ok_count'] ?? 0; $atWarn = $atJson['warn_count'] ?? 0; $atFail = $atJson['fail_count'] ?? 0; $atMs = $atJson['elapsed_ms'] ?? 0; $atMods = $atJson['modules'] ?? []; $atErrs = $atJson['errors'] ?? []; $atOkAll = ($atJson['ok'] ?? false); ?>  <p class="muted">Son çalışma: <b><?= htmlspecialchars($atAt) ?></b> · <span style="font-weight:700;color:<?= $atFail > 0 ? '#b0301a' : ($atWarn > 0 ? '#8a6100' : '#0d7a4a') ?>"><?= $atOk ?> ✓ · <?= $atWarn ?> ⚠ · <?= $atFail ?> ✗</span> · <?= $atMs ?>ms<?php if ($atJson['e2e'] ?? false): ?> · <span style="color:#0d7a4a">e2e</span><?php endif; ?></p>
-  <table style="width:100%;border-collapse:collapse;font-size:12px">
-    <tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d">Modül</th><th style="padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d;text-align:center">Toplam</th><th style="padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d;text-align:center">OK</th><th style="padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d;text-align:center">⚠</th><th style="padding:5px 8px;border-bottom:1px solid #e1e5de;font-size:10px;color:#64716d;text-align:center">✗</th></tr>
-    <?php foreach ($atMods as $mN => $mD): $mF = $mD['fail'] ?? 0; $mW = $mD['warn'] ?? 0; $mT = $mD['total'] ?? 0; $mIc = $mF > 0 ? '✗' : ($mW > 0 ? '⚠' : '✓'); $mCo = $mF > 0 ? '#b0301a' : ($mW > 0 ? '#8a6100' : '#2e7d32'); ?>
-    <tr><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea"><b style="color:<?= $mCo ?>"><?= $mIc ?></b> <?= htmlspecialchars($mN) ?></td><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;text-align:center"><?= $mT ?></td><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;text-align:center;color:#2e7d32"><?= $mT - $mF - $mW ?></td><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;text-align:center;color:#8a6100"><?= $mW ?></td><td style="padding:5px 8px;border-bottom:1px solid #f0f0ea;text-align:center;color:#b0301a"><?= $mF ?></td></tr>
-    <?php endforeach; ?>
-  </table>
-  <?php if ($atErrs): ?>
-  <div style="margin-top:10px;background:#f8f6f4;border:1px solid #e1e5de;border-radius:8px;padding:8px 12px">
-    <div style="font-size:11px;font-weight:700;color:#b0301a;margin-bottom:4px">Hatalar</div>
-    <?php foreach (array_slice($atErrs, 0, 8) as $e): ?>
-    <div style="padding:2px 0;font-size:12px;color:#b0301a">✗ <b><?= htmlspecialchars($e['module'] ?? '') ?></b> · <?= htmlspecialchars($e['check'] ?? '') ?> — <?= htmlspecialchars(mb_substr($e['detail'] ?? '', 0, 120)) ?><?php if (!empty($e['ref'])): ?> <a href="/nexustraveltech/admin/kullanim-kilavuzu" style="color:#0d7a4a;font-size:11px" title="Kullanım kılavuzu <?= htmlspecialchars($e['ref']) ?>"><?= htmlspecialchars($e['ref']) ?></a><?php endif; ?></div>
-    <?php endforeach; ?>
-    <?php if (count($atErrs) > 8): ?><div style="font-size:11px;color:#64716d">… +<?= count($atErrs) - 8 ?> daha</div><?php endif; ?>
-  </div>
-  <?php endif; ?>
-  <form method="post" style="margin-top:10px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="<?= (int) ($jobs[array_search('nexus-daily-auto-test', array_column($jobs, 'code'))]['id'] ?? 0) ?>"><button style="padding:8px 16px;background:#0d7a4a;font-size:13px">▶ Testi şimdi çalıştır</button> <span class="muted">auto-test.php --json çalıştırır</span></form>
-<?php else: ?>
-  <p class="muted">Henüz otomatik test çalıştırılmadı. Manuel olarak çalıştırmak için yukarıdaki butonu kullanın.</p>
-<?php endif; ?></section>
+<div class="sui-card" style="margin-bottom:24px">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">⏱️ Otomatik Görevler (Scheduler)</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                Tek nabız noktası (`cron/tick.php`) dakikada bir çalışarak zamanı gelen görevleri tetikler.
+            </p>
+        </div>
+        <div>
+            <a href="zamanlayici-gecmisi" class="sui-btn sui-btn-outline sui-btn-sm">📜 Çalışma Geçmişi →</a>
+        </div>
+    </div>
 
-<section class="c"><h2>Nabız kurulumu (ikisinden biri)</h2>
-<p><b>A) Sistem cron / Plesk Scheduled Tasks (komut):</b></p>
-<code>* * * * * /opt/plesk/php/8.5/bin/php /var/www/vhosts/nexustraveltech.com/httpdocs/cron/tick.php &gt;/dev/null 2>&1</code>
-<p><b>B) Plesk "Request a URL" görevi (token korumalı):</b></p>
-<code><?= htmlspecialchars($tickUrl) ?></code>
-<p class="muted">Her iki seçenek de dakikada bir çalışır; görevlerin kendisi bu sayfadan yönetilir. A sayfasındaki eski 8 görev kaldırılmalıdır (çift çalışmayı önler).</p>
-</section>
+    <div style="overflow-x:auto">
+        <table class="sui-table">
+            <thead>
+                <tr>
+                    <th>Görev Adı & Komut</th>
+                    <th>Zamanlama (Cron)</th>
+                    <th>Sonraki Çalışma</th>
+                    <th>Durum</th>
+                    <th>Son Çalışma</th>
+                    <th>Adet</th>
+                    <th>İşlem</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($jobs as $j): $next = scheduler_next_run((string) $j['schedule']); ?>
+                    <tr>
+                        <td>
+                            <b><?= htmlspecialchars($j['name']) ?></b>
+                            <div style="font-size:11px;color:var(--sui-muted);font-family:monospace"><?= htmlspecialchars($j['command']) ?></div>
+                        </td>
+                        <td>
+                            <form method="post" style="display:flex;gap:4px;margin:0">
+                                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                <input type="hidden" name="action" value="edit">
+                                <input type="hidden" name="id" value="<?= (int) $j['id'] ?>">
+                                <input name="schedule" value="<?= htmlspecialchars($j['schedule']) ?>" class="sui-input" style="width:90px;padding:4px 8px;font-size:12px">
+                                <button class="sui-btn sui-btn-outline sui-btn-sm" style="padding:4px 8px">Kaydet</button>
+                            </form>
+                        </td>
+                        <td style="font-size:12px;color:var(--sui-muted)"><?= $next !== null ? htmlspecialchars($next) : '—' ?></td>
+                        <td>
+                            <span class="sui-badge <?= $j['enabled'] ? 'sui-badge-success' : 'sui-badge-danger' ?>">
+                                <?= $j['enabled'] ? 'AÇIK' : 'KAPALI' ?>
+                            </span>
+                        </td>
+                        <td style="font-size:12px">
+                            <?= $j['last_run_at'] ? htmlspecialchars((string) $j['last_run_at']) : '—' ?>
+                            <?php if ($j['last_status']): ?>
+                                <br><small style="color:var(--sui-muted)"><?= htmlspecialchars((string) $j['last_status']) ?></small>
+                            <?php endif; ?>
+                        </td>
+                        <td><?= (int) $j['run_count'] ?></td>
+                        <td>
+                            <div style="display:flex;gap:4px;align-items:center">
+                                <form method="post" style="margin:0">
+                                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                    <input type="hidden" name="action" value="toggle">
+                                    <input type="hidden" name="id" value="<?= (int) $j['id'] ?>">
+                                    <button class="sui-btn sui-btn-outline sui-btn-sm"><?= $j['enabled'] ? 'Kapat' : 'Aç' ?></button>
+                                </form>
+                                <form method="post" style="margin:0">
+                                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                    <input type="hidden" name="action" value="run">
+                                    <input type="hidden" name="id" value="<?= (int) $j['id'] ?>">
+                                    <button class="sui-btn sui-btn-primary sui-btn-sm">Çalıştır</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
 
-<section class="c"><h2>Görevler</h2>
-<table>
-<tr><th>Görev</th><th>Zamanlama</th><th>Sonraki çalışma</th><th>Durum</th><th>Son çalışma</th><th>Çalışma</th><th>İşlem</th></tr>
-<?php foreach ($jobs as $j): $next = scheduler_next_run((string) $j['schedule']); ?>
-<tr>
-  <td><b><?= htmlspecialchars($j['name']) ?></b><br><code><?= htmlspecialchars($j['command']) ?></code></td>
-  <td>
-    <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="edit"><input type="hidden" name="id" value="<?= (int) $j['id'] ?>">
-    <input name="schedule" value="<?= htmlspecialchars($j['schedule']) ?>" style="width:110px" title="dakika saat gün ay hafta"><br><button style="padding:4px 8px;font-size:12px">Kaydet</button></form>
-  </td>
-  <td><?= $next !== null ? htmlspecialchars($next) : '—' ?></td>
-  <td><?= $j['enabled'] ? '<b style="color:#0d7a4a">AÇIK</b>' : '<b style="color:#8e2410">KAPALI</b>' ?></td>
-  <td><?= $j['last_run_at'] ? htmlspecialchars((string) $j['last_run_at']) . '<br><b>' . htmlspecialchars((string) ($j['last_status'] ?? '—')) . '</b>' : '—' ?></td>
-  <td><?= (int) $j['run_count'] ?></td>
-  <td>
-    <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= (int) $j['id'] ?>"><button style="padding:4px 8px;font-size:12px;background:#a86026"><?= $j['enabled'] ? 'Kapat' : 'Aç' ?></button></form>
-    <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="<?= (int) $j['id'] ?>"><button style="padding:4px 8px;font-size:12px">Şimdi çalıştır</button></form>
-    <?php if ($j['last_output']): ?><details><summary style="cursor:pointer;font-size:12px;margin-top:4px">Son çıktı</summary><pre style="background:#f2f4ef;padding:8px;font-size:12px;white-space:pre-wrap"><?= htmlspecialchars((string) $j['last_output']) ?></pre></details><?php endif; ?>
-  </td>
-</tr>
-<?php endforeach; ?>
-</table>
-<p class="muted">Zamanlama biçimi: <code>dakika saat gün ay hafta</code> — ör. <code>*/5 * * * *</code> (5 dakikada bir), <code>0 8 * * *</code> (her gün 08:00), <code>30 3 * * *</code> (her gün 03:30).</p>
-<p><a href="/nexustraveltech/admin/zamanlayici-gecmisi" style="font-weight:700;color:#0d7a4a">Çalışma geçmişi →</a></p>
-</section>
-</main>
-<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
-</html>
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

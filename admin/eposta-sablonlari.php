@@ -54,44 +54,130 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $templates = db()->query('SELECT * FROM email_templates ORDER BY code')->fetchAll();
 ?>
-<!doctype html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>E-posta şablonları | NEXUS Admin</title>
-  <style>
-    body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(960px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}input,textarea,button{padding:9px;font:inherit;border:1px solid #d8ded8}textarea{width:100%;min-height:140px;box-sizing:border-box;font-family:monospace}label{display:block;margin:8px 0 4px;font-weight:700;font-size:13px}.ok{background:#e6f8c7;padding:9px}.er{background:#ffe2de;padding:9px}button{background:#10211f;color:#fff;border:0;cursor:pointer;margin-top:8px}.muted{color:#64716d;font-size:13px}
-  </style>
-</head>
-<body>
-<main class="w"><a href="/nexustraveltech/admin/">← Panel</a><h1>E-posta şablonları</h1>
-<p class="muted">Şablonlar <code>{misafir_adi}</code>, <code>{referans}</code>, <code>{iade}</code>, <code>{neden}</code> gibi değişkenlerle doldurulur. Hazır kodlar: <b>booking_confirmation</b>, <b>booking_cancelled</b>, <b>welcome</b>.</p>
-<?php if ($msg): ?><p class="ok"><?= htmlspecialchars($msg) ?></p><?php endif; ?>
-<?php if ($err): ?><p class="er"><?= htmlspecialchars($err) ?></p><?php endif; ?>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('E-posta Şablonları & Bildirimler', 'eposta-sablonlari');
+?>
 
-<section class="c"><h2>Yeni şablon</h2>
-<form method="post"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="save">
-<label>Kod <input name="code" placeholder="welcome" required></label>
-<label>Ad <input name="name" placeholder="Hoş geldiniz e-postası" required></label>
-<label>Konu <input name="subject" placeholder="Hoş geldiniz {misafir_adi}!" required></label>
-<label>HTML içerik <textarea name="body_html" placeholder="&lt;p&gt;Sayın {misafir_adi}, ...&lt;/p&gt;" required></textarea></label>
-<label><input type="checkbox" name="is_active" checked> Aktif</label>
-<button>Kaydet</button></form></section>
+<?php if ($msg): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($msg) ?></div><?php endif; ?>
+<?php if ($err): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
-<?php foreach ($templates as $t): ?>
-<section class="c"><h2><?= htmlspecialchars($t['code']) ?> — <?= htmlspecialchars($t['name']) ?><?= $t['is_active'] ? '' : ' <small>(pasif)</small>' ?></h2>
-<form method="post"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
-<label>Kod <input name="code" value="<?= htmlspecialchars($t['code']) ?>" required></label>
-<label>Ad <input name="name" value="<?= htmlspecialchars($t['name']) ?>" required></label>
-<label>Konu <input name="subject" value="<?= htmlspecialchars($t['subject']) ?>" required></label>
-<label>HTML içerik <textarea name="body_html" required><?= htmlspecialchars($t['body_html']) ?></textarea></label>
-<label><input type="checkbox" name="is_active" <?= $t['is_active'] ? 'checked' : '' ?>> Aktif</label>
-<button>Güncelle</button></form>
-<form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="test"><input type="hidden" name="code" value="<?= htmlspecialchars($t['code']) ?>"><button style="background:#a86026">Test gönder</button></form>
-<form method="post" style="display:inline" onsubmit="return confirm('Şablon silinsin mi?')"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>"><button style="background:#8e2410">Sil</button></form>
-</section>
-<?php endforeach; ?>
-</main>
-<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
-</html>
+<div class="sui-card" style="margin-bottom:24px">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">✉️ Yeni E-posta Şablonu Tanımla</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                Değişkenler: <code>{misafir_adi}</code>, <code>{referans}</code>, <code>{iade}</code>, <code>{neden}</code> vb.
+            </p>
+        </div>
+    </div>
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+        <input type="hidden" name="action" value="save">
+        
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:14px;margin-bottom:14px">
+            <div>
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Şablon Kodu *</label>
+                <input name="code" class="sui-input" placeholder="booking_confirmation" required>
+            </div>
+            <div>
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Şablon Adı *</label>
+                <input name="name" class="sui-input" placeholder="Rezervasyon Onay E-postası" required>
+            </div>
+            <div>
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Konu Başlığı *</label>
+                <input name="subject" class="sui-input" placeholder="Rezervasyonunuz Onaylandı #{referans}" required>
+            </div>
+        </div>
+
+        <div style="margin-bottom:14px">
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">HTML İçerik *</label>
+            <textarea name="body_html" class="sui-input" style="font-family:monospace;min-height:100px" placeholder="<p>Sayın {misafir_adi}, rezervasyonunuz onaylanmıştır...</p>" required></textarea>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center">
+            <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+                <input type="checkbox" name="is_active" checked> Aktif Olarak Kaydet
+            </label>
+            <button class="sui-btn sui-btn-primary">Şablonu Ekle</button>
+        </div>
+    </form>
+</div>
+
+<div class="sui-card">
+    <div class="sui-card-header">
+        <h2 class="sui-card-title">📑 Kayıtlı E-posta Şablonları (<?= count($templates) ?>)</h2>
+    </div>
+
+    <div style="display:grid;gap:18px">
+        <?php foreach ($templates as $t): ?>
+            <div style="background:#fff;border:1px solid var(--sui-border);border-radius:var(--sui-radius-sm);padding:18px;box-shadow:var(--sui-shadow-sm)">
+                <form method="post">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                    <input type="hidden" name="action" value="save">
+                    <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <b><?= htmlspecialchars($t['code']) ?></b>
+                            <span class="sui-badge <?= $t['is_active'] ? 'sui-badge-success' : 'sui-badge-warning' ?>">
+                                <?= $t['is_active'] ? 'Aktif' : 'Pasif' ?>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;margin-bottom:12px">
+                        <div>
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Kod</label>
+                            <input name="code" class="sui-input" value="<?= htmlspecialchars($t['code']) ?>" required>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Ad</label>
+                            <input name="name" class="sui-input" value="<?= htmlspecialchars($t['name']) ?>" required>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Konu</label>
+                            <input name="subject" class="sui-input" value="<?= htmlspecialchars($t['subject']) ?>" required>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom:12px">
+                        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">HTML İçerik</label>
+                        <textarea name="body_html" class="sui-input" style="font-family:monospace;min-height:90px" required><?= htmlspecialchars($t['body_html']) ?></textarea>
+                    </div>
+
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                        <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+                            <input type="checkbox" name="is_active" <?= $t['is_active'] ? 'checked' : '' ?>> Aktif
+                        </label>
+                        <div style="display:flex;gap:6px">
+                            <button class="sui-btn sui-btn-primary sui-btn-sm">Güncelle</button>
+                        </div>
+                    </div>
+                </form>
+
+                <div style="display:flex;gap:6px;margin-top:10px;border-top:1px solid var(--sui-border);padding-top:10px">
+                    <form method="post" style="margin:0">
+                        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                        <input type="hidden" name="action" value="test">
+                        <input type="hidden" name="code" value="<?= htmlspecialchars($t['code']) ?>">
+                        <button class="sui-btn sui-btn-outline sui-btn-sm">📨 Test Gönder</button>
+                    </form>
+                    <form method="post" style="margin:0" onsubmit="return confirm('Şablon silinsin mi?')">
+                        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+                        <button class="sui-btn sui-btn-danger sui-btn-sm">Sil</button>
+                    </form>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

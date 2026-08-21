@@ -144,61 +144,149 @@ $qs = function (array $extra) use ($from, $to, $ip, $q, $quality, $topic): strin
     return '?' . http_build_query(array_filter($p, fn($v) => $v !== ''));
 };
 ?>
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ziyaretçi sohbet kayıtları | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1180px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.back{color:#10211f}.stats{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.stat{background:#fff;border:1px solid #e1e5de;padding:10px 14px;font-size:13px}.stat b{font-size:20px;display:block}.stat.danger b{color:#b0301a}.stat.warn b{color:#a86026}.filters{background:#fff;border:1px solid #e1e5de;padding:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}.filters input,.filters button{padding:8px 10px;font:inherit;border:1px solid #d8ded8;font-size:13px}.filters button{background:#10211f;color:#fff;border:0;font-weight:700;cursor:pointer}.notice,.error{padding:11px;margin:12px 0}.notice{background:#e6f8c7}.error{background:#ffe2de}table{width:100%;border-collapse:collapse;background:#fff}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:11px 12px;font-size:13px;vertical-align:top}th{font-size:11px;text-transform:uppercase;color:#64716d}.ip{font-family:monospace;font-size:12px;white-space:nowrap}.msg{white-space:pre-wrap;word-break:break-word}.muted{color:#64716d}.badge{display:inline-block;padding:2px 7px;font-size:11px;font-weight:700;border-radius:3px}.bd-block{background:#ffe2de;color:#8e2410}.bd-flag{background:#fdf0d8;color:#8a5a10}.acts{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}.acts form{margin:0}.acts button{background:#fff;border:1px solid #d8ded8;padding:4px 8px;font-size:11px;cursor:pointer;color:#10211f}.acts .block{color:#b0301a;border-color:#e8b9b0}.acts .kaldir{background:#ffe3dd;border-color:#e8b9b0;color:#8e2410;font-weight:700}.banbox{background:#fff;border:1px solid #e1e5de;padding:12px;margin:14px 0}.banbox h3{margin:0 0 8px;font-size:14px}.banrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid #f0f2ef;font-size:13px}.banrow form{margin:0}.pages{display:flex;gap:6px;margin:16px 0;flex-wrap:wrap}.pages a,.pages span{padding:7px 11px;background:#fff;border:1px solid #e1e5de;color:#10211f;text-decoration:none;font-size:13px}.pages .on{background:#10211f;color:#fff}.exp{font-size:12px;color:#0d7a4a;text-decoration:none;font-weight:700}.tchip{display:inline-block;background:#f2f4ef;border:1px solid #e1e5de;padding:2px 8px;border-radius:12px;font-size:11px;margin:1px 4px 1px 0;color:#10211f}.chart{background:#fff;border:1px solid #e1e5de;padding:14px;margin:14px 0}.chart h3{margin:0 0 4px;font-size:14px}.legend{font-size:12px;color:#64716d;margin:0 0 10px}.lg{padding:1px 6px;border-radius:3px;font-weight:700;font-size:11px}.lg.bl{background:#ffe2de;color:#8e2410}.lg.fl{background:#fdf0d8;color:#8a5a10}.bars{display:flex;align-items:flex-end;gap:2px;height:64px}.day{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;min-width:0}.seg{width:100%;border-radius:2px 2px 0 0}.seg.block{background:#c0392b}.seg.flag{background:#e8a33d}</style></head><body><main class="wrap"><div class="top"><div><div class="brand">N<span>∿</span>XUS Admin</div><p>Önyüz AI asistan ziyaretçi sohbet kayıtları — soru, yanıt, IP, zaman · kötü niyetli IP'leri tek tıkla engelle</p></div><a class="back" href="/nexustraveltech/admin/">← Panele dön</a></div>
-<?php if ($message): ?><p class="notice"><?=htmlspecialchars($message)?></p><?php endif; ?>
-<?php if ($error): ?><p class="error"><?=htmlspecialchars($error)?></p><?php endif; ?>
-<div class="stats"><div class="stat"><b><?= (int)$totalAll ?></b>Tüm kayıt</div><div class="stat"><b><?= (int)$todayCount ?></b>Bugün</div><div class="stat"><b><?= (int)$total ?></b>Filtre sonucu</div><div class="stat danger"><b><?= (int)$blockCount ?></b>Engelli IP</div><div class="stat warn"><b><?= (int)$flagCount ?></b>Bayraklı IP</div></div>
-<div class="chart"><h3>Son 30 gün — IP güvenliği zaman çizelgesi</h3>
-<div class="legend"><span class="lg bl">🚫 Engellenen</span> <span class="lg fl">⚠ Bayraklanan</span> · <?= date('d.m', time() - 29 * 86400) ?> – <?= date('d.m') ?> (farenizi günün üzerine getirin)</div>
-<div class="bars">
-<?php foreach ($chartDays as $d => $v): ?>
-<div class="day" title="<?=htmlspecialchars($d)?>: 🚫 <?=$v['blocks']?> · ⚠ <?=$v['flags']?>">
-<?php if ($v['blocks'] > 0): ?><div class="seg block" style="height:<?=max(3, (int) round($v['blocks'] / $chartMax * 56))?>px"></div><?php endif; ?>
-<?php if ($v['flags'] > 0): ?><div class="seg flag" style="height:<?=max(3, (int) round($v['flags'] / $chartMax * 56))?>px"></div><?php endif; ?>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Ziyaretçi AI Sohbet & Güvenlik', 'ziyaretci-sohbet');
+?>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:24px">
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Toplam Sohbet</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= (int)$totalAll ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-primary);font-weight:600">Bugünkü Sohbet</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-primary);margin-top:4px"><?= (int)$todayCount ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Filtre Sonucu</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= (int)$total ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-danger);font-weight:600">Engelli IP Sayısı</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-danger);margin-top:4px"><?= (int)$blockCount ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-warning);font-weight:600">Bayraklı IP</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-warning);margin-top:4px"><?= (int)$flagCount ?></div>
+    </div>
 </div>
-<?php endforeach; ?>
-</div></div>
-<form class="filters" method="get" action="/nexustraveltech/admin/ziyaretci-sohbet">
-  <input type="date" name="from" value="<?=htmlspecialchars($from)?>" title="Başlangıç">
-  <input type="date" name="to" value="<?=htmlspecialchars($to)?>" title="Bitiş">
-  <input type="text" name="ip" value="<?=htmlspecialchars($ip)?>" placeholder="IP ara…" style="width:150px">
-  <input type="text" name="q" value="<?=htmlspecialchars($q)?>" placeholder="Soru/yanıt içinde ara…" style="width:220px">
-  <select name="topic" style="padding:8px 10px;border:1px solid #d8ded8;font:inherit;font-size:13px"><option value="">Tüm konular</option><?php foreach (array_keys(chat_topic_defs()) as $t): ?><option value="<?=htmlspecialchars($t)?>" <?=$topic===$t?'selected':''?>><?=htmlspecialchars($t)?></option><?php endforeach; ?></select>
-  <button>Filtrele</button>
-  <a class="exp" href="<?=htmlspecialchars($qs(['quality' => $quality === 'good' ? 'all' : 'good', 'page' => 1]))?>"><?= $quality === 'good' ? 'Kalitesiz girdileri göster (' . (int)$junkCount . ')' : 'Kalitesiz girdileri gizle' ?></a>
-  <a class="exp" href="<?=htmlspecialchars($qs(['export' => 'csv']))?>">⬇ CSV indir</a>
-</form>
-<?php if ($banned): ?>
-<div class="banbox"><h3>🚫 Engelli / ⚠ Bayraklı IP'ler</h3>
-<?php foreach ($banned as $b): ?>
-<div class="banrow"><span class="badge <?=$b['action']==='block'?'bd-block':'bd-flag'?>"><?=$b['action']==='block'?'🚫 Engelli':'⚠ Bayraklı'?></span><b class="ip"><?=htmlspecialchars((string)$b['ip'])?></b><?php if ($b['reason']): ?><span class="muted">— <?=htmlspecialchars((string)$b['reason'])?></span><?php endif; ?><span class="muted"><?=htmlspecialchars((string)$b['created_at'])?></span>
-<form method="post" action="/nexustraveltech/admin/ziyaretci-sohbet"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="unblock"><input type="hidden" name="ip" value="<?=htmlspecialchars((string)$b['ip'])?>"><button class="kaldir">Kısıtlamayı kaldır</button></form></div>
-<?php endforeach; ?>
+
+<?php if ($message): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+<!-- Filtreler -->
+<div class="sui-card" style="margin-bottom:24px">
+    <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <input type="date" name="from" value="<?= htmlspecialchars($from) ?>" class="sui-input" style="width:auto" title="Başlangıç">
+        <input type="date" name="to" value="<?= htmlspecialchars($to) ?>" class="sui-input" style="width:auto" title="Bitiş">
+        <input type="text" name="ip" value="<?= htmlspecialchars($ip) ?>" class="sui-input" style="width:140px" placeholder="IP ara...">
+        <input type="text" name="q" value="<?= htmlspecialchars($q) ?>" class="sui-input" style="width:200px" placeholder="Soru / yanıt ara...">
+        <select name="topic" class="sui-input" style="width:auto">
+            <option value="">Tüm Konular</option>
+            <?php foreach (array_keys(chat_topic_defs()) as $t): ?>
+                <option value="<?= htmlspecialchars($t) ?>" <?= $topic === $t ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <button class="sui-btn sui-btn-primary">Filtrele</button>
+        <a href="<?= htmlspecialchars($qs(['quality' => $quality === 'good' ? 'all' : 'good', 'page' => 1])) ?>" class="sui-btn sui-btn-outline sui-btn-sm">
+            <?= $quality === 'good' ? "Kalitesizleri Göster ($junkCount)" : 'Kalitesizleri Gizle' ?>
+        </a>
+        <a href="<?= htmlspecialchars($qs(['export' => 'csv'])) ?>" class="sui-btn sui-btn-success sui-btn-sm">⬇ CSV İndir</a>
+    </form>
 </div>
-<?php endif; ?>
-<?php if (!$rows): ?><p class="muted">Kayıt bulunamadı.</p><?php endif; ?>
-<table><tr><th>Zaman</th><th>IP</th><th>Soru</th><th>Konu</th><th>Yanıt</th></tr>
-<?php foreach ($rows as $r): $junkMsg = mb_strlen(trim((string)$r['user_message'])) < $minLen || ($requireSpace && !str_contains(trim((string)$r['user_message']), ' ')); $rowTopics = $junkMsg ? [] : chat_classify((string)$r['user_message']); ?>
-<tr><td class="muted" style="white-space:nowrap"><?=htmlspecialchars((string)$r['created_at'])?></td>
-<td class="ip"><b><?=htmlspecialchars((string)($r['ip'] ?? '—'))?></b>
-<?php if ($r['ip_action'] === 'block'): ?><br><span class="badge bd-block">🚫 Engelli</span>
-<?php elseif ($r['ip_action'] === 'flag'): ?><br><span class="badge bd-flag">⚠ Bayraklı</span><?php endif; ?>
-<div class="acts">
-<?php if ($r['ip_action'] === 'block'): ?>
-<form method="post" action="/nexustraveltech/admin/ziyaretci-sohbet"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="unblock"><input type="hidden" name="ip" value="<?=htmlspecialchars((string)$r['ip'])?>"><button class="kaldir">Engeli kaldır</button></form>
-<?php else: ?>
-<form method="post" action="/nexustraveltech/admin/ziyaretci-sohbet"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="block"><input type="hidden" name="ip" value="<?=htmlspecialchars((string)$r['ip'])?>"><button class="block">🚫 Engelle</button></form>
-<?php endif; ?>
-<?php if ($r['ip_action'] !== 'flag'): ?>
-<form method="post" action="/nexustraveltech/admin/ziyaretci-sohbet"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="flag"><input type="hidden" name="ip" value="<?=htmlspecialchars((string)$r['ip'])?>"><button>⚠ Bayrakla</button></form>
-<?php else: ?>
-<form method="post" action="/nexustraveltech/admin/ziyaretci-sohbet"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="unblock"><input type="hidden" name="ip" value="<?=htmlspecialchars((string)$r['ip'])?>"><button class="kaldir">Bayrağı kaldır</button></form>
-<?php endif; ?>
-</div></td>
-<td class="msg"><?php if ($junkMsg): ?><span class="badge bd-flag">Kalitesiz</span> <?php endif; ?><?=htmlspecialchars((string)$r['user_message'])?></td>
-<td class="msg"><?php if ($junkMsg): ?><span class="muted">—</span><?php elseif ($rowTopics): ?><?php foreach ($rowTopics as $t): ?><span class="tchip"><?=htmlspecialchars($t)?></span><?php endforeach; ?><?php else: ?><span class="muted">—</span><?php endif; ?></td>
-<td class="msg"><?=htmlspecialchars((string)$r['ai_reply'])?></td></tr>
-<?php endforeach; ?>
-</table>
-<?php if ($pages > 1): ?><div class="pages"><?php for ($i = 1; $i <= $pages; $i++): ?><a class="<?=$i===$page?'on':''?>" href="<?=htmlspecialchars($qs(['page' => $i]))?>"><?=$i?></a><?php endfor; ?></div><?php endif; ?>
-</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>
+
+<!-- Sohbet Tablosu -->
+<div class="sui-card">
+    <div class="sui-card-header">
+        <h2 class="sui-card-title">💬 Ziyaretçi AI Sohbet Kayıtları (Sayfa <?= $page ?> / <?= $pages ?>)</h2>
+    </div>
+
+    <div style="overflow-x:auto">
+        <table class="sui-table">
+            <thead>
+                <tr>
+                    <th>Tarih / Saat</th>
+                    <th>Ziyaretçi IP & Güvenlik</th>
+                    <th>Misafir Sorusu</th>
+                    <th>Konu</th>
+                    <th>AI Yanıtı</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($rows as $r): 
+                    $junkMsg = mb_strlen(trim((string)$r['user_message'])) < $minLen || ($requireSpace && !str_contains(trim((string)$r['user_message']), ' '));
+                    $rowTopics = $junkMsg ? [] : chat_classify((string)$r['user_message']);
+                ?>
+                    <tr>
+                        <td style="font-size:12px;color:var(--sui-muted);white-space:nowrap"><?= htmlspecialchars((string)$r['created_at']) ?></td>
+                        <td>
+                            <code style="font-size:12px"><?= htmlspecialchars((string)($r['ip'] ?? '—')) ?></code>
+                            <?php if ($r['ip_action'] === 'block'): ?>
+                                <span class="sui-badge sui-badge-danger" style="display:block;margin-top:4px">🚫 Engelli</span>
+                            <?php elseif ($r['ip_action'] === 'flag'): ?>
+                                <span class="sui-badge sui-badge-warning" style="display:block;margin-top:4px">⚠ Bayraklı</span>
+                            <?php endif; ?>
+                            
+                            <div style="display:flex;gap:4px;margin-top:6px">
+                                <?php if ($r['ip_action'] === 'block'): ?>
+                                    <form method="post" style="margin:0">
+                                        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                        <input type="hidden" name="action" value="unblock">
+                                        <input type="hidden" name="ip" value="<?= htmlspecialchars((string)$r['ip']) ?>">
+                                        <button class="sui-btn sui-btn-outline sui-btn-sm" style="padding:2px 6px;font-size:10px">Kaldır</button>
+                                    </form>
+                                <?php else: ?>
+                                    <form method="post" style="margin:0">
+                                        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                        <input type="hidden" name="action" value="block">
+                                        <input type="hidden" name="ip" value="<?= htmlspecialchars((string)$r['ip']) ?>">
+                                        <button class="sui-btn sui-btn-danger sui-btn-sm" style="padding:2px 6px;font-size:10px">Engelle</button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                        <td style="font-size:13px;max-width:240px">
+                            <?php if ($junkMsg): ?>
+                                <span class="sui-badge sui-badge-warning">Kalitesiz</span>
+                            <?php endif; ?>
+                            <?= htmlspecialchars((string)$r['user_message']) ?>
+                        </td>
+                        <td>
+                            <?php if ($rowTopics): ?>
+                                <?php foreach ($rowTopics as $t): ?>
+                                    <span class="sui-badge sui-badge-info" style="margin:2px 2px 2px 0"><?= htmlspecialchars($t) ?></span>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <span style="color:var(--sui-muted)">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="font-size:13px;color:var(--sui-text);max-width:320px;line-height:1.5">
+                            <?= htmlspecialchars((string)$r['ai_reply']) ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$rows): ?>
+                    <tr><td colspan="5" style="text-align:center;color:var(--sui-muted);padding:20px">Kayıtlı sohbet bulunamadı.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <?php if ($pages > 1): ?>
+        <div style="display:flex;gap:6px;justify-content:center;margin-top:20px;flex-wrap:wrap">
+            <?php for ($i = 1; $i <= min(15, $pages); $i++): ?>
+                <a href="<?= htmlspecialchars($qs(['page' => $i])) ?>" class="sui-btn <?= $i === $page ? 'sui-btn-primary' : 'sui-btn-outline' ?> sui-btn-sm">
+                    <?= $i ?>
+                </a>
+            <?php endfor; ?>
+        </div>
+    <?php endif; ?>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

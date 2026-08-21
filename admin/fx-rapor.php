@@ -118,23 +118,76 @@ foreach ($pairs as $p) {
 }
 $dayKeys = array_keys($dayPair);
 ?>
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aylık dönüşüm raporu | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1080px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.back{color:#10211f}.card{background:#fff;border:1px solid #e1e5de;padding:20px;margin-top:16px}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}.kpi{background:#fff;border:1px solid #e1e5de;padding:14px}.kpi b{display:block;font-size:20px;margin-top:4px}.kpi span{font-size:11px;text-transform:uppercase;color:#64716d}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:9px 10px;font-size:13px}th{font-size:11px;text-transform:uppercase;color:#64716d}.fx-hist{display:flex;align-items:flex-end;gap:3px;height:120px;margin-top:12px;overflow-x:auto}.fx-hist-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:16px;flex:1}.fx-hist-bar{width:12px;border-radius:2px 2px 0 0;background:#0d7a4a}.fx-hist-day{font-size:9px;color:#64716d;margin-top:3px;white-space:nowrap}.fx-hist-val{font-size:9px;color:#0d7a4a;font-weight:700}.hist-block{display:none}.hist-block.active{display:block}.pair-select{padding:9px;border:1px solid #d8ded8;font:inherit;margin-top:8px;max-width:340px}.muted{color:#64716d;font-size:13px}@media(max-width:700px){.kpis{grid-template-columns:1fr 1fr}}</style></head><body><main class="wrap"><div class="top"><div><div class="brand">N<span>∿</span>XUS Admin</div><p>Aylık kur dönüşüm raporu — webhook fiyat dönüşümlerinin denetim özeti (son 30 gün)</p></div><div style="text-align:right"><a class="back" href="/nexustraveltech/admin/kur-yonetimi.php">← Kur yönetimine dön</a><br><a class="back" href="/nexustraveltech/admin/">Panele dön</a></div></div>
-<div class="kpis"><div class="kpi"><span>Dönüşüm yapılan gün</span><b><?=count($dayKeys)?></b></div><div class="kpi"><span>Çift sayısı</span><b><?=count($pairs)?></b></div><div class="kpi"><span>Orijinal toplam</span><b><?=number_format($totalOrig, 2, ',', '.')?></b></div><div class="kpi"><span>Dönüştürülen toplam</span><b><?=number_format($totalConv, 2, ',', '.')?></b></div></div>
-<section class="card"><h2 style="margin:0;font-size:18px">Birim çifti bazında toplam</h2>
-<?php if (!$pairs): ?><p class="muted">Son 30 günde kur dönüşümü yapılmamış (channel_sync_logs.fx_audit boş). Webhook fiyatı farklı birimde geldiğinde dönüşüm kaydı burada görünür.</p>
-<?php else: ?><table><tr><th>Çift</th><th>Fiyat sayısı</th><th>Orijinal tutar</th><th>Dönüştürülen tutar</th><th>Ortalama kur</th><th>Dönem</th></tr>
-<?php foreach ($pairs as $key => $p): $avgRate = $p['count'] > 0 ? $p['rate_acc'] / $p['count'] : 0.0; ?>
-<tr><td><b><?=htmlspecialchars($key)?></b></td><td><?=number_format($p['count'])?></td><td><?=number_format($p['original_total'], 2, ',', '.')?> <?=htmlspecialchars($p['from'])?></td><td><?=number_format($p['converted_total'], 2, ',', '.')?> <?=htmlspecialchars($p['to'])?></td><td><?=number_format($avgRate, 4, ',', '.')?></td><td><?=htmlspecialchars((string) $p['first_date'])?> → <?=htmlspecialchars((string) $p['last_date'])?></td></tr>
-<?php endforeach; ?></table>
-<p class="muted" style="margin-top:8px">Ortalama kur, fiyat sayısıyla ağırlıklandırılmıştır (birden çok günün kuru varsa gerçek ortalamaya yakındır).</p>
-<h3 style="margin:18px 0 0;font-size:15px">Günlük ortalama kur zaman çizelgesi</h3>
-<select class="pair-select" id="pair-select"><?php foreach ($pairs as $key => $p): ?><option value="<?=htmlspecialchars($key)?>" <?= $key === $selKey ? 'selected' : '' ?>><?=htmlspecialchars($key)?> (<?=number_format($p['converted_total'], 0, ',', '.')?> <?=htmlspecialchars($p['to'])?>)</option><?php endforeach; ?></select>
-<?php foreach ($pairs as $key => $p): $series = []; foreach ($dayKeys as $d) { $series[$d] = $dayPair[$d][$key] ?? null; } $maxRate = 0.0; foreach ($series as $s) { if ($s && $s['count'] > 0) $maxRate = max($maxRate, $s['rate_acc'] / $s['count']); } $maxRate = $maxRate > 0 ? $maxRate : 1.0; ?>
-<div class="hist-block <?= $key === $selKey ? 'active' : '' ?>" id="hist-<?=htmlspecialchars(preg_replace('/[^A-Z0-9]/', '_', $key))?>">
-<div class="fx-hist"><?php foreach ($series as $d => $s): $avg = ($s && $s['count'] > 0) ? round($s['rate_acc'] / $s['count'], 4) : null; ?>
-<div class="fx-hist-col" title="<?=htmlspecialchars($d . ($avg !== null ? ' · ortalama kur ' . number_format($avg, 4, ',', '.') . ' · ' . (int) $s['count'] . ' fiyat · ' . number_format($s['converted'], 2, ',', '.') . ' ' . htmlspecialchars($p['to']) : ' · dönüşüm yok'))?>"><?php if ($avg !== null): ?><span class="fx-hist-val"><?=number_format($avg, 2, ',', '.')?></span><div class="fx-hist-bar" style="height:<?=max(3, (int) round(($avg / $maxRate) * 90))?>px"></div><?php else: ?><div class="fx-hist-bar" style="height:2px;background:#e1e5de"></div><?php endif; ?><span class="fx-hist-day"><?=htmlspecialchars(substr($d, 8, 2))?>.<?=htmlspecialchars(substr($d, 5, 2))?></span></div><?php endforeach; ?></div>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Aylık Kur Dönüşüm & Webhook Raporu', 'kur-yonetimi');
+?>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:24px">
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Dönüşüm Yapılan Gün</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= count($dayKeys) ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-primary);font-weight:600">Aktif Çift Sayısı</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-primary);margin-top:4px"><?= count($pairs) ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Orijinal Toplam Hacim</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= number_format($totalOrig, 2, ',', '.') ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-success);font-weight:600">Dönüştürülen Toplam</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-success);margin-top:4px"><?= number_format($totalConv, 2, ',', '.') ?></div>
+    </div>
 </div>
-<?php endforeach; ?>
-<script>document.getElementById('pair-select').addEventListener('change',function(){var v=this.value;document.querySelectorAll('.hist-block').forEach(function(b){b.classList.remove('active')});var t=document.getElementById('hist-'+v.replace(/[^A-Z0-9]/g,'_'));if(t)t.classList.add('active');});<?php if ($selKey !== '' && $selKey === $reqPair): ?>(function(){var t=document.getElementById('hist-'+<?=json_encode(preg_replace('/[^A-Z0-9]/', '_', $selKey))?>);if(t){setTimeout(function(){t.scrollIntoView({behavior:'smooth',block:'nearest'})},120)}})();<?php endif; ?></script>
-<?php endif; ?></section>
-</main><?php require_once __DIR__ . '/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); ?></body></html>
+
+<div class="sui-card">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">📊 Para Birimi Çifti Bazında Toplamlar (Son 30 Gün)</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                Channel manager senkronizasyonlarında farklı kurlardan gelen fiyatların otomatik çevrim özeti.
+            </p>
+        </div>
+        <a href="kur-yonetimi" class="sui-btn sui-btn-outline sui-btn-sm">← Kur Yönetimi</a>
+    </div>
+
+    <?php if (!$pairs): ?>
+        <p style="color:var(--sui-muted);padding:20px;text-align:center">Son 30 günde kur dönüşümü yapılmamış.</p>
+    <?php else: ?>
+        <div style="overflow-x:auto">
+            <table class="sui-table">
+                <thead>
+                    <tr>
+                        <th>Döviz Çifti</th>
+                        <th>İşlem Sayısı</th>
+                        <th>Orijinal Tutar</th>
+                        <th>Dönüştürülen Tutar</th>
+                        <th>Ağırlıklı Ort. Kur</th>
+                        <th>Tarih Aralığı</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($pairs as $key => $p): $avgRate = $p['count'] > 0 ? $p['rate_acc'] / $p['count'] : 0.0; ?>
+                        <tr>
+                            <td><b><?= htmlspecialchars($key) ?></b></td>
+                            <td><?= number_format($p['count']) ?></td>
+                            <td><?= number_format($p['original_total'], 2, ',', '.') ?> <?= htmlspecialchars($p['from']) ?></td>
+                            <td><span class="sui-badge sui-badge-success"><?= number_format($p['converted_total'], 2, ',', '.') ?> <?= htmlspecialchars($p['to']) ?></span></td>
+                            <td style="font-weight:700"><?= number_format($avgRate, 4, ',', '.') ?></td>
+                            <td style="font-size:12px;color:var(--sui-muted)"><?= htmlspecialchars((string) $p['first_date']) ?> → <?= htmlspecialchars((string) $p['last_date']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

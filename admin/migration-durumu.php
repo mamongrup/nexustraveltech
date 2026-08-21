@@ -61,59 +61,97 @@ foreach ($migrationFiles as $file) {
 $total = count($rows);
 $applied = $total - $pending;
 ?>
-<!doctype html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Migration durumu | NEXUS Admin</title>
-  <style>
-    body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(1080px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #e1e5de;padding:9px 10px;text-align:left;vertical-align:top;font-size:13px}th{font-size:12px;text-transform:uppercase;color:#64716d}code{background:#f2f4ef;padding:2px 6px;font-size:12px}pre{background:#f2f4ef;padding:10px;font-size:12px;white-space:pre-wrap;margin:10px 0 0;max-height:380px;overflow:auto}.ok{color:#0d7a4a;font-weight:700}.er{color:#b0301a;font-weight:700}.pen{color:#a86026;font-weight:700}.stats{display:flex;gap:10px;flex-wrap:wrap}.stat{background:#fff;border:1px solid #ddd;padding:12px 16px;min-width:130px}.stat span{font-size:11px;text-transform:uppercase;color:#64716d}.stat b{display:block;font-size:20px;margin-top:3px}.stat.warn b{color:#a86026}.stat.danger b{color:#b0301a}.muted{color:#64716d;font-size:13px}.notice{background:#e6f8c7;padding:10px}.error{background:#ffe2de;padding:10px}.btn{background:#10211f;color:#fff;border:0;padding:11px 16px;font-weight:bold;font-size:13px;cursor:pointer}tr.pending{background:#fff6ef}tr.pending td{color:#7a4a12}
-  </style>
-</head>
-<body>
-<main class="w"><a href="/nexustraveltech/admin/">← Panel</a> &nbsp; <a href="/nexustraveltech/admin/zamanlayici-gecmisi">← Zamanlayıcı geçmişi</a>
-<h1>Migration durumu</h1>
-<p class="muted">Database migration dosyalarının (<code>*-postgres.sql</code>) uygulanma durumu. Kayıtlar <code>schema_migrations</code> tablosunda tutulur; commit sütunu migration'ın uygulandığı git commit'ini gösterir. Legacy MySQL dosyaları (<code>*-postgres.sql</code> olmayan) atlanır.</p>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Veritabanı Migration Durumu', 'migration-durumu');
+?>
 
-<div class="stats">
-  <div class="stat"><span>Toplam migration</span><b><?= (int)$total ?></b></div>
-  <div class="stat"><span>Uygulanan</span><b style="color:#0d7a4a"><?= (int)$applied ?></b></div>
-  <div class="stat <?= $pending > 0 ? 'warn' : '' ?>"><span>Bekleyen</span><b><?= (int)$pending ?></b></div>
-  <div class="stat"><span>Legacy atlanan</span><b><?= (int)$legacyCount ?></b></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:24px">
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Toplam Migration</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= (int)$total ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-success);font-weight:600">Uygulanan</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-success);margin-top:4px"><?= (int)$applied ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-warning);font-weight:600">Bekleyen</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-warning);margin-top:4px"><?= (int)$pending ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Legacy Atlanan</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= (int)$legacyCount ?></div>
+    </div>
 </div>
 
-<?php if ($message): ?><p class="notice"><?= htmlspecialchars($message) ?></p><?php endif; ?>
-<?php if ($error): ?><p class="error"><?= htmlspecialchars($error) ?></p><?php endif; ?>
+<?php if ($message): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
-<section class="c">
-<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-<h2 style="margin:0">Migration listesi (<?= (int)$total ?>)</h2>
-<form method="post" action="/nexustraveltech/admin/migration-durumu" style="display:inline">
-  <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
-  <button class="btn" <?= $pending === 0 ? 'disabled style="opacity:.5;cursor:not-allowed"' : '' ?>>▶ Bekleyenleri uygula<?= $pending > 0 ? ' (' . (int)$pending . ')' : '' ?></button>
-</form>
+<div class="sui-card" style="margin-bottom:24px">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">🐘 PostgreSQL Migration Listesi (<?= (int)$total ?>)</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                PostgreSQL uyumlu SQL dosyalarının <code>schema_migrations</code> üzerindeki kayıtları.
+            </p>
+        </div>
+        <form method="post" style="margin:0">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+            <button class="sui-btn <?= $pending > 0 ? 'sui-btn-success' : 'sui-btn-outline' ?>" <?= $pending === 0 ? 'disabled style="opacity:.6;cursor:not-allowed"' : '' ?>>
+                ▶ Bekleyenleri Uygula <?= $pending > 0 ? "($pending)" : '' ?>
+            </button>
+        </form>
+    </div>
+
+    <div style="overflow-x:auto">
+        <table class="sui-table">
+            <thead>
+                <tr>
+                    <th>Durum</th>
+                    <th>Migration Dosyası</th>
+                    <th>Uygulanma Zamanı</th>
+                    <th>Git Commit</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($rows as $r): ?>
+                    <tr style="<?= $r['status'] === 'pending' ? 'background:#fff8e1' : '' ?>">
+                        <td>
+                            <span class="sui-badge <?= $r['status'] === 'ok' ? 'sui-badge-success' : 'sui-badge-warning' ?>">
+                                <?= $r['status'] === 'ok' ? '✓ Uygulandı' : '⏳ Bekliyor' ?>
+                            </span>
+                        </td>
+                        <td><code style="font-size:12px"><?= htmlspecialchars($r['file']) ?></code></td>
+                        <td style="font-size:12px;color:var(--sui-muted);white-space:nowrap">
+                            <?= $r['applied_at'] !== '' ? htmlspecialchars(mb_substr($r['applied_at'], 0, 19)) : '—' ?>
+                        </td>
+                        <td>
+                            <?php if ($r['commit'] !== ''): ?>
+                                <code><?= substr($r['commit'], 0, 7) ?></code>
+                            <?php else: ?>
+                                <span style="color:var(--sui-muted)">—</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
 </div>
-<?php if ($pending > 0): ?><p class="muted" style="margin:8px 0 0">Bekleyen migration'lar sağlık kontrolü ile idempotent uygulanır (script'le aynı mantık). Sunucuda komut satırından da çalıştırabilirsiniz: <code>php scripts/health-check.php</code></p><?php endif; ?>
-<table>
-<tr><th>Durum</th><th>Dosya</th><th>Uygulanma</th><th>Commit</th></tr>
-<?php foreach ($rows as $r): ?>
-<tr class="<?= $r['status'] === 'pending' ? 'pending' : '' ?>">
-  <td style="white-space:nowrap"><?= $r['status'] === 'ok' ? '<span class="ok">✓ Uygulandı</span>' : '<span class="pen">⏳ Bekliyor</span>' ?></td>
-  <td><code><?= htmlspecialchars($r['file']) ?></code></td>
-  <td style="white-space:nowrap"><?= $r['applied_at'] !== '' ? htmlspecialchars(mb_substr($r['applied_at'], 0, 19)) : '—' ?></td>
-  <td><code><?= $r['commit'] !== '' ? substr($r['commit'], 0, 7) : '—' ?></code></td>
-</tr>
-<?php endforeach; ?>
-</table>
-</section>
 
 <?php if ($applyOutput !== ''): ?>
-<section class="c">
-<h2 style="margin:0">Uygulama çıktısı</h2>
-<pre><?= htmlspecialchars(mb_substr($applyOutput, -6000)) ?></pre>
-</section>
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">🖥️ Uygulama Çıktısı</h2>
+        </div>
+        <pre style="background:var(--sui-bg);padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:300px;overflow-y:auto;border:1px solid var(--sui-border)"><?= htmlspecialchars(mb_substr($applyOutput, -6000)) ?></pre>
+    </div>
 <?php endif; ?>
-</main>
-<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
-</html>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

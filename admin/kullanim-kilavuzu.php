@@ -90,35 +90,31 @@ function renderTable(array $rows): string
     return $html;
 }
 ?>
-<!doctype html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kullanım kılavuzu | NEXUS Admin</title>
-  <style>
-    body{margin:0;font-family:Arial,sans-serif;background:#f7f7f2;color:#10211f}
-    .w{width:min(960px,calc(100% - 32px));margin:35px auto;background:#fff;border:1px solid #ddd;padding:28px 32px;border-radius:8px}
-    .nav-bar{position:sticky;top:0;background:#fff;border-bottom:1px solid #e1e5de;padding:10px 0;margin:-28px -32px 20px;padding-left:32px;padding-right:32px;z-index:10;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .nav-bar a{font-size:12px;color:#64716d;text-decoration:none;padding:4px 8px;border-radius:4px;border:1px solid #e1e5de;background:#f7f7f2}
-    .nav-bar a:hover{background:#e6f8c7;border-color:#a3d98c}
-    @media(max-width:700px){.w{padding:16px}.nav-bar{margin:-16px -16px 16px;padding:8px 16px}}
-  </style>
-</head>
-<body>
-<main class="w">
-  <a href="/nexustraveltech/admin/" style="color:#64716d;font-size:13px">← Yönetim paneli</a>
-  <div class="nav-bar">
-    <span style="font-size:12px;color:#64716d;font-weight:700">Bölümler:</span>
-    <?php
-    preg_match_all('/^## (.+)$/m', $content, $m);
-    foreach ($m[1] as $i => $heading) {
-        $slug = slug($heading);
-        echo '<a href="#sec-' . $slug . '">' . htmlspecialchars($heading) . '</a>';
-    }
-    ?>
-  </div>
-  <?= md2html($content) ?>
-</main>
-</body>
-</html>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Sistem & Geliştirici Kullanım Kılavuzu', 'kullanim-kilavuzu');
+?>
+
+<div class="sui-card" style="margin-bottom:20px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:12px;color:var(--sui-muted);font-weight:700">📑 Hızlı Atlama:</span>
+        <?php
+        preg_match_all('/^## (.+)$/m', $content, $m);
+        foreach ($m[1] as $heading) {
+            $slug = slug($heading);
+            echo '<a href="#sec-' . $slug . '" class="sui-btn sui-btn-outline sui-btn-sm">' . htmlspecialchars($heading) . '</a>';
+        }
+        ?>
+    </div>
+</div>
+
+<div class="sui-card" style="line-height:1.7;padding:32px">
+    <?= md2html($content) ?>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

@@ -59,34 +59,120 @@ if (($_GET['export'] ?? '') === 'pdf') {
     pdf_download(chat_report_html($d), 'sohbet-raporu-' . $ay);
 }
 ?>
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sohbet raporu | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial,sans-serif}.wrap{width:min(1180px,calc(100% - 32px));margin:40px auto}.top{display:flex;justify-content:space-between;gap:20px;align-items:center}.brand{font-size:28px;font-weight:800}.brand span{color:#e85f42}.back{color:#10211f}.nav{display:flex;gap:10px;align-items:center;margin:16px 0;flex-wrap:wrap}.nav a,.nav form{background:#fff;border:1px solid #e1e5de;padding:8px 12px;color:#10211f;text-decoration:none;font-size:13px}.nav input{padding:8px;border:1px solid #d8ded8;font:inherit}.stats{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.stat{background:#fff;border:1px solid #e1e5de;padding:12px 16px;font-size:12px;color:#64716d;min-width:130px}.stat b{font-size:22px;display:block;color:#10211f;margin-top:3px}.stat.warn b{color:#a86026}.stat.danger b{color:#b0301a}.panel{background:#fff;border:1px solid #e1e5de;padding:16px;margin:16px 0}.panel h2{margin:0 0 10px;font-size:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid #e1e5de;padding:9px 11px;font-size:13px;vertical-align:top}th{font-size:11px;text-transform:uppercase;color:#64716d}td.num,th.num{text-align:center}.muted{color:#64716d}.bar{display:flex;gap:2px;align-items:flex-end;height:44px;margin-top:8px;max-width:480px}.bar i{flex:1;background:#10211f;border-radius:2px 2px 0 0}.rate-line{font-size:14px;font-weight:700}.rate-ok{color:#0d7a4a}.rate-warn{color:#a86026}.rate-bad{color:#b0301a}</style></head><body><main class="wrap"><div class="top"><div><div class="brand">N<span>∿</span>XUS Admin</div><p>Önyüz AI asistan — aylık sohbet raporu</p></div><a class="back" href="/nexustraveltech/admin/ziyaretci-sohbet">← Sohbet kayıtları</a></div>
-<div class="nav"><a href="/nexustraveltech/admin/sohbet-raporu?ay=<?=htmlspecialchars($prev)?>">← Önceki ay</a><form method="get" action="/nexustraveltech/admin/sohbet-raporu" style="display:flex;gap:6px;align-items:center;border:0;background:none;padding:0"><input type="month" name="ay" value="<?=htmlspecialchars($ay)?>"><button style="background:#10211f;color:#fff;border:0;padding:8px 12px;cursor:pointer">Göster</button></form><a href="/nexustraveltech/admin/sohbet-raporu?ay=<?=htmlspecialchars($next)?>">Sonraki ay →</a><span style="width:10px"></span><a href="?ay=<?=htmlspecialchars($ay)?>&export=csv">⬇ CSV</a><a href="?ay=<?=htmlspecialchars($ay)?>&export=pdf">⬇ PDF</a><span class="muted" style="margin-left:auto"><b style="color:#10211f"><?=htmlspecialchars($monthLabel)?></b></span></div>
-<div class="stats"><div class="stat"><b><?= (int)$totalRows ?></b>Kayıtlı soru</div><div class="stat"><b><?= (int)$qualityRows ?></b>Kaliteli soru</div><div class="stat"><b><?= (int)$ips ?></b>Farklı IP</div><div class="stat warn"><b><?= (int)$redirected ?></b>Yönlendirildi</div><div class="stat danger"><b><?= (int)$denied ?></b>Reddedilen istek</div></div>
-<section class="panel"><h2>Yanıtlanamayan / yönlendirme oranı</h2>
-<p class="rate-line <?= $unansweredRate <= 30 ? 'rate-ok' : ($unansweredRate <= 60 ? 'rate-warn' : 'rate-bad') ?>">%<?= (int)$unansweredRate ?></p>
-<p class="muted">AI doğrudan yanıt yerine sayfaya yönlendirdi (<?= (int)$redirected ?>) veya istek reddedildi (<?= (int)$denied ?> — hız sınırı / yasak kelime). Düşük oran, asistanın soruları doğrudan çözdüğünü gösterir.</p>
-<div class="bar"><?php for ($i = 0; $i < 10; $i++): ?><i title="%<?= (int)$unansweredRate ?>" style="height:<?= $i < round($unansweredRate / 10) ? 100 : 12 ?>%"></i><?php endfor; ?></div>
-</section>
-<section class="panel"><h2>Gün bazında trafik</h2>
-<table><tr><th>Gün</th><th class="num">Soru</th><th class="num">Yönlendirme</th><th class="num">Red</th></tr>
-<?php foreach ($daily as $date => $v): ?>
-<tr><td><?= htmlspecialchars((string) $date) ?></td><td class="num"><?= (int) $v['soru'] ?></td><td class="num"><?= (int) $v['yon'] ?></td><td class="num"><?= (int) $v['red'] ?></td></tr>
-<?php endforeach; ?>
-</table>
-<p class="muted">Soru: kayıtlı tüm sorular · Yönlendirme: AI'nın sayfaya yönlendirdiği kaliteli yanıtlar · Red: hız sınırı + yasak kelime istekleri.</p>
-</section>
-<section class="panel"><h2>Konu bazında haftalık trend</h2>
-<table><tr><th>Konu</th><?php for ($w = 1; $w <= 5; $w++): ?><th class="num">Hafta <?= $w ?></th><?php endfor; ?><th class="num">Toplam</th></tr>
-<?php foreach ($topicTopKeys as $t): ?>
-<tr><td><?=htmlspecialchars($t)?></td><?php for ($w = 1; $w <= 5; $w++): ?><td class="num"><?= (int)$topicWeek[$t][$w] ?></td><?php endfor; ?><td class="num"><b><?= (int)$topicTotal[$t] ?></b></td></tr>
-<?php endforeach; ?>
-</table></section>
-<section class="panel"><h2>En çok sorulan 10 soru</h2>
-<?php if (!$topQuestions): ?><p class="muted">Bu ay kaliteli soru kaydı yok.</p><?php else: ?>
-<table><tr><th>#</th><th>Soru</th><th class="num">Tekrar</th></tr>
-<?php foreach ($topQuestions as $i => $row): ?>
-<tr><td class="num"><?= $i + 1 ?></td><td><?=htmlspecialchars((string) $row['q'])?></td><td class="num"><?= (int)$row['c'] ?></td></tr>
-<?php endforeach; ?>
-</table><?php endif; ?>
-</section>
-</main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Aylık Ziyaretçi AI Sohbet Raporu', 'ziyaretci-sohbet');
+?>
+
+<!-- Gezinme ve Filtre Kartı -->
+<div class="sui-card" style="margin-bottom:24px">
+    <div class="sui-card-header">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <a href="?ay=<?= htmlspecialchars($prev) ?>" class="sui-btn sui-btn-outline sui-btn-sm">← Önceki Ay</a>
+            <form method="get" style="display:flex;gap:8px;align-items:center;margin:0">
+                <input type="month" name="ay" value="<?= htmlspecialchars($ay) ?>" class="sui-input" style="padding:6px 12px;width:auto">
+                <button class="sui-btn sui-btn-primary sui-btn-sm" type="submit">Göster</button>
+            </form>
+            <a href="?ay=<?= htmlspecialchars($next) ?>" class="sui-btn sui-btn-outline sui-btn-sm">Sonraki Ay →</a>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-weight:700;font-size:14px;margin-right:8px"><?= htmlspecialchars($monthLabel) ?></span>
+            <a href="?ay=<?= htmlspecialchars($ay) ?>&export=csv" class="sui-btn sui-btn-outline sui-btn-sm">⬇ CSV</a>
+            <a href="?ay=<?= htmlspecialchars($ay) ?>&export=pdf" class="sui-btn sui-btn-success sui-btn-sm">⬇ PDF</a>
+            <a href="ziyaretci-sohbet" class="sui-btn sui-btn-outline sui-btn-sm">← Canlı Sohbet Kayıtları</a>
+        </div>
+    </div>
+</div>
+
+<!-- KPI Kartları -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:24px">
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Kayıtlı Soru</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= (int)$totalRows ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-primary);font-weight:600">Kaliteli Soru</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-primary);margin-top:4px"><?= (int)$qualityRows ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Farklı IP Sayısı</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= (int)$ips ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-warning);font-weight:600">Yönlendirildi</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-warning);margin-top:4px"><?= (int)$redirected ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-danger);font-weight:600">Reddedilen İstek</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-danger);margin-top:4px"><?= (int)$denied ?></div>
+    </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(400px, 1fr));gap:20px;margin-bottom:24px">
+    <!-- Gün Bazında Trafik -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">📅 Gün Bazında Trafik Dağılımı</h2>
+        </div>
+        <div style="overflow-x:auto;max-height:360px">
+            <table class="sui-table">
+                <thead>
+                    <tr>
+                        <th>Gün</th>
+                        <th style="text-align:center">Soru</th>
+                        <th style="text-align:center">Yönlendirme</th>
+                        <th style="text-align:center">Red</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($daily as $date => $v): ?>
+                        <tr>
+                            <td><?= htmlspecialchars((string) $date) ?></td>
+                            <td style="text-align:center;font-weight:700"><?= (int) $v['soru'] ?></td>
+                            <td style="text-align:center;color:var(--sui-warning)"><?= (int) $v['yon'] ?></td>
+                            <td style="text-align:center;color:var(--sui-danger)"><?= (int) $v['red'] ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- En Çok Sorulan Sorular -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">🔥 En Çok Sorulan 10 Soru</h2>
+        </div>
+        <?php if (!$topQuestions): ?>
+            <p style="color:var(--sui-muted);padding:20px;text-align:center">Bu ay henüz kayıtlı soru yok.</p>
+        <?php else: ?>
+            <div style="overflow-x:auto">
+                <table class="sui-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Soru</th>
+                            <th style="text-align:center">Tekrar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($topQuestions as $i => $row): ?>
+                            <tr>
+                                <td><span class="sui-badge sui-badge-info"><?= $i + 1 ?></span></td>
+                                <td style="font-weight:600"><?= htmlspecialchars((string) $row['q']) ?></td>
+                                <td style="text-align:center;font-weight:700"><?= (int)$row['c'] ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

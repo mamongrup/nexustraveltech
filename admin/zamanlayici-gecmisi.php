@@ -214,32 +214,31 @@ $filterUrl = function (string $st, int $h) use ($jobId): string {
     if ($h > 0) $q[] = 'hours=' . $h;
     $q[] = 'limit=200';
     return '?' . implode('&', $q);
-};
-$hasFilter = $status !== '' || $hours > 0;
 $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başarılı' : '')) . ' ' . ($hours === 24 ? '· son 24 saat' : ($hours === 72 ? '· son 3 gün' : ($hours === 168 ? '· son 7 gün' : ''))));
-?>
-<!doctype html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Zamanlayıcı geçmişi | NEXUS Admin</title>
-  <style>
-    body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(1080px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}select,button{padding:9px;font:inherit;border:1px solid #d8ded8}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #e1e5de;padding:9px 10px;text-align:left;vertical-align:top;font-size:13px}th{font-size:12px;text-transform:uppercase;color:#64716d}code{background:#f2f4ef;padding:2px 6px;font-size:12px}pre{background:#f2f4ef;padding:8px;font-size:12px;white-space:pre-wrap;margin:4px 0 0}.ok{color:#0d7a4a;font-weight:700}.er{color:#b0301a;font-weight:700}.stats{display:flex;gap:10px;flex-wrap:wrap}.stat{background:#fff;border:1px solid #ddd;padding:12px 16px;min-width:130px;display:block;text-decoration:none;color:inherit}.stat span{font-size:11px;text-transform:uppercase;color:#64716d}.stat b{display:block;font-size:20px;margin-top:3px}.stat.warn b{color:#a86026}.stat.danger b{color:#b0301a}a.stat:hover{border-color:#10211f;box-shadow:0 2px 8px rgba(0,0,0,.08)}.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.filters button{background:#10211f;color:#fff;border:0;cursor:pointer}.muted{color:#64716d;font-size:13px}summary{cursor:pointer;font-size:12px;color:#0d7a4a}
-  </style>
-</head>
-<body>
-<main class="w"><a href="/nexustraveltech/admin/">← Panel</a> &nbsp; <a href="/nexustraveltech/admin/timerlar">← Zamanlayıcılar</a>
-<h1>Zamanlayıcı çalışma geçmişi</h1>
-<p class="muted">Her çalıştırma (nabız, manuel, AI) ayrı satır olarak kaydedilir; kayıtlar 90 gün tutulur. <?= (int)$stats['totalRuns'] ?> toplam kayıt.</p>
 
-<div class="stats">
-  <a class="stat" href="<?=htmlspecialchars($filterUrl('', 168))?>"><span>Son 7 gün çalışma</span><b><?= (int)$stats['total7'] ?></b></a>
-  <a class="stat <?= $stats['err24'] > 0 ? 'danger' : '' ?>" href="<?=htmlspecialchars($filterUrl('error', 24))?>"><span>Hata — son 24 saat</span><b><?= (int)$stats['err24'] ?></b></a>
-  <a class="stat <?= $stats['err7'] > 0 ? 'warn' : '' ?>" href="<?=htmlspecialchars($filterUrl('error', 168))?>"><span>Hata — son 7 gün</span><b><?= (int)$stats['err7'] ?></b></a>
-  <div class="stat"><span>Ort. süre (7 gün)</span><b><?= number_format((int)$stats['avgMs']) ?> ms</b></div>
-  <a class="stat <?= ($stats['pendingPurge'] ?? 0) > 0 ? 'danger' : '' ?>" href="/nexustraveltech/admin/ozellik-listeleri#trash"><span>Onay bekleyen silme</span><b><?= (int)($stats['pendingPurge'] ?? 0) ?></b></a>
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Zamanlayıcı Çalışma Geçmişi', 'timerlar');
+?>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:24px">
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-muted);font-weight:600">Son 7 Gün Çalışma</div>
+        <div style="font-size:24px;font-weight:800;margin-top:4px"><?= (int)$stats['total7'] ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-danger);font-weight:600">Hata (Son 24 Saat)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-danger);margin-top:4px"><?= (int)$stats['err24'] ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-warning);font-weight:600">Hata (Son 7 Gün)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-warning);margin-top:4px"><?= (int)$stats['err7'] ?></div>
+    </div>
+    <div class="sui-card" style="padding:16px">
+        <div style="font-size:12px;color:var(--sui-primary);font-weight:600">Ort. Süre (7 Gün)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--sui-primary);margin-top:4px"><?= number_format((int)$stats['avgMs']) ?> ms</div>
+    </div>
 </div>
+
 <?php if ($hasFilter): ?>
 <p class="muted" style="margin:10px 0 0">Filtre: <b><?=htmlspecialchars($filterLabel)?></b> · <a href="?limit=200" style="color:#0d7a4a;font-weight:700">Temizle</a></p>
 <?php endif; ?>
@@ -367,10 +366,11 @@ $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başar�
   <td><?= $r['triggered_by'] === 'manual' ? '👆 Manuel' : ($r['triggered_by'] === 'ai' ? '🤖 AI' : '🕐 Nabız') ?></td>
   <td><?= $r['output'] !== null && trim((string) $r['output']) !== '' ? '<details><summary>Göster</summary><pre>' . htmlspecialchars(mb_substr((string) $r['output'], 0, 2000)) . '</pre></details>' : '—' ?></td>
 </tr>
-<?php endforeach; ?>
-</table>
-<?php endif; ?>
 </section>
-</main>
-<?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body>
-</html>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

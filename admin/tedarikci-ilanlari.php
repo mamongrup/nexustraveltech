@@ -1,12 +1,8 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/listing_integrity.php';
-require_admin();
-
-// Tedarikçi ilan görünümü — özellik silme onay ekranındaki "N ilan" bağlantısının hedefi.
-// Yalnızca salt okunur: hangi ilanların etkilendiğini tedarikçi kimliğiyle hızlıca görüntüler.
 
 $supplierId = (int) ($_GET['supplier_id'] ?? 0);
 $typeLabel = fn($t) => ['hotel' => 'Otel', 'villa' => 'Villa', 'yacht' => 'Yat'][$t] ?? $t;
@@ -15,7 +11,7 @@ $statusLabel = ['draft' => 'Taslak', 'active' => 'Yayında', 'paused' => 'Durakl
 $pdo = db();
 $supplier = null;
 $props = [];
-$error = '';
+$allSuppliers = [];
 
 if ($supplierId > 0) {
     $q = $pdo->prepare('SELECT s.*, (SELECT COUNT(*) FROM supplier_users u WHERE u.supplier_id=s.id) AS user_count FROM suppliers s WHERE s.id=?');
@@ -29,38 +25,154 @@ if ($supplierId > 0) {
              FROM properties p WHERE p.supplier_id=? ORDER BY p.property_type, p.name");
         $pq->execute([$supplierId]);
         $props = $pq->fetchAll();
-    } else {
-        $error = 'Tedarikçi bulunamadı.';
     }
 } else {
-    $error = 'Geçersiz tedarikçi kimliği.';
+    // Tüm tedarikçileri listele
+    $allSuppliers = $pdo->query("SELECT s.*, 
+        (SELECT COUNT(*) FROM properties p WHERE p.supplier_id=s.id) AS prop_count,
+        (SELECT COUNT(*) FROM supplier_users u WHERE u.supplier_id=s.id) AS user_count
+        FROM suppliers s ORDER BY s.id DESC")->fetchAll();
 }
-$byType = ['hotel' => 0, 'villa' => 0, 'yacht' => 0];
-$byStatus = ['draft' => 0, 'active' => 0, 'paused' => 0];
-foreach ($props as $p) {
-    if (isset($byType[$p['property_type']])) $byType[$p['property_type']]++;
-    if (isset($byStatus[$p['status']])) $byStatus[$p['status']]++;
-}
+
+$pageTitle = $supplier ? ($supplier['company_name'] . ' — İlanlar') : 'Tedarikçi & Tesis Listesi';
+admin_layout_start($pageTitle, 'tedarikci-ilanlari');
 ?>
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tedarikçi ilanları | NEXUS Admin</title><link rel="stylesheet" href="/nexustraveltech/assets/supply.css"><script defer src="/nexustraveltech/assets/supply.js"></script><style>body{font-family:Arial;background:#f7f7f2;color:#10211f;margin:0}.w{width:min(1000px,calc(100% - 30px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:16px 0;border-radius:8px}.meta{color:#64716d;font-size:13px;line-height:1.6}.badge{display:inline-block;padding:2px 9px;border-radius:12px;font-size:12px;font-weight:bold;background:#eef0ea;color:#405b13;margin-left:6px}.badge.on{background:#e6f8c7}.badge.off{background:#ffe2de;color:#9d3b1c}table{width:100%;border-collapse:collapse;margin-top:10px}th{text-align:left;padding:8px 10px;border-bottom:1px solid #e1e5de;font-size:11px;text-transform:uppercase;color:#64716d}td{padding:9px 10px;border-bottom:1px solid #eef0ea;font-size:14px}.mini{display:inline-flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}.mini div{background:#f4f6f1;border:1px solid #e1e5de;border-radius:8px;padding:8px 14px;font-size:13px}
-.media-gallery{display:flex;align-items:center}
-.media-gallery img{transition:transform .12s}
-.media-gallery img:hover{transform:scale(1.15);z-index:1}</style></head><body><main class="w"><a href="/nexustraveltech/admin/ozellik-listeleri">← Katalog & sınıflandırma yönetimi</a>
-<?php if ($error): ?><div class="c" style="border-color:#f3c4ba;background:#fff7f5"><?= htmlspecialchars($error) ?></div>
-<?php elseif ($supplier): ?>
-<h1>🏢 <?= htmlspecialchars((string) $supplier['company_name']) ?></h1>
-<p class="meta">Tedarikçi #<?= (int) $supplier['id'] ?> · <?= htmlspecialchars($statusLabel[$supplier['status']] ?? (string) $supplier['status']) ?><span class="badge <?= $supplier['status'] === 'active' ? 'on' : 'off' ?>"><?= htmlspecialchars((string) $supplier['status']) ?></span><br>Kayıtlı ilan: <b><?= count($props) ?></b> (<?= implode(' · ', array_map(fn($t) => $typeLabel($t) . ': ' . $byType[$t], array_keys($byType))) ?> <?php if (array_sum($byStatus) > 0): ?>— <?= implode(' · ', array_map(fn($s) => ($statusLabel[$s] ?? $s) . ': ' . $byStatus[$s], array_keys($byStatus))) ?><?php endif; ?>)</p>
-<div class="c"><h2 style="margin-top:0">İlanlar</h2>
-<?php if (!$props): ?><p class="meta">Bu tedarikçinin kayıtlı ilanı yok.</p><?php else: ?>
-<table><tr><th>Görsel</th><th>İlan</th><th>Tür</th><th>Durum</th><th>Şehir</th><th>Oda tipi</th><th>Fiyat planı</th><th>Hazırlık</th><th>Eklenme</th></tr>
-<?php foreach ($props as $p): ?><?php $thumbs = $pdo->prepare('SELECT file_path FROM property_media WHERE property_id=? ORDER BY is_cover DESC, sort_order, id LIMIT 4'); $thumbs->execute([(int) $p['id']]); $thumbRows = $thumbs->fetchAll(); ?><tr><td><?php if ($thumbRows): ?><div class="media-gallery"><?php foreach ($thumbRows as $ti => $tr): ?><img src="/nexustraveltech/<?= htmlspecialchars(ltrim((string) $tr['file_path'], '/')) ?>" alt="<?= htmlspecialchars((string) $p['name']) ?>" style="width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #e1e5de;cursor:zoom-in;<?= $ti > 0 ? 'margin-left:-8px;' : '' ?>" loading="lazy"><?php endforeach; ?></div><?php else: ?><span style="color:#b0b8b4;font-size:11px">—</span><?php endif; ?></td><td><b><?= htmlspecialchars((string) $p['name']) ?></b></td><td><?= $typeLabel($p['property_type']) ?></td><td><span class="badge <?= $p['status'] === 'active' ? 'on' : 'off' ?>"><?= htmlspecialchars($statusLabel[$p['status']] ?? (string) $p['status']) ?></span></td><td><?= htmlspecialchars((string) ($p['city'] ?? '—')) ?></td><td><?= (int) $p['room_count'] ?></td><td><?= (int) $p['plan_count'] ?></td><?php $__rd = listing_readiness($p); ?>
-<?php $__remWeight = 0; foreach($__rd['items'] as $__ri){ if(empty($__ri['ok']) && $__ri['key']!=='rules') $__remWeight += (int)($__ri['weight']??0); } ?>
-<td><span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap"><span style="display:inline-block;width:36px;height:6px;border-radius:3px;background:#e1e5de;overflow:hidden;vertical-align:middle"><span style="display:block;height:100%;width:<?= (int)$__rd['score'] ?>%;background:<?= $__rd['score']>=100?'#2c7a1f':($__rd['score']>=70?'#5f9008':'#b0301a') ?>"></span></span><b style="color:<?= $__rd['score']>=100?'#2c7a1f':($__rd['score']>=70?'#5f9008':'#b0301a') ?>"><?= $__rd['score'] ?></b><?php if($__rd['missing_count']>0): ?><small style="color:#999">/ <?= $__rd['ok_count'] ?>ok <?= $__rd['missing_count'] ?>ex</small><?php if($__remWeight>0): ?><small style="color:#8a6100;font-size:11px;margin-left:2px" title="Eksik kalemlerin toplam puanı">· kalan <?= $__rd['missing_count'] ?> kalem · +<?= $__remWeight ?> puan</small><?php endif; ?><?php endif; ?></span></td>
-<td><?= htmlspecialchars(mb_substr((string) $p['created_at'], 0, 10)) ?></td></tr><?php endforeach; ?>
-</table>
-<div class="mini"><div>Otel <b><?= (int) $byType['hotel'] ?></b></div><div>Villa <b><?= (int) $byType['villa'] ?></b></div><div>Yat <b><?= (int) $byType['yacht'] ?></b></div><div>Yayında <b><?= (int) $byStatus['active'] ?></b></div><div>Taslak <b><?= (int) $byStatus['draft'] ?></b></div><div>Duraklatılmış <b><?= (int) $byStatus['paused'] ?></b></div></div>
+<?php if ($supplierId > 0 && $supplier): ?>
+    <div style="margin-bottom:16px">
+        <a href="tedarikci-ilanlari" class="sui-btn sui-btn-outline sui-btn-sm">← Tüm Tedarikçilere Dön</a>
+    </div>
+
+    <div class="sui-card" style="margin-bottom:24px">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">🏢 <?= htmlspecialchars((string) $supplier['company_name']) ?></h2>
+            <span class="sui-badge <?= $supplier['status'] === 'active' ? 'sui-badge-success' : 'sui-badge-danger' ?>">
+                <?= htmlspecialchars($statusLabel[$supplier['status']] ?? (string) $supplier['status']) ?>
+            </span>
+        </div>
+        <p style="color:var(--sui-muted);margin:0">
+            Tedarikçi ID: #<?= (int) $supplier['id'] ?> · Toplam Tesis: <b><?= count($props) ?></b> · Kullanıcı Sayısı: <b><?= (int) $supplier['user_count'] ?></b>
+        </p>
+    </div>
+
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">🏨 Tesisler & İlanlar</h2>
+        </div>
+        <?php if (!$props): ?>
+            <p style="color:var(--sui-muted);padding:10px 0">Bu tedarikçiye ait kayıtlı ilan/tesis bulunmuyor.</p>
+        <?php else: ?>
+            <div style="overflow-x:auto">
+                <table class="sui-table">
+                    <thead>
+                        <tr>
+                            <th>Görsel</th>
+                            <th>Tesis Adı</th>
+                            <th>Tür</th>
+                            <th>Durum</th>
+                            <th>Şehir</th>
+                            <th>Oda Tipi</th>
+                            <th>Fiyat Planı</th>
+                            <th>Hazırlık Skoru</th>
+                            <th>Kayıt Tarihi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($props as $p): ?>
+                            <?php 
+                            $thumbs = $pdo->prepare('SELECT file_path FROM property_media WHERE property_id=? ORDER BY is_cover DESC, sort_order, id LIMIT 3');
+                            $thumbs->execute([(int) $p['id']]);
+                            $thumbRows = $thumbs->fetchAll();
+                            $rd = listing_readiness($p);
+                            ?>
+                            <tr>
+                                <td>
+                                    <?php if ($thumbRows): ?>
+                                        <div style="display:flex;gap:4px">
+                                            <?php foreach ($thumbRows as $tr): ?>
+                                                <img src="<?= htmlspecialchars(ltrim((string) $tr['file_path'], '/')) ?>" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--sui-border)" loading="lazy">
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <span style="color:var(--sui-muted);font-size:12px">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><b><?= htmlspecialchars((string) $p['name']) ?></b></td>
+                                <td><?= $typeLabel($p['property_type']) ?></td>
+                                <td>
+                                    <span class="sui-badge <?= $p['status'] === 'active' ? 'sui-badge-success' : 'sui-badge-warning' ?>">
+                                        <?= htmlspecialchars($statusLabel[$p['status']] ?? (string) $p['status']) ?>
+                                    </span>
+                                </td>
+                                <td><?= htmlspecialchars((string) ($p['city'] ?? '—')) ?></td>
+                                <td><?= (int) $p['room_count'] ?></td>
+                                <td><?= (int) $p['plan_count'] ?></td>
+                                <td>
+                                    <span class="sui-badge <?= $rd['score'] >= 80 ? 'sui-badge-success' : ($rd['score'] >= 50 ? 'sui-badge-warning' : 'sui-badge-danger') ?>">
+                                        %<?= (int) $rd['score'] ?>
+                                    </span>
+                                </td>
+                                <td style="font-size:12px;color:var(--sui-muted)"><?= htmlspecialchars(mb_substr((string) $p['created_at'], 0, 10)) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+
+<?php else: ?>
+    <!-- TÜM TEDARİKÇİLER LİSTESİ -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">🏨 Tedarikçiler & Tesis Portföyü (<?= count($allSuppliers) ?>)</h2>
+        </div>
+        <div style="overflow-x:auto">
+            <table class="sui-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Firma / Tedarikçi Ünvanı</th>
+                        <th>Durum</th>
+                        <th>Kayıtlı Tesis / İlan</th>
+                        <th>Kullanıcı Sayısı</th>
+                        <th>Kayıt Tarihi</th>
+                        <th>İşlem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($allSuppliers as $s): ?>
+                        <tr>
+                            <td>#<?= (int) $s['id'] ?></td>
+                            <td>
+                                <b><?= htmlspecialchars((string) $s['company_name']) ?></b>
+                                <div style="font-size:11px;color:var(--sui-muted)"><?= htmlspecialchars((string) ($s['tax_number'] ?? 'Vergi no belirtilmedi')) ?></div>
+                            </td>
+                            <td>
+                                <span class="sui-badge <?= $s['status'] === 'active' ? 'sui-badge-success' : 'sui-badge-warning' ?>">
+                                    <?= htmlspecialchars($statusLabel[$s['status']] ?? (string) $s['status']) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <b><?= (int) $s['prop_count'] ?> Tesis</b>
+                            </td>
+                            <td><?= (int) $s['user_count'] ?> Kullanıcı</td>
+                            <td style="font-size:12px;color:var(--sui-muted)"><?= htmlspecialchars(mb_substr((string) ($s['created_at'] ?? ''), 0, 10)) ?></td>
+                            <td>
+                                <a href="tedarikci-ilanlari?supplier_id=<?= (int) $s['id'] ?>" class="sui-btn sui-btn-primary sui-btn-sm">
+                                    İlanları İncele →
+                                </a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
 <?php endif; ?>
-<p class="meta" style="margin-top:14px"><a href="/nexustraveltech/tedarikci/" target="_blank" rel="noopener" style="color:#405b13">Tedarikçi panelini ayrı sekmede aç ↗</a> <small>(panel oturumu gerektirir)</small></p>
-</div>
-<?php endif; ?>
-</main></body></html>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

@@ -114,195 +114,123 @@ foreach ($orphans as $o) {
 }
 $totalOrphan = count($orphans);
 ?>
-<!doctype html>
-<html lang="tr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Yetim eşleştirmeler | NEXUS Admin</title>
-<style>
-body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial}
-.wrap{width:min(950px,calc(100% - 32px));margin:40px auto}
-.card{background:#fff;border:1px solid #e1e5de;padding:24px;margin-top:20px}
-table{border-collapse:collapse;width:100%;font-size:13px}
-th{text-align:left;padding:7px 10px;border:1px solid #e1e5de;background:#f4f6f1}
-td{padding:6px 10px;border:1px solid #e1e5de}
-.ok{color:#2e7d32}.err{color:#b0301a}.warn{color:#8a6100}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold}
-.badge-red{background:#ffe2de;color:#b0301a}.badge-orange{background:#fdf3e0;color:#8a6100}.badge-green{background:#e6f8c7;color:#2e7d32}
-del-btn{background:none;border:1px solid #d8ded8;padding:3px 10px;cursor:pointer;font-size:12px;border-radius:4px}
-del-btn:hover{background:#ffe2de;border-color:#b0301a;color:#b0301a}
-.msg{background:#e6f8c7;border:1px solid #bcd98a;padding:10px 14px;border-radius:8px;margin-bottom:14px}
-.msg-err{background:#ffe2de;border:1px solid #e8b4b0}
-</style>
-</head>
-<body>
-<main class="wrap">
-<a href="/nexustraveltech/admin/">← Panele dön</a>
-<?php if ($msg): ?><div class="msg"><?= htmlspecialchars($msg) ?></div><?php endif; ?>
-<?php if ($err): ?><div class="msg msg-err"><?= htmlspecialchars($err) ?></div><?php endif; ?>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('Yetim Eşleştirme Temizliği', 'orphan-mappings');
+?>
 
-<section class="card">
-<h1>🧹 Yetim eşleştirmeler</h1>
-<p style="color:#64716d">Silinmiş oda tipi, fiyat planı, ürün veya iCare ait olan eşleştirme satırları. Tek tek silebilir veya <a href="/nexustraveltech/admin/approve-orphan-cleanup.php">toplu temizleme</a> ile topluca kaldırabilirsiniz.</p>
+<?php if ($msg): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($msg) ?></div><?php endif; ?>
+<?php if ($err): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
-<?php if ($totalOrphan === 0): ?>
-<p style="color:#2e7d32;font-weight:bold">✓ Yetim eşleştirme yok — tüm satırlar geçerli.</p>
-<?php else: ?>
-<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-<?php foreach ($tableCounts as $tbl => $cnt): ?>
-<span class="badge <?= $tbl === 'ical_connections' ? 'badge-orange' : 'badge-red' ?>"><?= htmlspecialchars(str_replace('channel_', '', $tbl)) ?>: <?= $cnt ?></span>
-<?php endforeach; ?>
-<span class="badge badge-red" style="background:#f4f6f1">Toplam: <?= $totalOrphan ?></span>
-</div>
+<div class="sui-card" style="margin-bottom:24px">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">🧹 Yetim Eşleştirmeler (<?= $totalOrphan ?>)</h2>
+            <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                Silinmiş oda tipi, fiyat planı veya kanallara ait geçersiz eşleştirmeleri temizleyin.
+            </p>
+        </div>
+        <div>
+            <a href="approve-orphan-cleanup.php" class="sui-btn sui-btn-danger sui-btn-sm">
+                <i class="fas fa-trash-alt"></i> Toplu Temizleme Onayı
+            </a>
+        </div>
+    </div>
 
-<table>
-<tr><th>#</th><th>Tür</th><th>Kod / etiket</th><th>Durum</th><th>Ürün / kanal</th><th>Sorun</th><th></th></tr>
-<?php foreach ($orphans as $o): ?>
-<tr>
-<td><?= (int) $o['id'] ?></td>
-<td><?= htmlspecialchars($o['label']) ?></td>
-<td><b><?= htmlspecialchars((string) ($o['code'] ?? '')) ?></b>
-    <?php if (!empty($o['suggestion_score'])): ?>
-    <span class="badge badge-orange">%<?= (int) $o['suggestion_score'] ?></span>
+    <?php if ($totalOrphan === 0): ?>
+        <div class="sui-alert sui-alert-success">
+            ✓ Harika! Sistemde yetim eşleştirme kaydı bulunmuyor — tüm eşleştirmeler aktif varlıklarla bağlı.
+        </div>
+    <?php else: ?>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+            <?php foreach ($tableCounts as $tbl => $cnt): ?>
+                <span class="sui-badge <?= $tbl === 'ical_connections' ? 'sui-badge-warning' : 'sui-badge-danger' ?>">
+                    <?= htmlspecialchars(str_replace('channel_', '', $tbl)) ?>: <?= $cnt ?>
+                </span>
+            <?php endforeach; ?>
+        </div>
+
+        <div style="overflow-x:auto">
+            <table class="sui-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Tür</th>
+                        <th>Kod / Etiket</th>
+                        <th>Durum</th>
+                        <th>Ürün / Kanal</th>
+                        <th>Sorun</th>
+                        <th>İşlem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($orphans as $o): ?>
+                        <tr>
+                            <td><?= (int) $o['id'] ?></td>
+                            <td><?= htmlspecialchars($o['label']) ?></td>
+                            <td>
+                                <b><?= htmlspecialchars((string) ($o['code'] ?? '')) ?></b>
+                                <?php if (!empty($o['suggestion_score'])): ?>
+                                    <span class="sui-badge sui-badge-warning">%<?= (int) $o['suggestion_score'] ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td><?= htmlspecialchars((string) ($o['status'] ?? '')) ?></td>
+                            <td>
+                                <?= htmlspecialchars((string) ($o['property_name'] ?? '')) ?>
+                                <?php if (!empty($o['channel_name'])): ?> · <span style="color:var(--sui-muted)"><?= htmlspecialchars($o['channel_name']) ?></span><?php endif; ?>
+                                <?php if (!empty($o['supplier_name'])): ?> · <span style="color:var(--sui-muted)"><?= htmlspecialchars($o['supplier_name']) ?></span><?php endif; ?>
+                            </td>
+                            <td style="color:var(--sui-danger);font-size:12px">
+                                <?= htmlspecialchars((string) ($o['issue'] ?? '')) ?>
+                            </td>
+                            <td>
+                                <form method="post" style="display:inline;margin:0" onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?')">
+                                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                    <input type="hidden" name="action" value="delete_orphan">
+                                    <input type="hidden" name="table" value="<?= htmlspecialchars($o['table']) ?>">
+                                    <input type="hidden" name="id" value="<?= (int) $o['id'] ?>">
+                                    <button class="sui-btn sui-btn-danger sui-btn-sm" title="Tek satırı sil">Sil</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
     <?php endif; ?>
-</td>
-<td><?= htmlspecialchars((string) ($o['status'] ?? '')) ?></td>
-<td><?= htmlspecialchars((string) ($o['property_name'] ?? '')) ?>
-    <?php if (!empty($o['channel_name'])): ?> · <span style="color:#64716d"><?= htmlspecialchars($o['channel_name']) ?></span><?php endif; ?>
-    <?php if (!empty($o['supplier_name'])): ?> · <span style="color:#64716d"><?= htmlspecialchars($o['supplier_name']) ?></span><?php endif; ?>
-</td>
-<td class="err" style="font-size:12px"><?= htmlspecialchars((string) ($o['issue'] ?? '')) ?></td>
-<td>
-<form method="post" style="display:inline" onsubmit="return confirm('Bu kaydı silmek istediğinize emin misiniz?')">
-<input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
-<input type="hidden" name="action" value="delete_orphan">
-<input type="hidden" name="table" value="<?= htmlspecialchars($o['table']) ?>">
-<input type="hidden" name="id" value="<?= (int) $o['id'] ?>">
-<button class="del-btn" title="Tek satırı sil">🗑 Sil</button>
-</form>
-</td>
-</tr>
-<?php endforeach; ?>
-</table>
-<?php endif; ?>
-</section>
+</div>
 
 <?php if ($history): ?>
-<section class="card">
-<h2>📜 Son 7 gün — temizlik geçmişi</h2>
-<table>
-<tr><th>Tarih</th><th>Yönetici</th><th>Detay</th></tr>
-<?php foreach (array_slice($history, 0, 20) as $hr): ?>
-<tr>
-<td style="white-space:nowrap"><?= htmlspecialchars(mb_substr((string) $hr['created_at'], 0, 16)) ?></td>
-<td><?= htmlspecialchars((string) ($hr['admin_username'] ?? '')) ?></td>
-<td style="font-size:12px"><?= htmlspecialchars(mb_substr((string) ($hr['details'] ?? ''), 0, 100)) ?></td>
-</tr>
-<?php endforeach; ?>
-</table>
-</section>
-
-<?php
-// 26 haftalık yetim trend grafiği
-$orphanHist = (array) platform_setting('distribution_health_orphan_history', []);
-if ($orphanHist !== []):
-    ksort($orphanHist);
-    $histMax = max(1, max($orphanHist));
-    $histWeeks = array_slice($orphanHist, -26, null, true);
-?>
-<section class="card">
-<h2>📈 Yetim trendi — son <?= count($histWeeks) ?> hafta</h2>
-<p style="color:#64716d;font-size:12px">Haftalık dağıtım sağlığı özetindeki toplam yetim eşleştirme sayısı.</p>
-<div style="display:flex;align-items:flex-end;gap:3px;height:80px;margin:10px 0">
-<?php foreach ($histWeeks as $wk => $cnt): $h = max(2, (int) round($cnt / $histMax * 70)); ?>
-<div title="<?= htmlspecialchars($wk) ?>: <?= $cnt ?> yetim" style="flex:1;background:<?= $cnt > 0 ? '#e8a33d' : '#e1e5de' ?>;height:<?= $h ?>px;border-radius:2px 2px 0 0;min-width:5px"></div>
-<?php endforeach; ?>
+<div class="sui-card">
+    <div class="sui-card-header">
+        <h2 class="sui-card-title">📜 Son 7 Gün — Temizlik Geçmişi</h2>
+    </div>
+    <div style="overflow-x:auto">
+        <table class="sui-table">
+            <thead>
+                <tr>
+                    <th>Tarih</th>
+                    <th>Yönetici</th>
+                    <th>Detay</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach (array_slice($history, 0, 20) as $hr): ?>
+                    <tr>
+                        <td style="white-space:nowrap;font-size:12px;color:var(--sui-muted)"><?= htmlspecialchars(mb_substr((string) $hr['created_at'], 0, 16)) ?></td>
+                        <td><b><?= htmlspecialchars((string) ($hr['admin_username'] ?? '')) ?></b></td>
+                        <td style="font-size:12px"><?= htmlspecialchars(mb_substr((string) ($hr['details'] ?? ''), 0, 100)) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
 </div>
-<div style="display:flex;justify-content:space-between;font-size:10px;color:#64716d">
-<span><?= htmlspecialchars(array_key_first($histWeeks)) ?></span>
-<span><?= htmlspecialchars(array_key_last($histWeeks)) ?></span>
-</div>
-<div style="margin-top:8px;font-size:12px;color:#64716d">
-<?php
-$histTotal = array_sum($histWeeks);
-$histAvg = count($histWeeks) > 0 ? round($histTotal / count($histWeeks), 1) : 0;
-$histNonZero = count(array_filter($histWeeks, fn($v) => $v > 0));
-echo htmlspecialchars((string) $histTotal) . ' satır haftalık toplam · ';
-echo htmlspecialchars((string) $histAvg) . ' ortalama · ';
-echo $histNonZero . '/' . count($histWeeks) . ' haftada temizlik';
-if ($histMax > 0) echo ' · en yüksek: ' . $histMax;
-?>
-</div>
-</section>
-
-<?php
-// Günlük kanal/ürün bazında yetim trendi
-$dailyHist = (array) platform_setting('orphan_daily_channel_history', []);
-if ($dailyHist !== []):
-    ksort($dailyHist);
-    // Kanal/ürün bazında toplam hesapla
-    $dailyTotals = [];
-    $dailyByChannel = []; // channel_name => [date => count]
-    foreach ($dailyHist as $date => $entries) {
-        $dayTotal = 0;
-        foreach ($entries as $e) {
-            $dayTotal += (int) ($e['total'] ?? 0);
-            $ch = (string) ($e['channel'] ?? '—');
-            if (!isset($dailyByChannel[$ch])) $dailyByChannel[$ch] = [];
-            $dailyByChannel[$ch][$date] = ($dailyByChannel[$ch][$date] ?? 0) + (int) ($e['total'] ?? 0);
-        }
-        $dailyTotals[$date] = $dayTotal;
-    }
-    $dMax = max(1, max($dailyTotals));
-?>
-<section class="card">
-<h2>📅 Günlük kanal bazında yetim — son <?= count($dailyTotals) ?> gün</h2>
-<p style="color:#64716d;font-size:12px">Denetim görevinin her gün kaydettiği kanal/ürün bazında yetim sayıları.</p>
-<div style="display:flex;align-items:flex-end;gap:2px;height:60px;margin:10px 0">
-<?php foreach ($dailyTotals as $date => $cnt): $h = max(2, (int) round($cnt / $dMax * 50)); ?>
-<div title="<?= htmlspecialchars($date) ?>: <?= $cnt ?> yetim" style="flex:1;background:<?= $cnt > 0 ? '#e8a33d' : '#e1e5de' ?>;height:<?= $h ?>px;border-radius:2px 2px 0 0;min-width:4px"></div>
-<?php endforeach; ?>
-</div>
-<div style="display:flex;justify-content:space-between;font-size:10px;color:#64716d">
-<span><?= htmlspecialchars(array_key_first($dailyTotals)) ?></span>
-<span><?= htmlspecialchars(array_key_last($dailyTotals)) ?></span>
-</div>
-<?php
-$dTotal = array_sum($dailyTotals);
-$dAvg = count($dailyTotals) > 0 ? round($dTotal / count($dailyTotals), 1) : 0;
-$dNonZero = count(array_filter($dailyTotals, fn($v) => $v > 0));
-?>
-<div style="margin-top:8px;font-size:12px;color:#64716d">
-<?= $dTotal ?> satır günlük toplam · <?= $dAvg ?> ortalama · <?= $dNonZero ?>/<?= count($dailyTotals) ?> günde yetim
-</div>
-
-<?php if (count($dailyByChannel) > 0): ?>
-<h3 style="margin:14px 0 6px;font-size:13px">Kanal / ürün bazında son durum</h3>
-<table style="border-collapse:collapse;width:100%;font-size:12px">
-<tr><th style="text-align:left;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Kanal</th>
-<th style="text-align:right;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">Son gün</th>
-<th style="text-align:right;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">7 gün ort.</th>
-<th style="text-align:right;padding:4px 8px;border:1px solid #e1e5de;background:#f4f6f1">30 gün</th></tr>
-<?php
-$lastDate = array_key_last($dailyTotals);
-$weekAgo = date('Y-m-d', strtotime('-7 days'));
-foreach ($dailyByChannel as $ch => $dates) {
-    $lastVal = $dates[$lastDate] ?? 0;
-    $weekDates = array_filter($dates, fn($d) => $d >= $weekAgo);
-    $weekAvg = count($weekDates) > 0 ? round(array_sum($weekDates) / count($weekDates), 1) : 0;
-    $monthTotal = array_sum($dates);
-    $color = $lastVal > 0 ? '#b0301a' : '#2e7d32';
-    echo '<tr><td style="padding:4px 8px;border:1px solid #e1e5de"><b>' . htmlspecialchars($ch) . '</b></td>';
-    echo '<td style="padding:4px 8px;border:1px solid #e1e5de;text-align:right;color:' . $color . '"><b>' . $lastVal . '</b></td>';
-    echo '<td style="padding:4px 8px;border:1px solid #e1e5de;text-align:right">' . $weekAvg . '</td>';
-    echo '<td style="padding:4px 8px;border:1px solid #e1e5de;text-align:right">' . $monthTotal . '</td></tr>';
-}
-?>
-</table>
-<?php endif; ?>
-</section>
-<?php endif; ?><?php endif; ?>
 <?php endif; ?>
 
-</main>
-</body>
-</html>
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+

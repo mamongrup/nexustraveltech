@@ -20,4 +20,176 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 $suppliers=db()->query('SELECT id,company_name FROM suppliers ORDER BY company_name')->fetchAll();$agencies=db()->query('SELECT id,company_name FROM agencies ORDER BY company_name')->fetchAll();$packages=db()->query('SELECT * FROM sms_packages ORDER BY id DESC')->fetchAll();
 $rights=db()->query("SELECT e.*,COALESCE(s.company_name,a.company_name) company FROM sms_entitlements e LEFT JOIN suppliers s ON e.account_type='supplier' AND s.id=e.account_id LEFT JOIN agencies a ON e.account_type='agency' AND a.id=e.account_id ORDER BY e.updated_at DESC")->fetchAll();
 }catch(Throwable $e){$error=$e->getMessage();$suppliers=$suppliers??[];$agencies=$agencies??[];$packages=$packages??[];$rights=$rights??[];}
-?><!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SMS paketleri | NEXUS Admin</title><style>body{font-family:Arial;background:#f7f7f2;margin:0;color:#10211f}.w{width:min(1000px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}.f{display:grid;gap:9px}.r{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}input,button,select{padding:10px;font:inherit;border:1px solid #d8ded8}button{background:#10211f;color:#fff}.ok{background:#e6f8c7;padding:9px}.er{background:#ffe2de;padding:9px}.muted{color:#64716d}table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px solid #e5e5e5;text-align:left}@media(max-width:650px){.r{grid-template-columns:1fr}}</style></head><body><main class="w"><a href="/nexustraveltech/admin/">← Yönetim paneli</a><h1>SMS paket ve bildirim yönetimi</h1><p class="muted">Tedarikçi ve acentelerin SMS kredisi, bildirim telefonu ve kullanım yetkisi buradan yönetilir.</p><?php if($message):?><p class="ok"><?=htmlspecialchars($message)?></p><?php endif;?><?php if($error):?><p class="er"><?=htmlspecialchars($error)?></p><?php endif;?><section class="c"><h2>Yeni SMS paketi</h2><form method="post" class="f"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="package"><div class="r"><input name="code" placeholder="Örn. SMS-500" required><input name="name" placeholder="Paket adı" required></div><div class="r"><input type="number" name="credits" min="1" placeholder="SMS kredisi" required><input type="number" name="price" min="0" step="0.01" placeholder="Fiyat" required></div><input name="currency" value="TRY" maxlength="3" required><button>Paket oluştur</button></form></section><section class="c"><h2>Hesaba SMS tanımla</h2><form method="post" class="f"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="action" value="entitlement"><div class="r"><select name="account_type" id="type" onchange="document.querySelectorAll('.account').forEach(x=>x.hidden=x.dataset.type!==this.value)"><option value="supplier">Tedarikçi</option><option value="agency">Acente</option></select><select name="supplier_id" class="account" data-type="supplier"><?php foreach($suppliers as $item):?><option value="<?=$item['id']?>"><?=htmlspecialchars($item['company_name'])?></option><?php endforeach;?></select><select name="agency_id" class="account" data-type="agency" hidden><?php foreach($agencies as $item):?><option value="<?=$item['id']?>"><?=htmlspecialchars($item['company_name'])?></option><?php endforeach;?></select></div><div class="r"><input name="phone" placeholder="Bildirim telefonu (905...)" required><input type="number" name="credits" min="0" placeholder="Toplam/kalacak kredi" required></div><label><input type="checkbox" name="enabled" checked> Rezervasyon SMS bildirimi aktif</label><button>SMS yetkisini kaydet</button></form></section><section class="c"><h2>Tanımlı paketler</h2><table><tr><th>Kod</th><th>Paket</th><th>Kredi</th><th>Fiyat</th></tr><?php foreach($packages as $item):?><tr><td><?=htmlspecialchars($item['code'])?></td><td><?=htmlspecialchars($item['name'])?></td><td><?=$item['credit_count']?></td><td><?=$item['price_amount']?> <?=htmlspecialchars($item['currency'])?></td></tr><?php endforeach;?></table></section><section class="c"><h2>Aktif SMS hakları</h2><table><tr><th>Hesap</th><th>Telefon</th><th>Kredi</th><th>Durum</th></tr><?php foreach($rights as $item):?><tr><td><?=htmlspecialchars($item['company']?:$item['account_type'].' #'.$item['account_id'])?></td><td><?=htmlspecialchars($item['notification_phone']??'')?></td><td><?=$item['credits_remaining']?></td><td><?=$item['is_enabled']?'Açık':'Kapalı'?></td></tr><?php endforeach;?></table></section></main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>
+<?php
+require_once __DIR__ . '/layout.php';
+admin_layout_start('SMS & Bildirim Yönetimi', 'sms-yonetimi');
+?>
+
+<?php if ($message): ?><div class="sui-alert sui-alert-success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="sui-alert sui-alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:20px;margin-bottom:24px">
+    <!-- Paket Oluştur -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">📦 Yeni SMS Paketi</h2>
+        </div>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+            <input type="hidden" name="action" value="package">
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Paket Kodu</label>
+                    <input name="code" class="sui-input" placeholder="SMS-500" required>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Paket Adı</label>
+                    <input name="name" class="sui-input" placeholder="500 SMS Başlangıç" required>
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Kredi</label>
+                    <input type="number" name="credits" class="sui-input" min="1" placeholder="500" required>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Fiyat</label>
+                    <input type="number" name="price" class="sui-input" min="0" step="0.01" placeholder="250.00" required>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Para Birimi</label>
+                    <input name="currency" class="sui-input" value="TRY" maxlength="3" required>
+                </div>
+            </div>
+
+            <button class="sui-btn sui-btn-primary" style="width:100%">Paket Oluştur</button>
+        </form>
+    </div>
+
+    <!-- Hesaba SMS Tanımla -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">💳 Hesaba SMS Kredisi Tanımla</h2>
+        </div>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+            <input type="hidden" name="action" value="entitlement">
+
+            <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-bottom:10px">
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Hesap Türü</label>
+                    <select name="account_type" id="type" class="sui-input" onchange="document.querySelectorAll('.account').forEach(x=>x.hidden=x.dataset.type!==this.value)">
+                        <option value="supplier">Tedarikçi</option>
+                        <option value="agency">Acente</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Firma / Hesap</label>
+                    <select name="supplier_id" class="sui-input account" data-type="supplier">
+                        <?php foreach($suppliers as $item): ?>
+                            <option value="<?=$item['id']?>"><?=htmlspecialchars($item['company_name'])?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <select name="agency_id" class="sui-input account" data-type="agency" hidden>
+                        <?php foreach($agencies as $item): ?>
+                            <option value="<?=$item['id']?>"><?=htmlspecialchars($item['company_name'])?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Bildirim Telefonu (905...)</label>
+                    <input name="phone" class="sui-input" placeholder="905xxxxxxxxx" required>
+                </div>
+                <div>
+                    <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">Kredi Miktarı</label>
+                    <input type="number" name="credits" class="sui-input" min="0" placeholder="100" required>
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+                <label style="font-size:12px;display:flex;align-items:center;gap:6px">
+                    <input type="checkbox" name="enabled" checked> Rezervasyon SMS aktif
+                </label>
+                <button class="sui-btn sui-btn-success">Kaydet</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:20px">
+    <!-- Tanımlı Paketler -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">📋 Satıştaki Paketler</h2>
+        </div>
+        <table class="sui-table">
+            <thead>
+                <tr>
+                    <th>Kod</th>
+                    <th>Paket</th>
+                    <th>Kredi</th>
+                    <th>Fiyat</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach($packages as $item): ?>
+                    <tr>
+                        <td><code><?= htmlspecialchars($item['code']) ?></code></td>
+                        <td><b><?= htmlspecialchars($item['name']) ?></b></td>
+                        <td><?= (int)$item['credit_count'] ?> SMS</td>
+                        <td><?= number_format((float)$item['price_amount'], 2) ?> <?= htmlspecialchars($item['currency']) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if(!$packages): ?>
+                    <tr><td colspan="4" style="text-align:center;color:var(--sui-muted)">Henüz paket yok.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Aktif Haklar -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">📲 Aktif SMS Hakları</h2>
+        </div>
+        <table class="sui-table">
+            <thead>
+                <tr>
+                    <th>Hesap / Firma</th>
+                    <th>Telefon</th>
+                    <th>Kalan Kredi</th>
+                    <th>Durum</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach($rights as $item): ?>
+                    <tr>
+                        <td><b><?= htmlspecialchars($item['company'] ?: $item['account_type'].' #'.$item['account_id']) ?></b></td>
+                        <td style="font-size:12px;color:var(--sui-muted)"><?= htmlspecialchars((string)($item['notification_phone'] ?? '—')) ?></td>
+                        <td><span class="sui-badge sui-badge-info"><?= (int)$item['credits_remaining'] ?> SMS</span></td>
+                        <td>
+                            <span class="sui-badge <?= $item['is_enabled'] ? 'sui-badge-success' : 'sui-badge-danger' ?>">
+                                <?= $item['is_enabled'] ? 'Açık' : 'Kapalı' ?>
+                            </span>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if(!$rights): ?>
+                    <tr><td colspan="4" style="text-align:center;color:var(--sui-muted)">Kayıtlı SMS hakkı yok.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<?php 
+require_once __DIR__ . '/../config/ai_widget.php'; 
+ai_widget('/nexustraveltech/admin/ai-chat', 'admin_csrf'); 
+admin_layout_end(); 
+?>
+
