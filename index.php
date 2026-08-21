@@ -96,11 +96,11 @@ $cats = $cat_translations[$current_lang] ?? $cat_translations['tr'];
       <section class="value-band"><div class="shell"><p data-i18n="value_kicker">Bir ilan sitesi değil.</p><h2 data-i18n-html="value_title">Turizmin güncel veri, dağıtım<br />ve satış altyapısı.</h2></div></section>
 
       <section class="explore shell" aria-label="Nexus hakkında daha fazlası">
-        <div class="section-intro"><div class="eyebrow"><i></i> NEXUS EKOSİSTEMİ</div><h2>Bilgiyi değil,<br /><em>hareketi</em> yönetiyoruz.</h2></div>
+        <div class="section-intro"><div class="eyebrow"><i></i> <span data-i18n="explore_eyebrow">NEXUS EKOSİSTEMİ</span></div><h2 data-i18n-html="explore_title">Bilgiyi değil,<br /><em>hareketi</em> yönetiyoruz.</h2></div>
         <div class="explore-grid">
-          <a href="/nexustraveltech/platform" class="explore-card"><span>01 / PLATFORM</span><h3>Tek bilgi havuzu</h3><p>Farklı tedarikçilerin canlı verisini ortak bir dilde birleştiren dağıtım katmanı.</p><b>Platformu keşfet →</b></a>
-          <a href="/nexustraveltech/cozumler" class="explore-card dark"><span>02 / ÇÖZÜMLER</span><h3>Her oyuncu için akış</h3><p>Tedarikçi paneli, acente yazılımı ve açık API ile uçtan uca bağlantı.</p><b>Çözümleri incele →</b></a>
-          <a href="/nexustraveltech/sirket" class="explore-card lime"><span>03 / ŞİRKET</span><h3>Neden NEXUS?</h3><p>Turizmi daha hızlı, daha şeffaf ve daha bağlantılı hale getirme hedefi.</p><b>Hikâyemizi oku →</b></a>
+          <a href="/nexustraveltech/platform" class="explore-card"><span data-i18n="explore_c1_tag">01 / PLATFORM</span><h3 data-i18n="explore_c1_title">Tek bilgi havuzu</h3><p data-i18n="explore_c1_copy">Farklı tedarikçilerin canlı verisini ortak bir dilde birleştiren dağıtım katmanı.</p><b data-i18n="explore_c1_cta">Platformu keşfet →</b></a>
+          <a href="/nexustraveltech/cozumler" class="explore-card dark"><span data-i18n="explore_c2_tag">02 / ÇÖZÜMLER</span><h3 data-i18n="explore_c2_title">Her oyuncu için akış</h3><p data-i18n="explore_c2_copy">Tedarikçi paneli, acente yazılımı ve açık API ile uçtan uca bağlantı.</p><b data-i18n="explore_c2_cta">Çözümleri incele →</b></a>
+          <a href="/nexustraveltech/sirket" class="explore-card lime"><span data-i18n="explore_c3_tag">03 / ŞİRKET</span><h3 data-i18n="explore_c3_title">Neden NEXUS?</h3><p data-i18n="explore_c3_copy">Turizmi daha hızlı, daha şeffaf ve daha bağlantılı hale getirme hedefi.</p><b data-i18n="explore_c3_cta">Hikâyemizi oku →</b></a>
         </div>
       </section>
 
@@ -118,7 +118,7 @@ $cats = $cat_translations[$current_lang] ?? $cat_translations['tr'];
           <input type="text" name="company_website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true" />
           <label><span data-i18n="form_email">İş e-postanız</span><input type="email" name="email" placeholder="ornek@sirketiniz.com" data-i18n-placeholder="form_placeholder" required /></label>
           <label><span data-i18n="form_role">Rolünüz</span><select name="role"><option data-i18n="role_supplier">Tedarikçi</option><option data-i18n="role_agency">Acente</option><option data-i18n="role_operator">Turizm işletmesi</option><option data-i18n="role_other">Diğer</option></select></label>
-          <label class="consent-line"><input type="checkbox" name="consent" value="1" required><span>Kişisel verilerimin <a href="/nexustraveltech/gizlilik">Gizlilik Politikası</a> kapsamında işlenmesini kabul ediyorum.</span></label>
+          <label class="consent-line"><input type="checkbox" name="consent" value="1" required><span data-i18n-html="form_consent">Kişisel verilerimin <a href="/nexustraveltech/gizlilik">Gizlilik Politikası</a> kapsamında işlenmesini kabul ediyorum.</span></label>
           <button class="button button-lime" type="submit"><span data-i18n="form_submit">Erken erişim iste</span> <span>&#8594;</span></button>
           <div id="form-result" aria-live="polite"></div>
         </form>
