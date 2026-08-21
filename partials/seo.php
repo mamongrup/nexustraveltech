@@ -20,6 +20,9 @@ $canonical = 'https://nexustraveltech.com' . ($seo['path'] ? '/' . $seo['path'] 
 <meta name="keywords" content="<?= htmlspecialchars($seo['keywords'], ENT_QUOTES, 'UTF-8') ?>" />
 <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
 <link rel="canonical" href="<?= htmlspecialchars($canonical, ENT_QUOTES, 'UTF-8') ?>" />
+<link rel="icon" type="image/svg+xml" href="/nexustraveltech/assets/favicon.svg" />
+<link rel="icon" type="image/png" href="/nexustraveltech/assets/favicon.png" />
+<link rel="apple-touch-icon" href="/nexustraveltech/assets/favicon.png" />
 <meta property="og:locale" content="tr_TR" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="NEXUS TravelTech" />
