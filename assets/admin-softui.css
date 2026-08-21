@@ -103,26 +103,20 @@ body.sui {
   color: #7c3aed;
 }
 .sui-nav-item.active {
-  background: linear-gradient(135deg, var(--sui-primary), var(--sui-primary-end));
-  color: #fff;
-  box-shadow: 0 4px 15px rgba(121,40,202,0.3);
+  background: linear-gradient(310deg, var(--sui-primary), var(--sui-primary-end)) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 10px 20px -6px rgba(121, 40, 202, 0.45) !important;
 }
-.sui-nav-item.active .nav-icon { color: #fff; }
-.sui-nav-item .nav-icon {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  background: var(--sui-card);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  font-size: 14px;
-  flex-shrink: 0;
+.sui-nav-item.active span {
+  color: #ffffff !important;
 }
+.sui-nav-item.active .sui-icon-box,
 .sui-nav-item.active .nav-icon {
-  background: rgba(255,255,255,0.2);
-  box-shadow: none;
+  background: #ffffff !important;
+  color: var(--sui-primary) !important;
+  box-shadow: 0 4px 12px 0 rgba(0,0,0,0.15) !important;
+  transform: scale(1.05);
 }
 .sui-nav-badge {
   margin-left: auto;

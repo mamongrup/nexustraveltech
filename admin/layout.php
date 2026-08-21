@@ -93,23 +93,28 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         .sui-icon-box.indigo { background: linear-gradient(310deg, #4f46e5, #818cf8); color: #fff; }
         .sui-icon-box.pink   { background: linear-gradient(310deg, #d63384, #f06292); color: #fff; }
 
-        /* Aktif menü satırı */
+        /* Aktif menü satırı — Beyaz yazı ve şık mor-pembe gradient */
         .sui-nav-item.active {
-            background-color: #ffffff !important;
-            color: #2d3748 !important;
+            background: linear-gradient(310deg, #7928ca, #ff0080) !important;
+            color: #ffffff !important;
             font-weight: 700 !important;
-            box-shadow: 0 20px 27px 0 rgba(0,0,0,0.05) !important;
+            box-shadow: 0 10px 20px -6px rgba(121, 40, 202, 0.45) !important;
+        }
+        .sui-nav-item.active span {
+            color: #ffffff !important;
         }
         .sui-nav-item.active .sui-icon-box {
+            background: #ffffff !important;
+            color: #7928ca !important;
             box-shadow: 0 4px 12px 0 rgba(0,0,0,0.15) !important;
             transform: scale(1.05);
         }
         .sui-nav-item {
             color: #67748e;
             font-weight: 500;
-            padding: 9px 16px;
-            margin: 2px 14px;
-            border-radius: 10px;
+            padding: 10px 16px;
+            margin: 3px 14px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             gap: 12px;
