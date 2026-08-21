@@ -33,9 +33,10 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         ['section' => 'Dağıtım & Kanal'],
         ['label' => 'Dağıtım Sağlığı', 'icon' => 'fa-solid fa-network-wired', 'color' => 'purple', 'href' => $baseUri . '/admin/dagitim-sagligi', 'key' => 'dagitim-sagligi'],
         ['label' => 'Kanal Sihirbazı', 'icon' => 'fa-solid fa-wand-magic-sparkles', 'color' => 'teal', 'href' => $baseUri . '/admin/kanal-sihirbazi', 'key' => 'kanal-sihirbazi'],
+        ['label' => 'Dex Pazarlama Hub', 'icon' => 'fa-solid fa-bullhorn', 'color' => 'pink', 'href' => $baseUri . '/admin/dijital-pazarlama', 'key' => 'dijital-pazarlama'],
+        ['label' => 'Rezervasyon Widget', 'icon' => 'fa-solid fa-globe', 'color' => 'purple', 'href' => $baseUri . '/admin/rezervasyon-widget', 'key' => 'rezervasyon-widget'],
         ['label' => 'Hazırlık Özeti', 'icon' => 'fa-solid fa-chart-simple', 'color' => 'blue', 'href' => $baseUri . '/admin/hazirlik-ozet', 'key' => 'hazirlik-ozet'],
         ['label' => 'Yetim Eşleştirmeler', 'icon' => 'fa-solid fa-link-slash', 'color' => 'red', 'href' => $baseUri . '/admin/orphan-mappings', 'key' => 'orphan-mappings'],
-        ['label' => 'Rezervasyon Widget', 'icon' => 'fa-solid fa-globe', 'color' => 'pink', 'href' => $baseUri . '/admin/rezervasyon-widget', 'key' => 'rezervasyon-widget'],
         
         ['section' => 'Ayarlar'],
         ['label' => 'Ürün Şablonları', 'icon' => 'fa-solid fa-layer-group', 'color' => 'teal', 'href' => $baseUri . '/admin/urun-turleri', 'key' => 'urun-turleri'],
