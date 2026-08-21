@@ -66,7 +66,7 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
 
 <!-- Sidebar -->
 <aside class="sui-sidebar">
-    <a href="/nexustraveltech/admin/" class="sui-sidebar-logo">
+    <a href="<?= $baseUri ?>/admin/" class="sui-sidebar-logo">
         <span style="font-size:22px;font-weight:900;background:linear-gradient(135deg,#7928ca,#ff0080);-webkit-background-clip:text;-webkit-text-fill-color:transparent">N∿XUS</span>
         <span style="font-size:11px;color:var(--sui-muted);font-weight:500">Admin Panel</span>
     </a>
@@ -86,7 +86,7 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
     
     <!-- Sidebar bottom -->
     <div style="margin-top:auto;padding:12px 20px;border-top:1px solid var(--sui-border)">
-        <a href="/nexustraveltech/admin/logout" style="display:flex;align-items:center;gap:8px;padding:8px 0;color:var(--sui-muted);text-decoration:none;font-size:13px;font-weight:500">
+        <a href="<?= $baseUri ?>/admin/logout" style="display:flex;align-items:center;gap:8px;padding:8px 0;color:var(--sui-muted);text-decoration:none;font-size:13px;font-weight:500">
             <i class="fas fa-sign-out-alt"></i>
             <span>Çıkış Yap</span>
         </a>
@@ -99,17 +99,17 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
     <nav class="sui-navbar">
         <div>
             <div class="sui-breadcrumb">
-                <a href="/nexustraveltech/admin/">Admin</a>
+                <a href="<?= $baseUri ?>/admin/">Admin</a>
                 <span class="sep">/</span>
                 <span><?= htmlspecialchars($pageTitle) ?></span>
             </div>
             <h1 class="sui-page-title"><?= htmlspecialchars($pageTitle) ?></h1>
         </div>
         <div class="sui-navbar-actions">
-            <a href="/nexustraveltech/admin/" class="sui-btn sui-btn-outline sui-btn-sm" title="Ana sayfa">
+            <a href="<?= $baseUri ?>/admin/" class="sui-btn sui-btn-outline sui-btn-sm" title="Ana sayfa">
                 <i class="fas fa-home"></i>
             </a>
-            <a href="/nexustraveltech/admin/kontrol-merkezi" class="sui-btn sui-btn-outline sui-btn-sm" title="Kontrol merkezi">
+            <a href="<?= $baseUri ?>/admin/kontrol-merkezi" class="sui-btn sui-btn-outline sui-btn-sm" title="Kontrol merkezi">
                 <i class="fas fa-cog"></i>
             </a>
         </div>
