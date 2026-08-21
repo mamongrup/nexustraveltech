@@ -125,6 +125,7 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         ['label' => $t['timers'], 'icon' => 'fa-solid fa-stopwatch', 'color' => 'orange', 'href' => $baseUri . '/admin/timerlar', 'key' => 'timerlar'],
         
         ['section' => $t['sec_sec_monitor']],
+        ['label' => 'Donanım & Entegrasyonlar', 'icon' => 'fa-solid fa-plug-circle-bolt', 'color' => 'teal', 'href' => $baseUri . '/admin/entegrasyonlar', 'key' => 'entegrasyonlar'],
         ['label' => $t['kbs'], 'icon' => 'fa-solid fa-id-card-clip', 'color' => 'teal', 'href' => $baseUri . '/admin/kbs-bildirim', 'key' => 'kbs-bildirim'],
         ['label' => $t['audit_logs'], 'icon' => 'fa-solid fa-shield-halved', 'color' => 'blue', 'href' => $baseUri . '/admin/denetim-kayitlari', 'key' => 'denetim-kayitlari'],
         ['label' => $t['error_logs'], 'icon' => 'fa-solid fa-triangle-exclamation', 'color' => 'red', 'href' => $baseUri . '/admin/hata-izleme', 'key' => 'hata-izleme'],
