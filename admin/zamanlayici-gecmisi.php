@@ -211,9 +211,10 @@ $filterUrl = function (string $st, int $h) use ($jobId): string {
     $q = [];
     if ($jobId > 0) $q[] = 'job=' . $jobId;
     if ($st !== '') $q[] = 'status=' . $st;
-    if ($h > 0) $q[] = 'hours=' . $h;
     $q[] = 'limit=200';
     return '?' . implode('&', $q);
+};
+$hasFilter = $status !== '' || $hours > 0;
 $filterLabel = trim(($status === 'error' ? 'Hata' : ($status === 'ok' ? 'Başarılı' : '')) . ' ' . ($hours === 24 ? '· son 24 saat' : ($hours === 72 ? '· son 3 gün' : ($hours === 168 ? '· son 7 gün' : ''))));
 
 require_once __DIR__ . '/layout.php';
@@ -366,6 +367,9 @@ admin_layout_start('Zamanlayıcı Çalışma Geçmişi', 'timerlar');
   <td><?= $r['triggered_by'] === 'manual' ? '👆 Manuel' : ($r['triggered_by'] === 'ai' ? '🤖 AI' : '🕐 Nabız') ?></td>
   <td><?= $r['output'] !== null && trim((string) $r['output']) !== '' ? '<details><summary>Göster</summary><pre>' . htmlspecialchars(mb_substr((string) $r['output'], 0, 2000)) . '</pre></details>' : '—' ?></td>
 </tr>
+<?php endforeach; ?>
+</table>
+<?php endif; ?>
 </section>
 
 <?php 

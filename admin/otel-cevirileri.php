@@ -6,7 +6,7 @@ $locales=['tr'=>'Türkçe','en'=>'English','de'=>'Deutsch','ru'=>'Русский
 $locale=$_GET['locale'] ?? 'en'; if(!isset($locales[$locale])) $locale='en'; $notice='';
 if($_SERVER['REQUEST_METHOD']==='POST' && hash_equals($_SESSION['admin_csrf'],(string)($_POST['csrf']??''))){$locale=$_POST['locale']??'en'; foreach(($_POST['translation']??[]) as $id=>$name){$name=trim((string)$name); if($name!=='') db()->prepare('INSERT INTO hotel_taxonomy_translations (taxonomy_id,locale,name) VALUES (?,?,?) ON CONFLICT (taxonomy_id,locale) DO UPDATE SET name=EXCLUDED.name')->execute([(int)$id,$locale,$name]);} $notice='Çeviriler kaydedildi.';}
 $rows=db()->prepare('SELECT h.*,COALESCE(t.name, h.name) display_name FROM hotel_taxonomies h LEFT JOIN hotel_taxonomy_translations t ON t.taxonomy_id=h.id AND t.locale=? ORDER BY h.taxonomy_type,h.sort_order,h.name'); $rows->execute([$locale]); $rows=$rows->fetchAll();
-<?php
+
 require_once __DIR__ . '/layout.php';
 admin_layout_start('Otel Taksonomi ve Özellik Çevirileri', 'ozellik-listeleri');
 ?>

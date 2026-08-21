@@ -20,7 +20,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 $suppliers=db()->query('SELECT id,company_name FROM suppliers ORDER BY company_name')->fetchAll();$agencies=db()->query('SELECT id,company_name FROM agencies ORDER BY company_name')->fetchAll();$packages=db()->query('SELECT * FROM sms_packages ORDER BY id DESC')->fetchAll();
 $rights=db()->query("SELECT e.*,COALESCE(s.company_name,a.company_name) company FROM sms_entitlements e LEFT JOIN suppliers s ON e.account_type='supplier' AND s.id=e.account_id LEFT JOIN agencies a ON e.account_type='agency' AND a.id=e.account_id ORDER BY e.updated_at DESC")->fetchAll();
 }catch(Throwable $e){$error=$e->getMessage();$suppliers=$suppliers??[];$agencies=$agencies??[];$packages=$packages??[];$rights=$rights??[];}
-<?php
+
 require_once __DIR__ . '/layout.php';
 admin_layout_start('SMS & Bildirim Yönetimi', 'sms-yonetimi');
 ?>
