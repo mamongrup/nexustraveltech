@@ -68,14 +68,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-scheduler_seed_defaults();
-scheduler_tick(); // sayfa açılışında da nabız — cron olmadan bile ilerleme sağlar
-$jobs = scheduler_jobs();
-// Sağlık kontrolü için belirgin tek tık tetikleyici — görev satırındaki "Şimdi çalıştır" ile aynı `run` akışını kullanır.
+$jobs = [];
 $hcJob = null;
-foreach ($jobs as $j) if (($j['code'] ?? '') === 'nexus-health-check') { $hcJob = $j; break; }
-$token = scheduler_tick_token();
-$tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' . $token;
+$token = '';
+try {
+    scheduler_seed_defaults();
+    $jobs = scheduler_jobs();
+    foreach ($jobs as $j) {
+        if (($j['code'] ?? '') === 'nexus-health-check') {
+            $hcJob = $j;
+            break;
+        }
+    }
+    if (function_exists('scheduler_tick_token')) {
+        $token = scheduler_tick_token();
+    }
+} catch (Throwable $e) {
+    $err = "Zamanlayıcı görevleri yüklenirken bir uyarı oluştu: " . $e->getMessage();
+}
 
 require_once __DIR__ . '/layout.php';
 admin_layout_start('Zamanlayıcılar & Otomatik Görevler', 'timerlar');
