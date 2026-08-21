@@ -32,12 +32,19 @@ function get_user_language(): string
 
 /**
  * Geçerli arayüz dilini belirle.
- * Öncelik: 1) Kullanıcı profili (supplier_users.language)
- *          2) Admin genel ayarı (platform_setting tooltip_language)
- *          3) Varsayılan 'tr'
+ * Öncelik: 1) URL/Cookie
+ *          2) Kullanıcı profili (supplier_users.language)
+ *          3) Admin genel ayarı (platform_setting tooltip_language)
+ *          4) Varsayılan 'tr'
  */
 function readiness_lang(): string
 {
+    // 0) URL parametresi veya Cookie (Anlık kullanıcı tercihi)
+    $reqLang = strtolower(trim((string)($_GET['lang'] ?? $_COOKIE['nexus-language'] ?? $_COOKIE['nexus-admin-lang'] ?? '')));
+    if ($reqLang !== '' && in_array($reqLang, READINESS_LANGS, true)) {
+        return $reqLang;
+    }
+
     // 1) Kullanıcı dil tercihi (login sırasında $_SESSION'a yazılır)
     $userLang = null;
     if (isset($_SESSION['supplier_user']['language']) && $_SESSION['supplier_user']['language'] !== null) {

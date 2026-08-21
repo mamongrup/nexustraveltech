@@ -1,5 +1,8 @@
 const locales = {
   tr: {
+    nav_platform: "Platform",
+    nav_solutions: "Çözümler",
+    nav_company: "Şirket",
     nav_how: "Nasıl çalışır?",
     nav_for: "Kimler için?",
     nav_access: "Erken erişim",
@@ -51,9 +54,15 @@ const locales = {
     role_operator: "Turizm işletmesi",
     role_other: "Diğer",
     form_submit: "Erken erişim iste",
-    footer_copy: "Turizmin canlı bilgi ağı."
+    footer_copy: "Turizmin canlı bilgi ağı.",
+    footer_contact: "İletişim",
+    footer_privacy: "Gizlilik",
+    footer_cookies: "Çerezler"
   },
   en: {
+    nav_platform: "Platform",
+    nav_solutions: "Solutions",
+    nav_company: "Company",
     nav_how: "How it works",
     nav_for: "Who it serves",
     nav_access: "Early access",
@@ -105,9 +114,15 @@ const locales = {
     role_operator: "Travel operator",
     role_other: "Other",
     form_submit: "Request early access",
-    footer_copy: "The live information network for travel."
+    footer_copy: "The live information network for travel.",
+    footer_contact: "Contact",
+    footer_privacy: "Privacy",
+    footer_cookies: "Cookies"
   },
   de: {
+    nav_platform: "Plattform",
+    nav_solutions: "Lösungen",
+    nav_company: "Unternehmen",
     nav_how: "So funktioniert es",
     nav_for: "Für wen?",
     nav_access: "Frühzugang",
@@ -159,9 +174,15 @@ const locales = {
     role_operator: "Tourismusbetrieb",
     role_other: "Andere",
     form_submit: "Frühzugang anfragen",
-    footer_copy: "Das Live-Informationsnetz für Reisen."
+    footer_copy: "Das Live-Informationsnetz für Reisen.",
+    footer_contact: "Kontakt",
+    footer_privacy: "Datenschutz",
+    footer_cookies: "Cookies"
   },
   ru: {
+    nav_platform: "Платформа",
+    nav_solutions: "Решения",
+    nav_company: "Компания",
     nav_how: "Как работает",
     nav_for: "Для кого",
     nav_access: "Ранний доступ",
@@ -213,9 +234,15 @@ const locales = {
     role_operator: "Туроператор",
     role_other: "Другое",
     form_submit: "Запросить доступ",
-    footer_copy: "Живая информационная сеть туризма."
+    footer_copy: "Живая информационная сеть туризма.",
+    footer_contact: "Контакты",
+    footer_privacy: "Конфиденциальность",
+    footer_cookies: "Куки"
   },
   ar: {
+    nav_platform: "المنصة",
+    nav_solutions: "الحلول",
+    nav_company: "الشركة",
     nav_how: "كيف يعمل",
     nav_for: "لمن؟",
     nav_access: "وصول مبكر",
@@ -267,9 +294,15 @@ const locales = {
     role_operator: "مشغل سياحي",
     role_other: "آخر",
     form_submit: "اطلب وصولاً مبكراً",
-    footer_copy: "شبكة معلومات مباشرة للسفر."
+    footer_copy: "شبكة معلومات مباشرة للسفر.",
+    footer_contact: "اتصل بنا",
+    footer_privacy: "الخصوصية",
+    footer_cookies: "ملفات تعريف الارتباط"
   },
   fr: {
+    nav_platform: "Plateforme",
+    nav_solutions: "Solutions",
+    nav_company: "Entreprise",
     nav_how: "Fonctionnement",
     nav_for: "Pour qui ?",
     nav_access: "Accès anticipé",
@@ -321,7 +354,10 @@ const locales = {
     role_operator: "Opérateur tourisme",
     role_other: "Autre",
     form_submit: "Demander l'accès",
-    footer_copy: "Le réseau d'information live du voyage."
+    footer_copy: "Le réseau d'information live du voyage.",
+    footer_contact: "Contact",
+    footer_privacy: "Confidentialité",
+    footer_cookies: "Cookies"
   }
 };
 
@@ -391,6 +427,7 @@ function boot() {
   languageSelect.addEventListener("change", (event) => {
     const nextLanguage = event.target.value;
     window.localStorage.setItem("nexus-lang", nextLanguage);
+    document.cookie = `nexus-language=${nextLanguage};path=/;max-age=31536000;SameSite=Lax`;
     setQueryParam("lang", nextLanguage);
     applyLanguage(nextLanguage);
   });
@@ -398,6 +435,7 @@ function boot() {
   currencySelect.addEventListener("change", (event) => {
     const nextCurrency = event.target.value;
     window.localStorage.setItem("nexus-currency", nextCurrency);
+    document.cookie = `nexus-currency=${nextCurrency};path=/;max-age=31536000;SameSite=Lax`;
     setQueryParam("currency", nextCurrency);
     applyCurrency(nextCurrency);
   });
