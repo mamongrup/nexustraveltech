@@ -18,8 +18,9 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         ['label' => 'Kontrol Merkezi', 'icon' => 'fa-solid fa-sliders', 'color' => 'blue', 'href' => $baseUri . '/admin/kontrol-merkezi', 'key' => 'kontrol-merkezi'],
         ['label' => 'Uyarı Merkezi', 'icon' => 'fa-solid fa-bell', 'color' => 'orange', 'href' => $baseUri . '/admin/uyari-merkezi', 'key' => 'uyari-merkezi'],
         
-        ['section' => 'Fiyat & Envanter'],
-        ['label' => 'Fiyat & Müsaitlik Matrisi', 'icon' => 'fa-solid fa-calendar-days', 'color' => 'orange', 'href' => $baseUri . '/admin/fiyat-matrisi', 'key' => 'fiyat-matrisi'],
+        ['section' => 'Fiyat & Gelir'],
+        ['label' => 'Fiyat Matrisi', 'icon' => 'fa-solid fa-calendar-days', 'color' => 'orange', 'href' => $baseUri . '/admin/fiyat-matrisi', 'key' => 'fiyat-matrisi'],
+        ['label' => 'Pricing Coach (Otopilot)', 'icon' => 'fa-solid fa-gauge-high', 'color' => 'teal', 'href' => $baseUri . '/admin/pricing-coach', 'key' => 'pricing-coach'],
         ['label' => 'AI Gelir Yöneticisi', 'icon' => 'fa-solid fa-brain', 'color' => 'purple', 'href' => $baseUri . '/admin/ai-gelir-yonetimi', 'key' => 'ai-gelir-yonetimi'],
 
         ['section' => 'Yönetim'],
