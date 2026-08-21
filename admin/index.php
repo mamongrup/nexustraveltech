@@ -190,6 +190,7 @@ admin_layout_start('Dashboard', 'index');
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
         <?php
         $quickLinks = [
+            ['label'=>'Kategori & Nitelikler','icon'=>'fa-solid fa-shapes','href'=>'kategori-ozellikleri','color'=>'teal'],
             ['label'=>'LioX ERP & Finans','icon'=>'fa-solid fa-file-invoice-dollar','href'=>'liox-finans','color'=>'green'],
             ['label'=>'Pricing Coach (Otopilot)','icon'=>'fa-solid fa-gauge-high','href'=>'pricing-coach','color'=>'teal'],
             ['label'=>'Fiyat & Müsaitlik Matrisi','icon'=>'fa-solid fa-calendar-days','href'=>'fiyat-matrisi','color'=>'orange'],

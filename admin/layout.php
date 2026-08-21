@@ -39,8 +39,9 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         ['label' => 'Hazırlık Özeti', 'icon' => 'fa-solid fa-chart-simple', 'color' => 'blue', 'href' => $baseUri . '/admin/hazirlik-ozet', 'key' => 'hazirlik-ozet'],
         ['label' => 'Yetim Eşleştirmeler', 'icon' => 'fa-solid fa-link-slash', 'color' => 'red', 'href' => $baseUri . '/admin/orphan-mappings', 'key' => 'orphan-mappings'],
         
-        ['section' => 'Ayarlar'],
-        ['label' => 'Ürün Şablonları', 'icon' => 'fa-solid fa-layer-group', 'color' => 'teal', 'href' => $baseUri . '/admin/urun-turleri', 'key' => 'urun-turleri'],
+        ['section' => 'Ayarlar & Katalog'],
+        ['label' => 'Kategori & Nitelikler', 'icon' => 'fa-solid fa-shapes', 'color' => 'teal', 'href' => $baseUri . '/admin/kategori-ozellikleri', 'key' => 'kategori-ozellikleri'],
+        ['label' => 'Ürün Şablonları', 'icon' => 'fa-solid fa-layer-group', 'color' => 'purple', 'href' => $baseUri . '/admin/urun-turleri', 'key' => 'urun-turleri'],
         ['label' => 'Katalog Yönetimi', 'icon' => 'fa-solid fa-list-check', 'color' => 'indigo', 'href' => $baseUri . '/admin/ozellik-listeleri', 'key' => 'ozellik-listeleri'],
         ['label' => 'E-posta Şablonları', 'icon' => 'fa-solid fa-envelope-open-text', 'color' => 'purple', 'href' => $baseUri . '/admin/eposta-sablonlari', 'key' => 'eposta-sablonlari'],
         ['label' => 'Zamanlayıcılar', 'icon' => 'fa-solid fa-stopwatch', 'color' => 'orange', 'href' => $baseUri . '/admin/timerlar', 'key' => 'timerlar'],
