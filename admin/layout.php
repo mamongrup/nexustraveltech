@@ -23,6 +23,8 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         ['label' => 'AI Gelir Yöneticisi', 'icon' => 'fa-solid fa-brain', 'color' => 'purple', 'href' => $baseUri . '/admin/ai-gelir-yonetimi', 'key' => 'ai-gelir-yonetimi'],
 
         ['section' => 'Yönetim'],
+        ['label' => 'Misafir CRM & Sadakat', 'icon' => 'fa-solid fa-users', 'color' => 'purple', 'href' => $baseUri . '/admin/misafir-crm', 'key' => 'misafir-crm'],
+        ['label' => 'Kat Hizmetleri (HK)', 'icon' => 'fa-solid fa-broom', 'color' => 'orange', 'href' => $baseUri . '/admin/kat-hizmetleri', 'key' => 'kat-hizmetleri'],
         ['label' => 'Tedarikçiler', 'icon' => 'fa-solid fa-hotel', 'color' => 'teal', 'href' => $baseUri . '/admin/tedarikci-ilanlari', 'key' => 'tedarikci-ilanlari'],
         ['label' => 'Acenteler', 'icon' => 'fa-solid fa-briefcase', 'color' => 'indigo', 'href' => $baseUri . '/admin/acenteler', 'key' => 'acenteler'],
         ['label' => 'İlan Onayları', 'icon' => 'fa-solid fa-clipboard-check', 'color' => 'green', 'href' => $baseUri . '/admin/tedarikci-onaylari', 'key' => 'tedarikci-onaylari'],
@@ -41,6 +43,7 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         ['label' => 'Zamanlayıcılar', 'icon' => 'fa-solid fa-stopwatch', 'color' => 'orange', 'href' => $baseUri . '/admin/timerlar', 'key' => 'timerlar'],
         
         ['section' => 'Güvenlik & İzleme'],
+        ['label' => 'KBS Kimlik Bildirimi', 'icon' => 'fa-solid fa-id-card-clip', 'color' => 'teal', 'href' => $baseUri . '/admin/kbs-bildirim', 'key' => 'kbs-bildirim'],
         ['label' => 'Denetim Kayıtları', 'icon' => 'fa-solid fa-shield-halved', 'color' => 'blue', 'href' => $baseUri . '/admin/denetim-kayitlari', 'key' => 'denetim-kayitlari'],
         ['label' => 'Hata İzleme', 'icon' => 'fa-solid fa-triangle-exclamation', 'color' => 'red', 'href' => $baseUri . '/admin/hata-izleme', 'key' => 'hata-izleme'],
         ['label' => '2FA Ayarları', 'icon' => 'fa-solid fa-key', 'color' => 'green', 'href' => $baseUri . '/admin/2fa', 'key' => '2fa'],

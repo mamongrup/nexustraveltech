@@ -190,6 +190,9 @@ admin_layout_start('Dashboard', 'index');
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
         <?php
         $quickLinks = [
+            ['label'=>'Misafir CRM & Sadakat','icon'=>'fa-solid fa-users','href'=>'misafir-crm','color'=>'purple'],
+            ['label'=>'Kat Hizmetleri (HK)','icon'=>'fa-solid fa-broom','href'=>'kat-hizmetleri','color'=>'orange'],
+            ['label'=>'KBS Kimlik Bildirimi','icon'=>'fa-solid fa-id-card-clip','href'=>'kbs-bildirim','color'=>'teal'],
             ['label'=>'Fiyat & Müsaitlik Matrisi','icon'=>'fa-solid fa-calendar-days','href'=>'fiyat-matrisi','color'=>'orange'],
             ['label'=>'AI Gelir Yöneticisi','icon'=>'fa-solid fa-brain','href'=>'ai-gelir-yonetimi','color'=>'purple'],
             ['label'=>'Kanal Sihirbazı','icon'=>'fa-solid fa-wand-magic-sparkles','href'=>'kanal-sihirbazi','color'=>'teal'],
