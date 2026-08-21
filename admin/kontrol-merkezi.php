@@ -469,15 +469,16 @@ $critItems[] = ['icon'=>'🗑','label'=>'Çöp Kutusu',$trashCount.' özellik','
 <!-- Bağlantılar -->
 <div class="sui-card">
     <div class="sui-card-header">
-        <h2 class="sui-card-title">🔗 Hızlı Erişim</h2>
+        <h2 class="sui-card-title">⚡ Hızlı Erişim</h2>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a href="/nexustraveltech/admin/ai-ayarlari" class="sui-btn sui-btn-outline sui-btn-sm">🤖 DeepSeek AI</a>
-        <a href="/nexustraveltech/admin/gemini-ayarlari" class="sui-btn sui-btn-outline sui-btn-sm">🎨 Gemini AI</a>
-        <a href="/nexustraveltech/admin/tedarikci-onaylari" class="sui-btn sui-btn-outline sui-btn-sm">📋 Tedarikçi Onayları</a>
-        <a href="/nexustraveltech/admin/ozellik-listeleri" class="sui-btn sui-btn-outline sui-btn-sm">📑 Katalog Yönetimi</a>
-        <a href="/nexustraveltech/admin/denetim-kayitlari" class="sui-btn sui-btn-outline sui-btn-sm">📝 Denetim Kayıtları</a>
-        <a href="/nexustraveltech/admin/timerlar" class="sui-btn sui-btn-outline sui-btn-sm">⏱ Zamanlayıcılar</a>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <a href="ai-ayarlari" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fa-solid fa-brain"></i> DeepSeek AI</a>
+        <a href="gemini-ayarlari" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fa-solid fa-wand-magic-sparkles"></i> Gemini AI</a>
+        <a href="tedarikci-onaylari" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fa-solid fa-clipboard-check"></i> Tedarikçi Onayları</a>
+        <a href="ozellik-listeleri" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fa-solid fa-list-check"></i> Katalog Yönetimi</a>
+        <a href="denetim-kayitlari" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fa-solid fa-shield-halved"></i> Denetim Kayıtları</a>
+        <a href="timerlar" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fa-solid fa-stopwatch"></i> Zamanlayıcılar</a>
+        <a href="dagitim-sagligi" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fa-solid fa-network-wired"></i> Dağıtım Sağlığı</a>
     </div>
 </div>
 

@@ -14,13 +14,14 @@ admin_layout_start('Ürün Türleri ve Şablon Yönetimi', 'urun-turleri');
 
 <style>
 .steps-editor { display: grid; gap: 8px; }
-.step-row { display: grid; grid-template-columns: auto 1fr 200px 36px 36px 36px; gap: 8px; align-items: center; background: var(--sui-bg); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--sui-border); }
-.step-row input, .step-row select { padding: 8px 12px; border: 1px solid var(--sui-border); border-radius: 6px; font: inherit; background: #fff; }
-.step-grip { cursor: grab; color: var(--sui-muted); font-size: 16px; user-select: none; text-align: center; }
-.step-mv { background: var(--sui-dark); border: none; color: #fff; font-weight: bold; cursor: pointer; padding: 6px; border-radius: 6px; height: 34px; display: flex; align-items: center; justify-content: center; }
+.step-row { display: grid; grid-template-columns: auto 1fr 200px 36px 36px 36px; gap: 8px; align-items: center; background: #fff; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--sui-border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+.step-row input, .step-row select { padding: 8px 12px; border: 1px solid var(--sui-border); border-radius: 6px; font: inherit; background: var(--sui-bg); }
+.step-grip { cursor: grab; color: #8392ab; font-size: 14px; user-select: none; text-align: center; }
+.step-mv { background: #f8f9fa; border: 1px solid var(--sui-border); color: #344767; font-weight: bold; cursor: pointer; padding: 6px; border-radius: 6px; height: 34px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.step-mv:hover:not(:disabled) { background: #e9ecef; color: #1a1f36; }
 .step-mv:disabled { opacity: .25; cursor: default; }
-.step-del { background: var(--sui-danger); border: none; color: #fff; font-weight: bold; cursor: pointer; border-radius: 6px; height: 34px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
-.step-add { background: var(--sui-primary); border: none; color: #fff; font-weight: bold; cursor: pointer; margin-top: 8px; padding: 8px 16px; border-radius: 8px; }
+.step-del { background: #fff1f2; border: 1px solid #fecdd3; color: #e11d48; font-weight: bold; cursor: pointer; border-radius: 6px; height: 34px; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.2s; }
+.step-del:hover { background: #ffe4e6; }
 .c-inactive { opacity: .7; }
 </style>
 
@@ -75,7 +76,7 @@ admin_layout_start('Ürün Türleri ve Şablon Yönetimi', 'urun-turleri');
                         foreach ($sList as $si => $sName): 
                         ?>
                             <div class="step-row" draggable="true">
-                                <span class="step-grip">⠿</span>
+                                <span class="step-grip"><i class="fa-solid fa-grip-vertical"></i></span>
                                 <input name="steps[]" value="<?= htmlspecialchars((string)$sName) ?>" placeholder="Adım adı">
                                 <select name="step_targets[]">
                                     <option value="">Bölüm yok</option>
@@ -83,13 +84,15 @@ admin_layout_start('Ürün Türleri ve Şablon Yönetimi', 'urun-turleri');
                                         <option value="<?= $v ?>" <?= ($tList[$si] ?? '') === $v ? 'selected' : '' ?>><?= $l ?> (<?= $v ?>)</option>
                                     <?php endforeach; ?>
                                 </select>
-                                <button type="button" class="step-mv" data-dir="up">↑</button>
-                                <button type="button" class="step-mv" data-dir="down">↓</button>
-                                <button type="button" class="step-del" onclick="this.parentElement.remove()">×</button>
+                                <button type="button" class="step-mv" data-dir="up" title="Yukarı Taşı"><i class="fa-solid fa-arrow-up"></i></button>
+                                <button type="button" class="step-mv" data-dir="down" title="Aşağı Taşı"><i class="fa-solid fa-arrow-down"></i></button>
+                                <button type="button" class="step-del" onclick="this.parentElement.remove()" title="Sil"><i class="fa-solid fa-trash-can"></i></button>
                             </div>
                         <?php endforeach; ?>
                     </div>
-                    <button type="button" class="step-add" onclick="var c=document.getElementById('steps-<?= htmlspecialchars($x['code']) ?>');var d=document.createElement('div');d.className='step-row';d.innerHTML='<span class=\"step-grip\">⠿</span><input name=\"steps[]\" placeholder=\"Adım adı\"><select name=\"step_targets[]\"><option value=\"\">Bölüm yok</option><option value=\"sec-01\">Temel bilgiler (sec-01)</option><option value=\"sec-02\">Oda / birim (sec-02)</option><option value=\"sec-03\">Olanaklar & hizmetler (sec-03)</option><option value=\"sec-04\">Envanter & fiyat (sec-04)</option><option value=\"sec-05\">Görseller (sec-05)</option><option value=\"sec-06\">Komisyon & tahsilat (sec-06)</option><option value=\"sec-07\">İptal & iade (sec-07)</option></select><button type=\"button\" class=\"step-mv\" data-dir=\"up\">↑</button><button type=\"button\" class=\"step-mv\" data-dir=\"down\">↓</button><button type=\"button\" class=\"step-del\" onclick=\"this.parentElement.remove()\">×</button>';d.draggable=true;c.appendChild(d);window.nexusStepsRefresh&&nexusStepsRefresh(c)">+ Adım Ekle</button>
+                    <button type="button" class="sui-btn sui-btn-outline sui-btn-sm" style="margin-top:10px" onclick="addStepRow('<?= htmlspecialchars($x['code']) ?>')">
+                        <i class="fa-solid fa-plus"></i> Yeni Adım Ekle
+                    </button>
                 </div>
 
                 <div style="margin-bottom:14px">
@@ -130,8 +133,62 @@ admin_layout_start('Ürün Türleri ve Şablon Yönetimi', 'urun-turleri');
 </div>
 
 <script>
-window.nexusStepsRefresh=function(wrap){var rows=wrap.querySelectorAll('.step-row');rows.forEach(function(r,i){var u=r.querySelector('.step-mv[data-dir="up"]'),d=r.querySelector('.step-mv[data-dir="down"]');if(u)u.disabled=i===0;if(d)d.disabled=i===rows.length-1;})};
-document.addEventListener('click',function(e){var mv=e.target.closest?e.target.closest('.step-mv'):null;if(mv){e.preventDefault();var wrap=mv.closest('.steps-editor');if(!wrap)return;var row=mv.closest('.step-row'),dir=mv.getAttribute('data-dir'),sib=dir==='up'?row.previousElementSibling:row.nextElementSibling;if(!sib)return;if(dir==='up')wrap.insertBefore(row,sib);else wrap.insertBefore(sib,row);window.nexusStepsRefresh(wrap);return;}var dl=e.target.closest?e.target.closest('.step-del'):null;if(dl){var w2=dl.closest('.steps-editor');if(w2)window.nexusStepsRefresh(w2);}});
+window.addStepRow = function(code) {
+    var c = document.getElementById('steps-' + code);
+    if (!c) return;
+    var d = document.createElement('div');
+    d.className = 'step-row';
+    d.draggable = true;
+    d.innerHTML = '<span class="step-grip"><i class="fa-solid fa-grip-vertical"></i></span>' +
+        '<input name="steps[]" placeholder="Adım adı">' +
+        '<select name="step_targets[]">' +
+        '<option value="">Bölüm yok</option>' +
+        '<option value="sec-01">Temel bilgiler (sec-01)</option>' +
+        '<option value="sec-02">Oda / birim (sec-02)</option>' +
+        '<option value="sec-03">Olanaklar & hizmetler (sec-03)</option>' +
+        '<option value="sec-04">Envanter & fiyat (sec-04)</option>' +
+        '<option value="sec-05">Görseller (sec-05)</option>' +
+        '<option value="sec-06">Komisyon & tahsilat (sec-06)</option>' +
+        '<option value="sec-07">İptal & iade (sec-07)</option>' +
+        '</select>' +
+        '<button type="button" class="step-mv" data-dir="up" title="Yukarı Taşı"><i class="fa-solid fa-arrow-up"></i></button>' +
+        '<button type="button" class="step-mv" data-dir="down" title="Aşağı Taşı"><i class="fa-solid fa-arrow-down"></i></button>' +
+        '<button type="button" class="step-del" onclick="this.parentElement.remove()" title="Sil"><i class="fa-solid fa-trash-can"></i></button>';
+    c.appendChild(d);
+    if (window.nexusStepsRefresh) window.nexusStepsRefresh(c);
+};
+
+window.nexusStepsRefresh = function(wrap) {
+    var rows = wrap.querySelectorAll('.step-row');
+    rows.forEach(function(r, i) {
+        var u = r.querySelector('.step-mv[data-dir="up"]'),
+            d = r.querySelector('.step-mv[data-dir="down"]');
+        if (u) u.disabled = (i === 0);
+        if (d) d.disabled = (i === rows.length - 1);
+    });
+};
+
+document.addEventListener('click', function(e) {
+    var mv = e.target.closest ? e.target.closest('.step-mv') : null;
+    if (mv) {
+        e.preventDefault();
+        var wrap = mv.closest('.steps-editor');
+        if (!wrap) return;
+        var row = mv.closest('.step-row'),
+            dir = mv.getAttribute('data-dir'),
+            sib = (dir === 'up') ? row.previousElementSibling : row.nextElementSibling;
+        if (!sib) return;
+        if (dir === 'up') wrap.insertBefore(row, sib);
+        else wrap.insertBefore(sib, row);
+        window.nexusStepsRefresh(wrap);
+        return;
+    }
+    var dl = e.target.closest ? e.target.closest('.step-del') : null;
+    if (dl) {
+        var w2 = dl.closest('.steps-editor');
+        if (w2) window.nexusStepsRefresh(w2);
+    }
+});
 </script>
 
 <?php 

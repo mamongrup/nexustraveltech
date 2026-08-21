@@ -185,28 +185,30 @@ admin_layout_start('Dashboard', 'index');
 <!-- Hızlı Bağlantılar -->
 <div class="sui-card">
     <div class="sui-card-header">
-        <h2 class="sui-card-title">🔗 Hızlı Erişim</h2>
+        <h2 class="sui-card-title">⚡ Hızlı Erişim</h2>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
         <?php
         $quickLinks = [
-            ['label'=>'Platform Kontrol Merkezi','icon'=>'⚙️','href'=>'/nexustraveltech/admin/kontrol-merkezi','color'=>'purple'],
-            ['label'=>'Dağıtım Sağlığı','icon'=>'📈','href'=>'/nexustraveltech/admin/dagitim-sagligi','color'=>'blue'],
-            ['label'=>'Hazırlık Özeti','icon'=>'📊','href'=>'/nexustraveltech/admin/hazirlik-ozet','color'=>'green'],
-            ['label'=>'Ürün Şablonları','icon'=>'📦','href'=>'/nexustraveltech/admin/urun-turleri','color'=>'orange'],
-            ['label'=>'Tedarikçi Onayları','icon'=>'📋','href'=>'/nexustraveltech/admin/tedarikci-onaylari','color'=>'teal'],
-            ['label'=>'Katalog Yönetimi','icon'=>'📑','href'=>'/nexustraveltech/admin/ozellik-listeleri','color'=>'indigo'],
-            ['label'=>'Denetim Kayıtları','icon'=>'📝','href'=>'/nexustraveltech/admin/denetim-kayitlari','color'=>'blue'],
-            ['label'=>'Zamanlayıcılar','icon'=>'⏱','href'=>'/nexustraveltech/admin/timerlar','color'=>'orange'],
-            ['label'=>'DeepSeek AI','icon'=>'🤖','href'=>'/nexustraveltech/admin/ai-ayarlari','color'=>'purple'],
-            ['label'=>'Gemini AI','icon'=>'🎨','href'=>'/nexustraveltech/admin/gemini-ayarlari','color'=>'red'],
-            ['label'=>'Uyarı Merkezi','icon'=>'🔔','href'=>'/nexustraveltech/admin/uyari-merkezi','color'=>'red'],
-            ['label'=>'Kullanım Kılavuzu','icon'=>'📖','href'=>'/nexustraveltech/admin/kullanim-kilavuzu','color'=>'green'],
+            ['label'=>'Kontrol Merkezi','icon'=>'fa-solid fa-sliders','href'=>'kontrol-merkezi','color'=>'blue'],
+            ['label'=>'Dağıtım Sağlığı','icon'=>'fa-solid fa-network-wired','href'=>'dagitim-sagligi','color'=>'purple'],
+            ['label'=>'Hazırlık Özeti','icon'=>'fa-solid fa-chart-simple','href'=>'hazirlik-ozet','color'=>'green'],
+            ['label'=>'Ürün Şablonları','icon'=>'fa-solid fa-layer-group','href'=>'urun-turleri','color'=>'teal'],
+            ['label'=>'Tedarikçi Onayları','icon'=>'fa-solid fa-clipboard-check','href'=>'tedarikci-onaylari','color'=>'green'],
+            ['label'=>'Katalog Yönetimi','icon'=>'fa-solid fa-list-check','href'=>'ozellik-listeleri','color'=>'indigo'],
+            ['label'=>'Denetim Kayıtları','icon'=>'fa-solid fa-shield-halved','href'=>'denetim-kayitlari','color'=>'blue'],
+            ['label'=>'Zamanlayıcılar','icon'=>'fa-solid fa-stopwatch','href'=>'timerlar','color'=>'orange'],
+            ['label'=>'DeepSeek AI','icon'=>'fa-solid fa-brain','href'=>'ai-ayarlari','color'=>'purple'],
+            ['label'=>'Gemini AI','icon'=>'fa-solid fa-wand-magic-sparkles','href'=>'gemini-ayarlari','color'=>'pink'],
+            ['label'=>'Uyarı Merkezi','icon'=>'fa-solid fa-bell','href'=>'uyari-merkezi','color'=>'orange'],
+            ['label'=>'Kullanım Kılavuzu','icon'=>'fa-solid fa-book-bookmark','href'=>'kullanim-kilavuzu','color'=>'green'],
         ];
         foreach ($quickLinks as $ql): ?>
-        <a href="<?= $ql['href'] ?>" style="display:flex;align-items:center;gap:10px;padding:14px;background:#fff;border:1px solid var(--sui-border);border-radius:var(--sui-radius-sm);text-decoration:none;color:var(--sui-text);transition:all 0.2s" onmouseover="this.style.boxShadow='var(--sui-shadow)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
-            <span style="font-size:20px"><?= $ql['icon'] ?></span>
-            <span style="font-size:13px;font-weight:600"><?= htmlspecialchars($ql['label']) ?></span>
+        <a href="<?= $ql['href'] ?>" class="sui-nav-item" style="margin:0;padding:12px 14px;background:#fff;border:1px solid var(--sui-border);border-radius:12px;box-shadow:var(--sui-shadow-sm);text-decoration:none;transition:all 0.2s">
+            <div class="sui-icon-box <?= $ql['color'] ?>">
+                <i class="<?= $ql['icon'] ?>"></i>
+            </div>
+            <span style="font-size:13px;font-weight:600;color:var(--sui-text)"><?= htmlspecialchars($ql['label']) ?></span>
         </a>
         <?php endforeach; ?>
     </div>
