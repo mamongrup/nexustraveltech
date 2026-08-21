@@ -22,7 +22,7 @@ $cats = $cat_translations[$current_lang] ?? $cat_translations['tr'];
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/nexustraveltech/assets/styles.css" />
+    <link rel="stylesheet" href="/nexustraveltech/assets/styles.css?v=<?= filemtime(__DIR__ . '/assets/styles.css') ?>" />
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   </head>
   <body>
