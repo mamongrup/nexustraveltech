@@ -18,6 +18,10 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         ['label' => 'Kontrol Merkezi', 'icon' => 'fa-solid fa-sliders', 'color' => 'blue', 'href' => $baseUri . '/admin/kontrol-merkezi', 'key' => 'kontrol-merkezi'],
         ['label' => 'Uyarı Merkezi', 'icon' => 'fa-solid fa-bell', 'color' => 'orange', 'href' => $baseUri . '/admin/uyari-merkezi', 'key' => 'uyari-merkezi'],
         
+        ['section' => 'Fiyat & Envanter'],
+        ['label' => 'Fiyat & Müsaitlik Matrisi', 'icon' => 'fa-solid fa-calendar-days', 'color' => 'orange', 'href' => $baseUri . '/admin/fiyat-matrisi', 'key' => 'fiyat-matrisi'],
+        ['label' => 'AI Gelir Yöneticisi', 'icon' => 'fa-solid fa-brain', 'color' => 'purple', 'href' => $baseUri . '/admin/ai-gelir-yonetimi', 'key' => 'ai-gelir-yonetimi'],
+
         ['section' => 'Yönetim'],
         ['label' => 'Tedarikçiler', 'icon' => 'fa-solid fa-hotel', 'color' => 'teal', 'href' => $baseUri . '/admin/tedarikci-ilanlari', 'key' => 'tedarikci-ilanlari'],
         ['label' => 'Acenteler', 'icon' => 'fa-solid fa-briefcase', 'color' => 'indigo', 'href' => $baseUri . '/admin/acenteler', 'key' => 'acenteler'],
@@ -25,8 +29,10 @@ function admin_layout_start(string $pageTitle = 'NEXUS Admin', string $activePag
         
         ['section' => 'Dağıtım & Kanal'],
         ['label' => 'Dağıtım Sağlığı', 'icon' => 'fa-solid fa-network-wired', 'color' => 'purple', 'href' => $baseUri . '/admin/dagitim-sagligi', 'key' => 'dagitim-sagligi'],
+        ['label' => 'Kanal Sihirbazı', 'icon' => 'fa-solid fa-wand-magic-sparkles', 'color' => 'teal', 'href' => $baseUri . '/admin/kanal-sihirbazi', 'key' => 'kanal-sihirbazi'],
         ['label' => 'Hazırlık Özeti', 'icon' => 'fa-solid fa-chart-simple', 'color' => 'blue', 'href' => $baseUri . '/admin/hazirlik-ozet', 'key' => 'hazirlik-ozet'],
         ['label' => 'Yetim Eşleştirmeler', 'icon' => 'fa-solid fa-link-slash', 'color' => 'red', 'href' => $baseUri . '/admin/orphan-mappings', 'key' => 'orphan-mappings'],
+        ['label' => 'Rezervasyon Widget', 'icon' => 'fa-solid fa-globe', 'color' => 'pink', 'href' => $baseUri . '/widget/booking-engine.php?property_id=1', 'key' => 'booking-engine'],
         
         ['section' => 'Ayarlar'],
         ['label' => 'Ürün Şablonları', 'icon' => 'fa-solid fa-layer-group', 'color' => 'teal', 'href' => $baseUri . '/admin/urun-turleri', 'key' => 'urun-turleri'],
