@@ -953,19 +953,186 @@ admin_layout_start('Katalog & Özellik Sınıflandırma Yönetimi', 'ozellik-lis
 <?php if (!empty($deletedAudit)): ?>
 <div class="c" style="border-color:#bcd98a;background:#f4fbea"><h2>✓ "<?= htmlspecialchars($deletedAudit['label']) ?>" silindi</h2><?php if ($deletedAudit['affected']): ?><p>Kaldırıldığı ilanlar (<b><?= count($deletedAudit['affected']) ?></b>):</p><ul><?php foreach ($deletedAudit['affected'] as $a): ?><li><b><?= htmlspecialchars($a['name']) ?></b> <small style="color:#6b7774">(<?= $typeLabel($a['property_type']) ?> · <?= htmlspecialchars($a['company_name']) ?>)</small></li><?php endforeach; ?></ul><?php else: ?><p>Hiçbir ilanda kullanılmıyordu.</p><?php endif; ?><form method="post" style="margin-top:12px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="restore"><input type="hidden" name="id" value="<?= (int) $deletedAudit['id'] ?>"><button style="background:#405b13">↩ Geri al — özelliği ve ilanları geri yükle</button></form></div>
 <?php endif; ?>
-<form class="c f" method="post"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="add"><div class="r"><select name="code"><option value="villa">Villa</option><option value="yacht">Yat</option><option value="amenity">Otel olanakları</option><option value="activity">Otel aktiviteleri</option><option value="event">Otel etkinlikleri</option></select><input name="label" placeholder="Yeni özellik adı" maxlength="120" required style="flex:1"><input name="group" placeholder="Grup (yalnızca otel hizmetleri; Örn. Spa & spor)" maxlength="120" style="flex:1"><button>Özellik ekle</button></div></form>
-<h2 style="margin:26px 0 4px;border-top:1px solid #e2e6df;padding-top:20px">Otel sınıflandırmaları</h2>
-<div class="two"><?php foreach ($taxonomies as $txKey => $txTitle): ?>
-<div class="c"><h2><?= htmlspecialchars($txTitle) ?> <small style="color:#6b7774;font-weight:normal">(<?= count($byTx[$txKey]) ?>)</small></h2><form class="r" method="post" style="margin-bottom:12px"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="taxonomy_add"><input type="hidden" name="taxonomy_type" value="<?= htmlspecialchars($txKey) ?>"><input name="name" placeholder="Yeni seçenek adı" maxlength="120" required style="flex:1"><input name="sort_order" type="number" value="100" min="0" title="Sıra" style="width:80px"><button>+ Ekle</button></form><?php foreach (($byTx[$txKey] ?? []) as $tx): ?><span class="chip <?= $tx['is_active'] ? '' : 'off' ?>"><?= htmlspecialchars($tx['name']) ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="taxonomy_toggle"><input type="hidden" name="id" value="<?= (int) $tx['id'] ?>"><button class="mini" title="Aktif/pasif"><?= $tx['is_active'] ? 'Pasifleştir' : 'Aktifleştir' ?></button></form></span><?php endforeach; ?><?php if (!$byTx[$txKey]): ?><p style="color:#6b7774">Liste boş.</p><?php endif; ?></div>
-<?php endforeach; ?></div>
-<h2 style="margin:26px 0 4px;border-top:1px solid #e2e6df;padding-top:20px">Özellik katalogları</h2>
-<div id="bulkBar" style="display:none;position:sticky;top:0;z-index:5;background:#10211f;color:#fff;padding:10px 14px;border-radius:8px;margin:14px 0;align-items:center;gap:12px;flex-wrap:wrap"><b id="bulkCount">0</b> özellik seçildi <span style="display:inline-flex;gap:6px;align-items:center"><span class="bulk-badge" data-b="on" style="display:none;background:#2e7d32;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold;cursor:pointer" onclick="toggleBulkFilter('on')" title="Yalnızca seçili AKTİF özellikleri görünür yap — tekrar tıkla: filtreyi kaldır"></span><span class="bulk-badge" data-b="off" style="display:none;background:#b26a00;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold;cursor:pointer" onclick="toggleBulkFilter('off')" title="Yalnızca seçili PASİF özellikleri görünür yap — tekrar tıkla: filtreyi kaldır"></span></span><span id="bulkCatBadges" style="display:inline-flex;gap:6px;align-items:center"></span><details id="bulkNamesBox" style="display:none;position:relative"><summary id="bulkNamesSum" style="cursor:pointer;font-size:12px;color:#d9f0b4;font-weight:bold;user-select:none">İsimler ▾</summary><div id="bulkNamesList" style="position:absolute;top:100%;left:0;background:#fff;color:#10211f;border:1px solid #d5dccf;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.18);padding:8px 12px;max-height:280px;overflow:auto;min-width:240px;font-size:13px;z-index:30"></div></details><button type="button" class="mini" style="background:#33424a;color:#fff" onclick="selectAllFeats()">Tümünü seç</button><button type="button" class="mini" style="background:#33424a;color:#fff" onclick="selectState('on')" title="Yalnızca aktif (AÇIK) özellikleri işaretle">Yalnızca aktifleri seç</button><button type="button" class="mini" style="background:#33424a;color:#fff" onclick="selectState('off')" title="Yalnızca pasif (KAPALI) özellikleri işaretle">Yalnızca pasifleri seç</button><button type="button" class="mini" style="background:#33424a;color:#fff" onclick="collapseAll(0)">Tümünü daralt</button><button type="button" class="mini" style="background:#33424a;color:#fff" onclick="collapseAll(1)">Tümünü genişlet</button><button type="button" class="mini" style="background:#d9f0b4;color:#10211f;font-weight:bold" onclick="bulkGo('activate')">Aktifleştir</button><button type="button" class="mini" style="background:#e6f8c7;color:#10211f;font-weight:bold" onclick="bulkGo('deactivate')">Pasifleştir</button><button type="button" class="mini" style="background:#b0301a;color:#fff;font-weight:bold" onclick="bulkGo('delete')">Sil</button><button type="button" class="mini" style="background:#33424a;color:#fff" onclick="clearBulk()">Seçimi temizle</button></div>
-<form id="bulkForm" method="post" style="display:none"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="bulk"><input type="hidden" name="sub" id="bulkSub" value="delete"></form>
-<div class="two"><?php foreach ($sectionTitles as $code => $title): $isHotelCat = in_array($code, ['amenity', 'activity', 'event'], true); $grouped = []; foreach (($byCode[$code] ?? []) as $item) $grouped[$item['group_label'] ?: 'Genel'][] = $item; ?>
-<div class="c" style="padding:0"><div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;cursor:pointer" onclick="toggleCat('<?= htmlspecialchars($code) ?>')" title="Tıklayınca genişlet/daralt"><h2 style="margin:0"><?= $title ?> <small style="color:#6b7774;font-weight:normal">(<?= count($byCode[$code]) ?>)</small></h2><span id="catArrow-<?= htmlspecialchars($code) ?>" style="color:#6b7774;font-size:13px;user-select:none">▾ daralt</span></div><div id="catBody-<?= htmlspecialchars($code) ?>"><div style="padding:0 18px 14px"><label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#6b7774;margin:0 0 6px"><input type="checkbox" class="selall" data-code="<?= htmlspecialchars($code) ?>"> Bu katalogdakilerin tümünü seç</label><?php if (!$byCode[$code]): ?><p style="color:#6b7774">Liste boş — yukarıdan ekleyin.</p><?php endif; ?>
-<?php foreach ($grouped as $groupName => $groupItems): ?><?php if ($isHotelCat): ?><h3 style="font-size:13px;margin:14px 0 4px;color:#405b13"><?= htmlspecialchars($groupName) ?></h3><?php endif; ?><?php foreach ($groupItems as $item): ?><span class="chip <?= $item['is_active'] ? '' : 'off' ?>" id="feat-<?= (int) $item['id'] ?>"><label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-right:2px" title="Toplu işlem için seç"><input type="checkbox" class="feat-check" data-code="<?= htmlspecialchars($code) ?>" data-state="<?= $item['is_active'] ? 'on' : 'off' ?>" data-label="<?= htmlspecialchars($item['label']) ?>" value="<?= (int) $item['id'] ?>"></label><?= htmlspecialchars($item['label']) ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="up"><button class="mini" title="Yukarı taşı">↑</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="move"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><input type="hidden" name="direction" value="down"><button class="mini" title="Aşağı taşı">↓</button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini" title="Aktif/pasif"><?= $item['is_active'] ? 'Pasifleştir' : 'Aktifleştir' ?></button></form><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $item['id'] ?>"><button class="mini del" onclick="return confirm('Bu özellik silinsin mi?');">×</button></form></span><?php endforeach; ?><?php endforeach; ?></div></div></div>
-<?php endforeach; ?></div>
-<?php if ($trash): ?><h2 id="trash" style="margin:26px 0 4px;border-top:1px solid #e2e6df;padding-top:20px">🗑 Çöp kutusu — geri alınabilir silmeler<?php if ($trashUrgent > 0): ?> <span style="display:inline-block;background:#ffe2de;color:#b0301a;border:1px solid #f3c4ba;border-radius:12px;padding:2px 10px;font-size:12px;vertical-align:middle" title="Kalıcı silmeye 7 günden az kalan özellikler">🚨 <?= (int) $trashUrgent ?> acil</span><?php endif; ?><?php if ($trashPending > 0): ?> <span style="display:inline-block;background:#fff3cd;color:#8a6100;border:1px solid #e0c9a3;border-radius:12px;padding:2px 10px;font-size:12px;vertical-align:middle" title="Son şans onayı bekleyen özellikler — e-postadaki bağlantıyla onaylanır">⏳ <?= (int) $trashPending ?> onay bekliyor</span><?php endif; ?></h2><div class="c" style="border-color:#e0c9a3;background:#fdf9f2"><p style="color:#6b7774;font-size:13px;margin-top:0">Silinen özellikler burada durur ve tek tıkla geri yüklenebilir; kaldırıldığı ilanlara aynı bölüm ve fiyat durumuyla geri eklenir. Her özellik <b>silinme + <?= (int) $ttlDays ?> gün TTL</b> sonra kalıcı silinir (geri alınamaz); silme sırasında <b>özel kalıcı silme tarihi</b> verilenler o tarihte silinir.</p><div style="display:flex;align-items:center;gap:12px;margin:4px 0 10px;flex-wrap:wrap"><label style="font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" id="trashAll" onchange="trashToggleAll(this)" style="vertical-align:-2px"> Tümünü seç</label><span style="display:inline-flex;gap:6px;align-items:center;margin-left:8px"><button type="button" class="mini trash-quick-filter" data-filter="urgent" onclick="trashQuickSelect('urgent')" style="background:#ffe2de;color:#b0301a;border:1px solid #f3c4ba;font-size:11px;padding:2px 8px;cursor:pointer;border-radius:10px" title="7 günden az kalan tüm özellikleri tek tıkla seç">🚨 Acil</button><button type="button" class="mini trash-quick-filter" data-filter="pending" onclick="trashQuickSelect('pending')" style="background:#fff3cd;color:#8a6100;border:1px solid #e0c9a3;font-size:11px;padding:2px 8px;cursor:pointer;border-radius:10px" title="Onay bekleyen tüm özellikleri tek tıkla seç">⏳ Onay bekleyen</button><button type="button" class="mini trash-quick-filter" data-filter="3days" onclick="trashQuickSelect('3days')" style="background:#ffe2de;color:#9d3b1c;border:1px solid #f3c4ba;font-size:11px;padding:2px 8px;cursor:pointer;border-radius:10px" title="3 günden az kalan tüm özellikleri tek tıkla seç">⏰ 3 günden az</button></span><span id="trashSelCount" style="font-size:12px;color:#6b7774"></span><form method="post" style="display:inline" onsubmit="return trashSubmitCheck()"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="bulk_restore"><span id="trashRestoreIds"></span><button type="submit" id="trashBulkBtn" class="mini" style="background:#e6f8c7;color:#10211f;border:1px solid #bcd98a;font-weight:bold" disabled>↩ Seçilenleri geri yükle</button></form></div><?php foreach ($trash as $t): $customPurge = $t['_custom']; $purgeTs = $t['_purge_ts']; $remainDays = $t['_remain']; $urgent = $t['_urgent']; ?><span class="chip" style="opacity:1;border-color:#e0c9a3" id="feat-<?= (int) $t['id'] ?>"><input type="checkbox" class="trash-check" value="<?= (int) $t['id'] ?>" data-label="<?= htmlspecialchars($t['label'], ENT_QUOTES) ?>" data-urgent="<?= $urgent ? '1' : '0' ?>" data-pending="<?= $t['_pending'] !== null ? '1' : '0' ?>" data-remain="<?= (int) $remainDays ?>" onchange="trashRefresh()" title="Toplu geri yükleme için seç" style="vertical-align:-2px;margin-right:6px;cursor:pointer"><?= htmlspecialchars($t['label']) ?> <small style="color:#6b7774">(<?= htmlspecialchars($sectionTitles[$t['code']] ?? (string) $t['code']) ?> · <?= (int) $t['affected_count'] ?> ilan · silindi <?= htmlspecialchars(mb_substr((string) $t['deleted_at'], 0, 16)) ?> · <b style="color:<?= $urgent ? '#b0301a' : '#8a6100' ?>">kalıcı silme <?= date('Y-m-d', $purgeTs) ?> (<?= max(0, $remainDays) ?> gün)<?= $customPurge ? ' · özel tarih' : '' ?></b><?php if ($t['_pending'] !== null): ?> <span style="display:inline-block;background:#fff3cd;color:#8a6100;border:1px solid #e0c9a3;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:bold" title="Kalıcı silme onayı bekleniyor — son şans e-postasındaki bağlantıyla onaylanır">⏳ onay bekliyor · <?= htmlspecialchars($t['_pending']) ?></span> <form method="post" style="display:inline" onsubmit="return confirm('Son şans e-postası yeniden gönderilsin mi?')"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="resend_purge_email"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>"><button class="mini" style="background:#eef3fb;color:#2b4a7a;border:1px solid #b9cbe8;font-size:10px;padding:2px 6px;cursor:pointer" title="Son şans e-postasını yeniden gönder">📧 yeniden gönder</button></form><?php endif; ?>)</small><?php if ((int) $t['affected_count'] > 0): ?><button class="mini" type="button" onclick="toggleTrashPreview(<?= (int) $t['id'] ?>)" title="Kaldırıldığı ilanları göster">▸ <?= (int) $t['affected_count'] ?> ilan</button><?php endif; ?><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>"><input type="hidden" name="action" value="restore"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>"><button class="mini" style="background:#e6f8c7;color:#10211f;border:1px solid #bcd98a" title="Geri yükle">↩ Geri yükle</button></form></span><?php if ((int) $t['affected_count'] > 0): ?><div id="tp-<?= (int) $t['id'] ?>" style="display:none;margin:2px 0 4px 10px;padding:8px 12px;background:#fff;border:1px solid #e0c9a3;border-radius:6px;font-size:12px;color:#10211f"></div><?php endif; ?><?php endforeach; ?></div><?php endif; ?>
+<!-- Yeni Özellik Ekle Formu -->
+<div class="sui-card" style="margin-bottom:24px">
+    <div class="sui-card-header">
+        <h2 class="sui-card-title">➕ Yeni Özellik / Hizmet Ekle</h2>
+    </div>
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+        <input type="hidden" name="action" value="add">
+        
+        <div style="display:grid;grid-template-columns:180px 1fr 1fr auto;gap:12px;align-items:center">
+            <div>
+                <select name="code" class="sui-input" style="font-weight:700">
+                    <option value="villa">🏡 Villa</option>
+                    <option value="yacht">⛵ Yat</option>
+                    <option value="amenity">🏨 Otel Olanakları</option>
+                    <option value="activity">🎯 Otel Aktiviteleri</option>
+                    <option value="event">🎉 Otel Etkinlikleri</option>
+                </select>
+            </div>
+            <div>
+                <input name="label" placeholder="Özellik adı (Örn. Özel Havuz, Wi-Fi)" maxlength="120" required class="sui-input">
+            </div>
+            <div>
+                <input name="group" placeholder="Grup (yalnızca otel: Spa, Spor vb.)" maxlength="120" class="sui-input">
+            </div>
+            <div>
+                <button class="sui-btn sui-btn-primary" type="submit">+ Özellik Ekle</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Otel Sınıflandırmaları -->
+<div style="margin-bottom:28px">
+    <h2 style="font-size:18px;font-weight:700;margin:0 0 16px 0;color:var(--sui-dark)">🏨 Otel Sınıflandırmaları</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:20px">
+        <?php foreach ($taxonomies as $txKey => $txTitle): ?>
+            <div class="sui-card">
+                <div class="sui-card-header">
+                    <h3 class="sui-card-title" style="font-size:15px"><?= htmlspecialchars($txTitle) ?> <span class="sui-badge sui-badge-info" style="font-size:11px"><?= count($byTx[$txKey]) ?></span></h3>
+                </div>
+                
+                <form method="post" style="display:flex;gap:8px;margin-bottom:16px">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                    <input type="hidden" name="action" value="taxonomy_add">
+                    <input type="hidden" name="taxonomy_type" value="<?= htmlspecialchars($txKey) ?>">
+                    <input name="name" placeholder="Yeni seçenek adı..." maxlength="120" required class="sui-input" style="flex:1">
+                    <input name="sort_order" type="number" value="100" min="0" title="Sıralama" class="sui-input" style="width:70px;text-align:center">
+                    <button class="sui-btn sui-btn-primary sui-btn-sm" type="submit">+ Ekle</button>
+                </form>
+
+                <div style="display:flex;flex-wrap:wrap;gap:8px">
+                    <?php foreach (($byTx[$txKey] ?? []) as $tx): ?>
+                        <span class="chip <?= $tx['is_active'] ? '' : 'off' ?>" style="display:inline-flex;align-items:center;gap:6px;background:var(--sui-bg);border:1px solid var(--sui-border);border-radius:20px;padding:4px 10px;font-size:12px">
+                            <b><?= htmlspecialchars($tx['name']) ?></b>
+                            <form method="post" style="display:inline;margin:0">
+                                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                <input type="hidden" name="action" value="taxonomy_toggle">
+                                <input type="hidden" name="id" value="<?= (int) $tx['id'] ?>">
+                                <button type="submit" style="background:none;border:none;cursor:pointer;font-size:11px;color:<?= $tx['is_active'] ? 'var(--sui-danger)' : 'var(--sui-success)' ?>;font-weight:700">
+                                    <?= $tx['is_active'] ? 'Pasif' : 'Aktif' ?>
+                                </button>
+                            </form>
+                        </span>
+                    <?php endforeach; ?>
+                    <?php if (!$byTx[$txKey]): ?>
+                        <p style="color:var(--sui-muted);font-size:13px;margin:0">Liste henüz boş.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<!-- Özellik Katalogları -->
+<div style="margin-bottom:28px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:18px;font-weight:700;margin:0;color:var(--sui-dark)">📋 Özellik ve Hizmet Katalogları</h2>
+    </div>
+
+    <!-- Toplu İşlem Çubuğu -->
+    <div id="bulkBar" style="display:none;position:sticky;top:70px;z-index:100;background:var(--sui-dark);color:#fff;padding:12px 18px;border-radius:12px;margin-bottom:16px;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:0 8px 24px rgba(0,0,0,0.15)">
+        <b id="bulkCount" style="font-size:16px;color:var(--sui-primary)">0</b> özellik seçildi
+        <span class="bulk-badge" data-b="on" style="display:none;background:#2e7d32;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold;cursor:pointer" onclick="toggleBulkFilter('on')"></span>
+        <span class="bulk-badge" data-b="off" style="display:none;background:#b26a00;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold;cursor:pointer" onclick="toggleBulkFilter('off')"></span>
+        <span id="bulkCatBadges" style="display:inline-flex;gap:6px;align-items:center"></span>
+        <button type="button" class="sui-btn sui-btn-outline sui-btn-sm" style="color:#fff;border-color:rgba(255,255,255,0.3)" onclick="selectAllFeats()">Tümünü Seç</button>
+        <button type="button" class="sui-btn sui-btn-success sui-btn-sm" onclick="bulkGo('activate')">Aktifleştir</button>
+        <button type="button" class="sui-btn sui-btn-outline sui-btn-sm" style="color:#fff;border-color:rgba(255,255,255,0.3)" onclick="bulkGo('deactivate')">Pasifleştir</button>
+        <button type="button" class="sui-btn sui-btn-danger sui-btn-sm" onclick="bulkGo('delete')">Sil</button>
+        <button type="button" class="sui-btn sui-btn-outline sui-btn-sm" style="color:#fff;border-color:rgba(255,255,255,0.3)" onclick="clearBulk()">Seçimi Temizle</button>
+    </div>
+
+    <form id="bulkForm" method="post" style="display:none">
+        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+        <input type="hidden" name="action" value="bulk">
+        <input type="hidden" name="sub" id="bulkSub" value="delete">
+    </form>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(380px, 1fr));gap:20px">
+        <?php foreach ($sectionTitles as $code => $title): $isHotelCat = in_array($code, ['amenity', 'activity', 'event'], true); $grouped = []; foreach (($byCode[$code] ?? []) as $item) $grouped[$item['group_label'] ?: 'Genel'][] = $item; ?>
+            <div class="sui-card" style="padding:0;overflow:hidden">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:var(--sui-bg);border-bottom:1px solid var(--sui-border);cursor:pointer" onclick="toggleCat('<?= htmlspecialchars($code) ?>')">
+                    <h3 style="margin:0;font-size:15px;font-weight:700">
+                        <?= $title ?> <span class="sui-badge sui-badge-info" style="font-size:11px"><?= count($byCode[$code]) ?></span>
+                    </h3>
+                    <span id="catArrow-<?= htmlspecialchars($code) ?>" style="color:var(--sui-muted);font-size:12px">▾ Daralt</span>
+                </div>
+                <div id="catBody-<?= htmlspecialchars($code) ?>" style="padding:16px 20px">
+                    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--sui-muted);margin-bottom:12px;font-weight:600">
+                        <input type="checkbox" class="selall" data-code="<?= htmlspecialchars($code) ?>"> Bu kategorideki tümünü seç
+                    </label>
+                    
+                    <?php foreach ($grouped as $groupName => $groupItems): ?>
+                        <?php if ($isHotelCat): ?>
+                            <div style="font-size:12px;font-weight:700;color:var(--sui-primary);margin:12px 0 6px 0;text-transform:uppercase"><?= htmlspecialchars($groupName) ?></div>
+                        <?php endif; ?>
+                        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                            <?php foreach ($groupItems as $item): ?>
+                                <span class="chip <?= $item['is_active'] ? '' : 'off' ?>" id="feat-<?= (int) $item['id'] ?>" style="display:inline-flex;align-items:center;gap:6px;background:var(--sui-bg);border:1px solid var(--sui-border);border-radius:20px;padding:4px 10px;font-size:12px">
+                                    <input type="checkbox" class="feat-check" data-code="<?= htmlspecialchars($code) ?>" data-state="<?= $item['is_active'] ? 'on' : 'off' ?>" data-label="<?= htmlspecialchars($item['label']) ?>" value="<?= (int) $item['id'] ?>">
+                                    <b><?= htmlspecialchars($item['label']) ?></b>
+                                    <form method="post" style="display:inline;margin:0">
+                                        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                        <input type="hidden" name="action" value="toggle">
+                                        <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
+                                        <button type="submit" style="background:none;border:none;cursor:pointer;font-size:10px;color:<?= $item['is_active'] ? 'var(--sui-muted)' : 'var(--sui-success)' ?>;font-weight:700" title="Aktif/Pasif">
+                                            <?= $item['is_active'] ? '○' : '●' ?>
+                                        </button>
+                                    </form>
+                                    <form method="post" style="display:inline;margin:0">
+                                        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
+                                        <button type="submit" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--sui-danger);font-weight:700" onclick="return confirm('Bu özellik silinsin mi?');" title="Sil">×</button>
+                                    </form>
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<?php if ($trash): ?>
+    <!-- Çöp Kutusu Kartı -->
+    <div class="sui-card" id="trash" style="margin-bottom:28px;border-left:4px solid var(--sui-warning)">
+        <div class="sui-card-header">
+            <div>
+                <h2 class="sui-card-title">🗑️ Çöp Kutusu & Geri Alınabilir Silmeler</h2>
+                <p style="color:var(--sui-muted);font-size:13px;margin:4px 0 0 0">
+                    Silinen özellikler burada bekler ve tek tıkla geri yüklenebilir (TTL: <?= (int) $ttlDays ?> gün).
+                </p>
+            </div>
+            <div>
+                <?php if ($trashUrgent > 0): ?>
+                    <span class="sui-badge sui-badge-danger">🚨 <?= (int) $trashUrgent ?> Acil</span>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:10px">
+            <?php foreach ($trash as $t): $purgeTs = $t['_purge_ts']; $remainDays = $t['_remain']; ?>
+                <span class="chip" style="display:inline-flex;align-items:center;gap:8px;background:var(--sui-bg);border:1px solid var(--sui-border);border-radius:20px;padding:6px 12px;font-size:12px" id="feat-<?= (int) $t['id'] ?>">
+                    <b><?= htmlspecialchars($t['label']) ?></b>
+                    <small style="color:var(--sui-muted)">(<?= (int) $t['affected_count'] ?> ilan · <?= max(0, $remainDays) ?> gün kaldı)</small>
+                    <form method="post" style="display:inline;margin:0">
+                        <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                        <input type="hidden" name="action" value="restore">
+                        <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+                        <button class="sui-btn sui-btn-success sui-btn-sm" style="padding:2px 8px;font-size:11px" type="submit">↩ Geri Yükle</button>
+                    </form>
+                </span>
+            <?php endforeach; ?>
+        </div>
+    </div>
+<?php endif; ?>
+
 </main><script>
 function setupToast(id,secs){var el=document.getElementById(id);if(!el)return;var t=setTimeout(function(){collapseToast(id)},(secs||8)*1000);el.dataset.timer=t;el.addEventListener('mouseenter',function(){clearTimeout(el.dataset.timer)});el.addEventListener('mouseleave',function(){el.dataset.timer=setTimeout(function(){collapseToast(id)},(secs||8)*1000)})}
 function collapseToast(id){var el=document.getElementById(id);if(!el||el.dataset.gone)return;el.classList.add('collapsed')}
