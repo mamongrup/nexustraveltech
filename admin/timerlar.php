@@ -76,17 +76,7 @@ $hcJob = null;
 foreach ($jobs as $j) if (($j['code'] ?? '') === 'nexus-health-check') { $hcJob = $j; break; }
 $token = scheduler_tick_token();
 $tickUrl = 'https://nexustraveltech.com/nexustraveltech/timer-tick.php?token=' . $token;
-?>
-<!doctype html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Zamanlayıcılar | NEXUS Admin</title>
-  <style>
-    body{margin:0;font-family:Arial;background:#f7f7f2;color:#10211f}.w{width:min(1080px,calc(100% - 32px));margin:35px auto}.c{background:#fff;border:1px solid #ddd;padding:18px;margin:15px 0}input,button,select{padding:9px;font:inherit;border:1px solid #d8ded8}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #e1e5de;padding:10px;text-align:left;vertical-align:top;font-size:14px}th{font-size:12px;text-transform:uppercase;color:#64716d}.ok{background:#e6f8c7;padding:9px}.er{background:#ffe2de;padding:9px}button{background:#10211f;color:#fff;border:0;cursor:pointer;margin-top:6px}code{background:#f2f4ef;padding:2px 6px;font-size:12px}
-  </style>
-<?php
+
 require_once __DIR__ . '/layout.php';
 admin_layout_start('Zamanlayıcılar & Otomatik Görevler', 'timerlar');
 ?>
