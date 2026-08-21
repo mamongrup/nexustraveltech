@@ -1,6 +1,19 @@
 <!doctype html>
-<?php $seo_page = 'home'; ?>
-<html lang="tr">
+<?php
+$seo_page = 'home';
+require_once __DIR__ . '/config/i18n.php';
+$current_lang = readiness_lang();
+$cat_translations = [
+    'tr' => ['cat_hotel' => 'OTEL', 'cat_villa' => 'VİLLA', 'cat_yacht' => 'YAT', 'cat_tour' => 'TUR', 'cat_activity' => 'AKTİVİTE', 'cat_event' => 'ETKİNLİK', 'cat_transfer' => 'TRANSFER'],
+    'en' => ['cat_hotel' => 'HOTEL', 'cat_villa' => 'VILLA', 'cat_yacht' => 'YACHT', 'cat_tour' => 'TOUR', 'cat_activity' => 'ACTIVITY', 'cat_event' => 'EVENT', 'cat_transfer' => 'TRANSFER'],
+    'de' => ['cat_hotel' => 'HOTEL', 'cat_villa' => 'VILLA', 'cat_yacht' => 'YACHT', 'cat_tour' => 'TOUR', 'cat_activity' => 'AKTIVITÄT', 'cat_event' => 'EVENT', 'cat_transfer' => 'TRANSFER'],
+    'ru' => ['cat_hotel' => 'ОТЕЛЬ', 'cat_villa' => 'ВИЛЛА', 'cat_yacht' => 'ЯХТА', 'cat_tour' => 'ТУР', 'cat_activity' => 'АКТИВНОСТЬ', 'cat_event' => 'СОБЫТИЕ', 'cat_transfer' => 'ТРАНСФЕР'],
+    'ar' => ['cat_hotel' => 'فندق', 'cat_villa' => 'فيلا', 'cat_yacht' => 'يخت', 'cat_tour' => 'جولة', 'cat_activity' => 'نشاط', 'cat_event' => 'فعالية', 'cat_transfer' => 'نقل'],
+    'fr' => ['cat_hotel' => 'HÔTEL', 'cat_villa' => 'VILLA', 'cat_yacht' => 'YACHT', 'cat_tour' => 'CIRCUIT', 'cat_activity' => 'ACTIVITÉ', 'cat_event' => 'ÉVÉNEMENT', 'cat_transfer' => 'TRANSFERT'],
+];
+$cats = $cat_translations[$current_lang] ?? $cat_translations['tr'];
+?>
+<html lang="<?= htmlspecialchars($current_lang) ?>" dir="<?= $current_lang === 'ar' ? 'rtl' : 'ltr' ?>">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -50,13 +63,13 @@
           </div>
         </div>
         <div class="hero-foot">
-          <span data-i18n="cat_hotel">OTEL</span>
-          <span data-i18n="cat_villa">VİLLA</span>
-          <span data-i18n="cat_yacht">YAT</span>
-          <span data-i18n="cat_tour">TUR</span>
-          <span data-i18n="cat_activity">AKTİVİTE</span>
-          <span data-i18n="cat_event">ETKİNLİK</span>
-          <span data-i18n="cat_transfer">TRANSFER</span>
+          <span data-i18n="cat_hotel"><?= htmlspecialchars($cats['cat_hotel']) ?></span>
+          <span data-i18n="cat_villa"><?= htmlspecialchars($cats['cat_villa']) ?></span>
+          <span data-i18n="cat_yacht"><?= htmlspecialchars($cats['cat_yacht']) ?></span>
+          <span data-i18n="cat_tour"><?= htmlspecialchars($cats['cat_tour']) ?></span>
+          <span data-i18n="cat_activity"><?= htmlspecialchars($cats['cat_activity']) ?></span>
+          <span data-i18n="cat_event"><?= htmlspecialchars($cats['cat_event']) ?></span>
+          <span data-i18n="cat_transfer"><?= htmlspecialchars($cats['cat_transfer']) ?></span>
         </div>
       </section>
 

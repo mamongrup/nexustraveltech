@@ -1,3 +1,3 @@
 <footer class="footer"><div class="shell"><a class="brand" href="/nexustraveltech/">N<span>&#8767;</span>XUS</a><p data-i18n="footer_copy">Turizmin canlı bilgi ağı.</p><div class="footer-links"><a href="/nexustraveltech/iletisim" data-i18n="footer_contact">İletişim</a><a href="/nexustraveltech/gizlilik" data-i18n="footer_privacy">Gizlilik</a><a href="/nexustraveltech/cerezler" data-i18n="footer_cookies">Çerezler</a></div><span>nexustraveltech.com &copy; 2026</span></div></footer>
-<script defer src="/nexustraveltech/assets/i18n.js"></script>
+<script defer src="/nexustraveltech/assets/i18n.js?v=<?= filemtime(__DIR__ . '/../assets/i18n.js') ?>"></script>
 <?php require __DIR__ . '/../config/ai_public_widget.php'; ai_public_widget(); ?>
