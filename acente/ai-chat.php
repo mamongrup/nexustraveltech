@@ -18,7 +18,8 @@ try {
         exit;
     }
     $messages = is_array($in['messages'] ?? null) ? $in['messages'] : [];
-    $reply = ai_assistant_chat('agency', $messages, ['agency_id' => (int) $u['agency_id']]);
+    $lang = trim((string) ($in['lang'] ?? ''));
+    $reply = ai_assistant_chat('agency', $messages, ['agency_id' => (int) $u['agency_id'], 'lang' => $lang ?: 'tr']);
     echo json_encode(['reply' => $reply], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     http_response_code(500);

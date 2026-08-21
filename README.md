@@ -13,7 +13,7 @@ Otel, villa ve yat otelcilik yönetimi platformu — tedarikçilerin fiyat, kont
 │ Tedarikçi│  Acente  │   Admin  │  Public  │   API Webhooks     │
 │  Paneli  │  Paneli  │  Paneli  │  Site    │                    │
 ├──────────┴──────────┴──────────┴──────────┴────────────────────┤
-│                      PHP 8.3 + PostgreSQL                      │
+│                      PHP 8.5 + PostgreSQL                      │
 ├────────────────────────────────────────────────────────────────┤
 │  config/  │  tedarikci/  │  admin/  │  api/  │  cron/          │
 │  database │  Properties  │  Settings│  REST  │  Scheduler      │
@@ -104,7 +104,7 @@ Tam liste: `admin/timerlar.php` → Görevler tablosu.
 
 ### Ön koşullar
 
-- PHP 8.3+ (PDO PostgreSQL, cURL, JSON)
+- PHP 8.5+ (PDO PostgreSQL, cURL, JSON)
 - PostgreSQL 14+
 - Composer yok (sıfır bağımlılık)
 
@@ -155,7 +155,7 @@ bash scripts/webhook-test-curl.sh
 
 | Katman | Teknoloji |
 |---|---|
-| **Backend** | PHP 8.3 (strict_types, nullable, match, enums) |
+| **Backend** | PHP 8.5 (strict_types, nullable, match, enums, typed properties) |
 | **Veritabanı** | PostgreSQL 14+ (JSONB, advisory locks, UPSERT) |
 | **Frontend** | Saf HTML/CSS/JS (framework yok, minified PHP) |
 | **Zamanlayıcı** | Kendi scheduler'ı (tek tick.php + advisory lock) |

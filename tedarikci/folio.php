@@ -125,7 +125,95 @@ supply_start('Folyo ' . ($folio ? ('#' . ($folio['folio_number']?:$folio['bookin
 </table>
 </section>
 
-<section class="next-module no-print"><h2>Hızlı hareket</h2>
+<section class="next-module no-print" style="background:#f8faf9;border:1px solid #cbe0d4;padding:18px;border-radius:10px">
+  <h2>⚡ Dokunmatik Hızlı POS (Tablet / Mobil Satış)</h2>
+  <p style="font-size:13px;color:#2c5e43;margin-bottom:12px">Garson veya resepsiyon için tek dokunuşla folyoya standart harcama ekleyin:</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-bottom:16px">
+    <form method="post" style="margin:0">
+      <input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['supplier_csrf'])?>">
+      <input type="hidden" name="action" value="charge">
+      <input type="hidden" name="transaction_type" value="service_charge">
+      <input type="hidden" name="department" value="Restoran">
+      <input type="hidden" name="description" value="Serpme Kahvaltı">
+      <input type="hidden" name="amount" value="15.00">
+      <button type="submit" style="width:100%;padding:12px 8px;background:#fff;border:1.5px solid #a2d6b9;border-radius:8px;cursor:pointer;text-align:center;color:#10211f">
+        <div style="font-size:20px">🍳</div>
+        <div style="font-weight:700;font-size:12px;margin-top:2px">Kahvaltı</div>
+        <div style="font-size:11px;color:#13593b;font-weight:bold">15.00 <?=htmlspecialchars($currency)?></div>
+      </button>
+    </form>
+    <form method="post" style="margin:0">
+      <input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['supplier_csrf'])?>">
+      <input type="hidden" name="action" value="charge">
+      <input type="hidden" name="transaction_type" value="service_charge">
+      <input type="hidden" name="department" value="Bar">
+      <input type="hidden" name="description" value="Kahve & İçecek">
+      <input type="hidden" name="amount" value="5.00">
+      <button type="submit" style="width:100%;padding:12px 8px;background:#fff;border:1.5px solid #a2d6b9;border-radius:8px;cursor:pointer;text-align:center;color:#10211f">
+        <div style="font-size:20px">☕</div>
+        <div style="font-weight:700;font-size:12px;margin-top:2px">Kahve/İçecek</div>
+        <div style="font-size:11px;color:#13593b;font-weight:bold">5.00 <?=htmlspecialchars($currency)?></div>
+      </button>
+    </form>
+    <form method="post" style="margin:0">
+      <input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['supplier_csrf'])?>">
+      <input type="hidden" name="action" value="charge">
+      <input type="hidden" name="transaction_type" value="service_charge">
+      <input type="hidden" name="department" value="Minibar">
+      <input type="hidden" name="description" value="Minibar Tüketimi">
+      <input type="hidden" name="amount" value="20.00">
+      <button type="submit" style="width:100%;padding:12px 8px;background:#fff;border:1.5px solid #a2d6b9;border-radius:8px;cursor:pointer;text-align:center;color:#10211f">
+        <div style="font-size:20px">🍫</div>
+        <div style="font-weight:700;font-size:12px;margin-top:2px">Minibar</div>
+        <div style="font-size:11px;color:#13593b;font-weight:bold">20.00 <?=htmlspecialchars($currency)?></div>
+      </button>
+    </form>
+    <form method="post" style="margin:0">
+      <input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['supplier_csrf'])?>">
+      <input type="hidden" name="action" value="charge">
+      <input type="hidden" name="transaction_type" value="service_charge">
+      <input type="hidden" name="department" value="Transfer">
+      <input type="hidden" name="description" value="Havalimanı VIP Transfer">
+      <input type="hidden" name="amount" value="50.00">
+      <button type="submit" style="width:100%;padding:12px 8px;background:#fff;border:1.5px solid #a2d6b9;border-radius:8px;cursor:pointer;text-align:center;color:#10211f">
+        <div style="font-size:20px">🚘</div>
+        <div style="font-weight:700;font-size:12px;margin-top:2px">Transfer</div>
+        <div style="font-size:11px;color:#13593b;font-weight:bold">50.00 <?=htmlspecialchars($currency)?></div>
+      </button>
+    </form>
+    <form method="post" style="margin:0">
+      <input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['supplier_csrf'])?>">
+      <input type="hidden" name="action" value="charge">
+      <input type="hidden" name="transaction_type" value="service_charge">
+      <input type="hidden" name="department" value="Çamaşırhane">
+      <input type="hidden" name="description" value="Yıkama & Ütü Servisi">
+      <input type="hidden" name="amount" value="12.00">
+      <button type="submit" style="width:100%;padding:12px 8px;background:#fff;border:1.5px solid #a2d6b9;border-radius:8px;cursor:pointer;text-align:center;color:#10211f">
+        <div style="font-size:20px">👔</div>
+        <div style="font-weight:700;font-size:12px;margin-top:2px">Çamaşırhane</div>
+        <div style="font-size:11px;color:#13593b;font-weight:bold">12.00 <?=htmlspecialchars($currency)?></div>
+      </button>
+    </form>
+  </div>
+
+  <?php if($balance > 0): ?>
+    <div style="background:#fff;padding:14px;border-radius:8px;border:1px solid #d8ded8;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div>
+        <strong style="color:#10211f">💳 Kalan Bakiye Tahsilatı: <?=number_format($balance,2)?> <?=htmlspecialchars($currency)?></strong>
+        <div style="font-size:12px;color:#666">Misafire SMS/WhatsApp ile 3D Secure kredi kartı ödeme linki gönderin.</div>
+      </div>
+      <form method="post" style="margin:0" action="rezervasyonlar.php">
+        <input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['supplier_csrf'])?>">
+        <input type="hidden" name="action" value="paylink">
+        <input type="hidden" name="booking_id" value="<?=(int)$folio['booking_id']?>">
+        <input type="hidden" name="amount" value="<?=number_format($balance,2,'.','')?>">
+        <button style="background:#13593b;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:bold;cursor:pointer">📲 Ödeme Linki Üret</button>
+      </form>
+    </div>
+  <?php endif; ?>
+</section>
+
+<section class="next-module no-print"><h2>Manuel hareket ekle</h2>
 <form method="post" class="supply-form" style="max-width:560px"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['supplier_csrf'])?>">
 <div class="form-row"><label>Tür<select name="transaction_type"><option value="room_charge">Oda ücreti</option><option value="service_charge">Servis ücreti</option><option value="adjustment">Düzeltme</option></select></label><label>Tutar<input type="number" name="amount" step="0.01" min="0.01" required></label><label>Bölüm<input name="department" placeholder="Örn. Restoran"></label></div>
 <label>Açıklama<input name="description" required placeholder="Hareket açıklaması"></label>

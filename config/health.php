@@ -1116,7 +1116,8 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         foreach ($staleSpecs as $staleTable => $sspec) {
             if (in_array($staleTable, $missingTables, true)) continue;
             try {
-                $staleSql = "SELECT s.id, s.{" . $sspec['code'] . "} AS code, s.status FROM " . $staleTable . " s JOIN " . $staleTable . " c ON c.channel_connection_id=s.channel_connection_id AND c." . $sspec['code'] . "=s." . $sspec['code'] . " AND c.status='confirmed' WHERE s.status='suggested' ORDER BY s.id";
+                $codeCol = '"' . str_replace('"', '""', $sspec['code']) . '"';
+                $staleSql = 'SELECT s.id, s.' . $codeCol . ' AS code, s.status FROM ' . $staleTable . ' s JOIN ' . $staleTable . ' c ON c.channel_connection_id=s.channel_connection_id AND c.' . $codeCol . '=s.' . $codeCol . " AND c.status='confirmed' WHERE s.status='suggested' ORDER BY s.id";
                 $staleRows = $pdo->query($staleSql)->fetchAll();
                 if ($staleRows) {
                     if ($dryRun) {
@@ -1633,7 +1634,31 @@ function health_check_run(bool $dryRun = false, bool $repair = false, bool $fix 
         }
         // --json: onarım sonrası doğrulama sonucu — her yeniden kurulan tablonun beklenen
         // kolonları karşılayıp karşılamadığı makinece okunabilir (checks.repair.verify).
-        $checks['repair']['verify'] = [
+        // Onarim sonrasi sahiplik dogrulamasi
+try {
+    $curUser = (string) $pdo->query("SELECT current_user")->fetchColumn();
+    $badOwner = (int) $pdo->query("SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tableowner <> '" . $curUser . "' AND tableowner <> 'postgres'")->fetchColumn();
+    $postgresOwned = (int) $pdo->query("SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tableowner='postgres'")->fetchColumn();
+    $badTotal = $badOwner + $postgresOwned;
+    if ($badTotal === 0) {
+        $out .= "Sahiplik dogrulamasi: tum tablolar " . $curUser . " kullaniciya ait (postgres sahipli yok).\n";
+    } else {
+        $out .= "Sahiplik dogrulamasi: " . $badTotal . " tablo hala farkli sahipte";
+        if ($postgresOwned > 0) $out .= " (" . $postgresOwned . " tablo postgres sahipli)";
+        $out .= "\n";
+        $errors[] = 'Sahiplik dogrulamasi: ' . $badTotal . ' tablo farkli sahipte';
+    }
+    $checks['repair']['ownership'] = [
+        'status' => $badTotal === 0 ? 'ok' : 'error',
+        'bad_owner' => $badOwner,
+        'postgres_owned' => $postgresOwned,
+    ];
+} catch (Throwable $e) {
+    $out .= "Sahiplik dogrulamasi yapilamadi: " . $e->getMessage() . "\n";
+    $checks['repair']['ownership'] = ['status' => 'error', 'error' => $e->getMessage()];
+}
+
+$checks['repair']['verify'] = [
             'status' => $postFail === [] ? 'ok' : 'error',
             'rebuilt' => count($rebuiltTables),
             'failed' => $postFail,

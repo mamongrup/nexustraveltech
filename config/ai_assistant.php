@@ -18,7 +18,15 @@ require_once __DIR__ . '/payments.php';
 /** Rol başına sistem yönlendirmesi. */
 function ai_assistant_system_prompt(string $role, array $ctx): string
 {
-    $base = "Sen NEXUS TravelTech platformunun yapay zeka asistanısın. Kullanıcının sorularını kısa ve net Türkçe yanıtla. "
+    // Dil yönlendirmesi
+    $lang = $ctx['lang'] ?? 'tr';
+    $langNames = ['tr' => 'Türkçe', 'en' => 'English', 'de' => 'Deutsch', 'ru' => 'Русский', 'ar' => 'العربية', 'fr' => 'Français'];
+    $langName = $langNames[$lang] ?? 'Türkçe';
+    $langInstruction = $lang !== 'tr'
+        ? "Kullanıcının tercih ettiği dil {$langName}. Yanıtlarını bu dilde yaz. "
+        : '';
+
+    $base = "Sen NEXUS TravelTech platformunun yapay zeka asistanısın. {$langInstruction}Kullanıcının sorularını kısa ve net yanıtla. "
         . "Veri gerektiren sorularda önce uygun aracı kullan; asla uydurma rakam verme. "
         . "Yıkıcı işlemler (silme, iptal, askıya alma, kalıcı değişiklik) yapma; kullanıcıyı ilgili panel sayfasına yönlendir ve ne yapacağını açıkla. "
         . "Müsaitlik, teklif, bildirim gibi konularda sayfa bağlantıları öner.";
@@ -164,6 +172,47 @@ function ai_assistant_tools(string $role, array $ctx): array
                 'plan_onerisi' => $plan,
                 'onay_sayfasi' => '/nexustraveltech/tedarikci/dagitim-merkezi#sec-room-map',
                 'not' => 'Öneriler onaylanmadan webhook verisi takvime yazılmaz; onay Dağıtım & kanal merkezi → bölüm 3 (Oda eşleştirmesi) bölümünde yapılır.',
+            ], JSON_UNESCAPED_UNICODE);
+        });
+        $tool('run_ai_revenue_analysis', 'Tesisin gelecek 30 günlük doluluk ve rezervasyon hareketlerini analiz edip dinamik fiyat önerilerini üretir.', ['property_id' => ['type' => 'integer', 'description' => 'Tesis ID (opsiyonel; boşsa ilk aktif tesis)']], [], function (array $a) use ($sid): string {
+            require_once __DIR__ . '/pricing.php';
+            $pdo = db();
+            $propId = (int) ($a['property_id'] ?? 0);
+            if ($propId <= 0) {
+                $q = $pdo->prepare("SELECT id FROM properties WHERE supplier_id=? AND status='active' ORDER BY id LIMIT 1");
+                $q->execute([$sid]);
+                $propId = (int) $q->fetchColumn();
+            }
+            if (!$propId) return 'Tesis bulunamadı.';
+            $res = run_dynamic_revenue_engine($propId, false);
+            return json_encode([
+                'property_id' => $propId,
+                'yeni_fiyat_onerisi_sayisi' => $res['generated'],
+                'oneriler' => array_slice($res['recommendations'], 0, 5),
+                'yonlendirme' => '/nexustraveltech/tedarikci/otel-gelir-crm.php sayfasından tümünü tek tıkla onaylayabilirsiniz.'
+            ], JSON_UNESCAPED_UNICODE);
+        });
+        $tool('folio_balance_lookup', 'Bir rezervasyonun veya odanın güncel folyo harcama ve bakiye detayını sorgular.', ['reference' => ['type' => 'string', 'description' => 'Rezervasyon referansı']], ['reference'], function (array $a) use ($sid): string {
+            $ref = trim((string) ($a['reference'] ?? ''));
+            $pdo = db();
+            $q = $pdo->prepare("SELECT bf.id folio_id, bf.currency, b.booking_reference, b.checkin_date, b.checkout_date, p.name property_name 
+                                FROM booking_folios bf 
+                                JOIN supplier_bookings b ON b.id=bf.booking_id 
+                                JOIN properties p ON p.id=b.property_id 
+                                WHERE b.supplier_id=? AND b.booking_reference ILIKE ? LIMIT 1");
+            $q->execute([$sid, '%' . $ref . '%']);
+            $folio = $q->fetch();
+            if (!$folio) return 'Rezervasyon veya açık folyo bulunamadı.';
+            $tq = $pdo->prepare("SELECT transaction_type, department, description, amount FROM folio_transactions WHERE folio_id=? ORDER BY id DESC LIMIT 10");
+            $tq->execute([(int)$folio['folio_id']]);
+            $trans = $tq->fetchAll();
+            $balance = 0.0;
+            foreach ($trans as $t) { $balance += (float) $t['amount']; }
+            return json_encode([
+                'referans' => $folio['booking_reference'],
+                'tesis' => $folio['property_name'],
+                'bakiye' => round($balance, 2) . ' ' . $folio['currency'],
+                'son_harcamalar' => $trans
             ], JSON_UNESCAPED_UNICODE);
         });
     }

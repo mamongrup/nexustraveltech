@@ -164,11 +164,18 @@ function listing_readiness(array $property): array
     // Ağırlıklı skor: görsel/konum gibi kritik kalemler daha yüksek puan taşır.
     // Base ağırlıklar tür bazında normalize edilerek toplam tam 100'e çekilir;
     // satış kuralı opsiyoneldir ve paydaya girmez.
-    $baseWeights = [
+        // Base agirliklar: platform ayarindan okunur (kontrol merkezinden duzenlenebilir)
+    $baseDefaults = [
         'rooms' => 3, 'rates' => 3, 'inventory' => 3,
-        'media' => 4, 'description' => 2, 'location' => 3,   // görsel + konum en ağır
+        'media' => 4, 'description' => 2, 'location' => 3,
         'channel' => 2, 'pool' => 2, 'home_port' => 2, 'crew' => 1, 'ical' => 2,
     ];
+    $baseWeights = [];
+    foreach ($baseDefaults as $bk => $bv) {
+        $baseWeights[$bk] = max(1, (int) (function_exists('platform_setting')
+            ? platform_setting('readiness_weight_' . $bk, $bv)
+            : $bv));
+    }
     $coreItems = array_values(array_filter($items, fn($i) => $i['key'] !== 'rules'));
     $coreTotal = count($coreItems);
     $totalBase = 0;

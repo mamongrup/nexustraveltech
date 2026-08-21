@@ -8,6 +8,10 @@ declare(strict_types=1);
 //   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --verbose  → her kontrolü göster
 //   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --json     → makinece okunabilir JSON çıktısı
 //   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --e2e      → + gerçek webhook uçtan uca (curl POST + uygulama + doğrulama)
+//                           + öneri akışı (tanınmayan kod → suggested → confirmed → fiyat yazma)
+//   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --e2e --scope rates          → yalnızca rates kapsamını test et
+//   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --e2e --scope availability   → yalnızca availability test et
+//   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --e2e --scope restrictions   → yalnızca restrictions test et
 //   /opt/plesk/php/8.5/bin/php scripts/auto-test.php --e2e --keep  → e2e test satırları silinmez
 //
 // Modüller: veritabani · migration · zamanlayici · kanal-webhook · kur · ical · eposta · e2e-webhook
@@ -28,6 +32,13 @@ $VERBOSE = in_array('--verbose', $argv ?? [], true);
 $JSON    = in_array('--json', $argv ?? [], true);
 $E2E     = in_array('--e2e', $argv ?? [], true);
 $KEEP    = in_array('--keep', $argv ?? [], true);
+$SCOPE   = '';
+foreach ($argv ?? [] as $i => $a) {
+    if ($a === '--scope' && isset($argv[$i + 1])) {
+        $candidate = strtolower((string) $argv[$i + 1]);
+        if (in_array($candidate, ['rates', 'availability', 'restrictions'], true)) $SCOPE = $candidate;
+    }
+}
 
 try {
     $pdo = db();
@@ -43,6 +54,7 @@ $fails = 0; $warns = 0; $oks = 0;
 $REFS = [
     'veritabani.gerekli_tablo' => '§8.1',
     'veritabani.kritik_kolon' => '§8.1',
+    'veritabani.tablo_sahipligi' => '§8.1',
     'migration.durum' => '§8.1',
     'migration.bekleyen' => '§8.1',
     'zamanlayici.kilit' => '§8.2',
@@ -106,6 +118,28 @@ foreach ($keyCols as $table => $cols) {
     $have = array_flip($stmt->fetchAll(PDO::FETCH_COLUMN));
     $mc = array_values(array_diff($cols, array_keys($have)));
     rec($mod, $table . ' kritik kolonlar', $mc === [] ? 'ok' : 'fail', $mc === [] ? 'tümü mevcut' : 'eksik: ' . implode(', ', $mc));
+}
+
+// Tablo sahipliği: postgres sahibinde kalan tablolar varsa uyarı (§8.1)
+try {
+    $ownerRows = $pdo->query("SELECT tableowner, count(*) cnt FROM pg_tables WHERE schemaname='public' GROUP BY tableowner ORDER BY 2 DESC")->fetchAll();
+    $appUser = '';
+    if (file_exists(__DIR__ . '/../config/secrets.php')) {
+        $sc = require __DIR__ . '/../config/secrets.php';
+        $appUser = $sc['db_user'] ?? '';
+    }
+    $postgresOwned = [];
+    foreach ($ownerRows as $r) {
+        if ($r['tableowner'] !== $appUser && $r['tableowner'] !== 'postgres') continue;
+        if ($r['tableowner'] === 'postgres') $postgresOwned[] = $r['tableowner'] . ':' . $r['cnt'];
+    }
+    if ($postgresOwned !== []) {
+        rec($mod, 'tablo sahipliği', 'warn', 'postgres sahipli tablo var: ' . implode(', ', $postgresOwned) . ' — health-check --repair ile devredin');
+    } else {
+        rec($mod, 'tablo sahipliği', 'ok', 'tümü ' . ($appUser ?: 'app') . ' kullanıcısına ait');
+    }
+} catch (Throwable $e) {
+    rec($mod, 'tablo sahipliği', 'warn', 'sorgulanamadı: ' . $e->getMessage());
 }
 
 // ─────────────────────────── 2) MIGRATION ───────────────────────────
@@ -260,11 +294,12 @@ if ($E2E) {
                     $pdo->prepare("INSERT INTO channel_room_mappings(channel_connection_id, property_id, room_type_id, rate_plan_id, external_room_id, status, approved_by_type, approved_by_name, approved_at) VALUES(?,?,?,?,'confirmed','auto','auto-test',now()) ON CONFLICT(channel_connection_id, external_room_id) DO UPDATE SET room_type_id=EXCLUDED.room_type_id, rate_plan_id=EXCLUDED.rate_plan_id, property_id=EXCLUDED.property_id, status='confirmed', approved_by_type='auto', approved_by_name='auto-test', approved_at=now()")
                         ->execute([(int) $conn['id'], $propId, (int) $room['id'], (int) $plan['id'], $code]);
 
-                    $scopeSpecs = [
+                    $scopeSpecsAll = [
                         ['rates',         ['price' => 123.45, 'currency' => $inCur], date('Y-m-d', strtotime('+60 days'))],
                         ['availability',  ['allotment' => 5],                         date('Y-m-d', strtotime('+61 days'))],
                         ['restrictions',  ['stop_sale' => true, 'min_stay' => 2, 'max_stay' => 7], date('Y-m-d', strtotime('+62 days'))],
                     ];
+                    $scopeSpecs = $SCOPE !== '' ? array_values(array_filter($scopeSpecsAll, fn($s) => $s[0] === $SCOPE)) : $scopeSpecsAll;
                     foreach ($scopeSpecs as [$scope, $extra, $date]) {
                         $payload = ['scope' => $scope, 'external_property_id' => $ext, 'entries' => [array_merge(['external_room_id' => $code, 'date' => $date], $extra)]];
                         $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
@@ -350,6 +385,194 @@ if ($E2E) {
     } catch (Throwable $e) {
         rec($mod, 'e2e', 'fail', $e->getMessage());
     }
+
+    // ─── ÖNERİ AKIŞI (webhook-e2e-test.php deseni) ───
+    try {
+        $sugMod = 'e2e-webhook.oneri';
+        echo "\n── E2E öneri akışı (--e2e) ──\n";
+
+        $sConn = $pdo->query("SELECT * FROM channel_connections WHERE status='active' ORDER BY id LIMIT 1")->fetch();
+        if (!$sConn) {
+            rec($sugMod, 'bağlantı', 'fail', 'aktif kanal bağlantısı yok');
+        } else {
+            $sConnId = (int) $sConn['id'];
+            // Ürün eşleştirmesi bul
+            $sPropQ = $pdo->prepare('SELECT m.property_id, m.external_property_id FROM channel_property_mappings m WHERE m.channel_connection_id=? ORDER BY m.id LIMIT 1');
+            $sPropQ->execute([$sConnId]);
+            $sProp = $sPropQ->fetch();
+            if (!$sProp) {
+                rec($sugMod, 'ürün eşleştirmesi', 'fail', 'kanal #' . $sConnId . ' için bölüm 2 eşleştirmesi yok');
+            } else {
+                $sPropId = (int) $sProp['property_id'];
+                $sExt = (string) ($sProp['external_property_id'] ?? '');
+
+                // Oda + plan bul
+                $sRoomQ = $pdo->prepare("SELECT id, name FROM room_types WHERE property_id=? AND status='active' ORDER BY id LIMIT 1");
+                $sRoomQ->execute([$sPropId]);
+                $sRoom = $sRoomQ->fetch();
+                $sPlanQ = $pdo->prepare("SELECT id, name, currency FROM rate_plans WHERE property_id=? AND status='active' ORDER BY id LIMIT 1");
+                $sPlanQ->execute([$sPropId]);
+                $sPlan = $sPlanQ->fetch();
+
+                if (!$sRoom || !$sPlan) {
+                    rec($sugMod, 'oda/plan', 'fail', 'ilan #' . $sPropId . ' için aktif oda tipi veya plan yok');
+                } else {
+                    $sPlanCur = strtoupper((string) ($sPlan['currency'] ?: 'TRY'));
+                    if (!preg_match('/^[A-Z]{3}$/', $sPlanCur)) $sPlanCur = 'TRY';
+                    $sInCur = 'EUR';
+                    if ($sInCur === $sPlanCur) $sInCur = 'USD';
+                    $sTestDate = date('Y-m-d', strtotime('+70 days'));
+                    $sRate = fx_rate($sInCur, $sPlanCur, $sTestDate);
+
+                    // auto_map açık mı?
+                    $sAutoMap = (bool) platform_setting('channel_webhook_auto_map', true);
+                    if (!$sAutoMap) {
+                        rec($sugMod, 'auto_map', 'fail', 'channel_webhook_auto_map KAPALI — öneri oluşmaz; kontrol merkezinden açın');
+                    } else {
+                        rec($sugMod, 'auto_map', 'ok', 'açık');
+
+                        // Tanınmayan benzersiz kod üret
+                        $sCode = 'E2E-SUG-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+
+                        // Önceki test satırlarını temizle
+                        $pdo->prepare('DELETE FROM channel_room_mappings WHERE channel_connection_id=? AND external_room_id=?')->execute([$sConnId, $sCode]);
+                        $pdo->prepare('DELETE FROM channel_sync_logs WHERE channel_connection_id=? AND request_payload::text LIKE ?')->execute([$sConnId, '%' . $sCode . '%']);
+
+                        // ADIM 3a: Yük gönder (tanınmayan kod)
+                        $sPayload = json_encode([
+                            'scope' => 'rates',
+                            'external_property_id' => $sExt,
+                            'currency' => $sInCur,
+                            'entries' => [['external_room_id' => $sCode, 'date' => $sTestDate, 'price' => 200.0]],
+                        ], JSON_UNESCAPED_UNICODE);
+
+                        $sUrl = 'https://nexustraveltech.com/api/channel-webhook?token=' . (string) $sConn['access_token'];
+                        $sCtx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/json\r\n", 'content' => $sPayload, 'ignore_errors' => true, 'timeout' => 20]]);
+                        $sResp = @file_get_contents($sUrl, false, $sCtx);
+                        $sDec = is_string($sResp) ? json_decode($sResp, true) : null;
+                        if (is_array($sDec) && ($sDec['ok'] ?? false) && ($sDec['queued'] ?? false)) {
+                            rec($sugMod, 'POST (tanınmayan kod)', 'ok', 'kuyruğa alındı (kod ' . $sCode . ')');
+                        } else {
+                            rec($sugMod, 'POST (tanınmayan kod)', 'fail', is_string($sResp) ? mb_substr($sResp, 0, 160) : 'yanıt yok');
+                            throw new \RuntimeException('POST başarısız');
+                        }
+
+                        // ADIM 3b: İşleyiciyi çalıştır
+                        $sLogQ = $pdo->prepare("SELECT id, status FROM channel_sync_logs WHERE channel_connection_id=? AND request_payload::text LIKE ? AND created_at > now() - interval '10 minutes' ORDER BY id DESC LIMIT 1");
+                        $sLogQ->execute([$sConnId, '%' . $sCode . '%']);
+                        $sLog = $sLogQ->fetch();
+                        if (!$sLog) {
+                            rec($sugMod, 'işleyici satırı', 'fail', 'kuyruk satırı bulunamadı');
+                        } else {
+                            $sLogId = (int) $sLog['id'];
+                            if ($sLog['status'] === 'queued') {
+                                $pdo->prepare("UPDATE channel_sync_logs SET status='running', attempt_count=attempt_count+1 WHERE id=?")->execute([$sLogId]);
+                                $sJob = $pdo->query('SELECT * FROM channel_sync_logs WHERE id=' . $sLogId)->fetch();
+                                $sPl = json_decode((string) ($sJob['request_payload'] ?? '{}'), true);
+                                if (!is_array($sPl)) $sPl = [];
+                                $sRes = channel_webhook_apply($sJob, $sPl);
+                                $sUpd = $hasFxAudit
+                                    ? "UPDATE channel_sync_logs SET status=?, response_payload=?::jsonb, error_message=?, fx_audit=?::jsonb, completed_at=now() WHERE id=?"
+                                    : "UPDATE channel_sync_logs SET status=?, response_payload=?::jsonb, error_message=?, completed_at=now() WHERE id=?";
+                                $sArgs = $hasFxAudit
+                                    ? [$sRes['ok'] ? 'success' : 'failed', json_encode(['applied' => $sRes['applied']]), $sRes['ok'] ? null : mb_substr((string) $sRes['message'], 0, 1000), json_encode($sRes['fx_audit'] ?? []), $sLogId]
+                                    : [$sRes['ok'] ? 'success' : 'failed', json_encode(['applied' => $sRes['applied']]), $sRes['ok'] ? null : mb_substr((string) $sRes['message'], 0, 1000), $sLogId];
+                                $pdo->prepare($sUpd)->execute($sArgs);
+                                rec($sugMod, 'işleyici', $sRes['ok'] ? 'ok' : 'fail', 'log #' . $sLogId . ' ' . ($sRes['ok'] ? 'success' : (string) $sRes['message']));
+                            } else {
+                                rec($sugMod, 'işleyici', 'ok', 'satır zaten işlenmiş: ' . (string) $sLog['status']);
+                            }
+
+                            // ADIM 3c: Öneri oluştu mu?
+                            $sSugQ = $pdo->prepare("SELECT room_type_id, rate_plan_id, status, suggestion_count, suggestion_score FROM channel_room_mappings WHERE channel_connection_id=? AND external_room_id=?");
+                            $sSugQ->execute([$sConnId, $sCode]);
+                            $sSugRow = $sSugQ->fetch();
+                            if ($sSugRow && ($sSugRow['status'] ?? '') === 'suggested') {
+                                rec($sugMod, 'öneri oluştu', 'ok', $sCode . ' → oda #' . (int) $sSugRow['room_type_id'] . ' (skor %' . (int) ($sSugRow['suggestion_score'] ?? 0) . ')');
+
+                                // Bildirim kontrolü
+                                $sNotQ = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE type='channel_mapping_suggestion' AND message LIKE ? AND created_at > now() - interval '10 minutes'");
+                                $sNotQ->execute(['%' . $sCode . '%']);
+                                $sNotCount = (int) $sNotQ->fetchColumn();
+                                $sNotCount > 0
+                                    ? rec($sugMod, 'tedarikçi bildirimi', 'ok', $sNotCount . ' kayıt')
+                                    : rec($sugMod, 'tedarikçi bildirimi', 'warn', 'notification bulunamadı — notify_supplier_users() tetiklenmemiş olabilir');
+
+                                // ADIM 3d: Onayla + yeniden işle → fiyat yazılmalı
+                                $sConfPlan = (int) ($sSugRow['rate_plan_id'] ?? 0);
+                                if ($sConfPlan <= 0) $sConfPlan = (int) $sPlan['id'];
+                                $pdo->prepare("UPDATE channel_room_mappings SET status='confirmed', suggested_at=NULL, rate_plan_id=?, approved_by_type='auto', approved_by_name='auto-test-sug', approved_at=now() WHERE channel_connection_id=? AND external_room_id=?")
+                                    ->execute([$sConfPlan, $sConnId, $sCode]);
+                                rec($sugMod, 'öneri onaylandı', 'ok', $sCode . ' → confirmed');
+
+                                // Yeni sync_log oluştur ve uygula (fiyat yazımı)
+                                $sPayload2 = json_encode([
+                                    'scope' => 'rates',
+                                    'external_property_id' => $sExt,
+                                    'currency' => $sInCur,
+                                    'entries' => [['external_room_id' => $sCode, 'date' => $sTestDate, 'price' => 220.0]],
+                                ], JSON_UNESCAPED_UNICODE);
+                                $pdo->prepare("INSERT INTO channel_sync_logs(channel_connection_id, property_id, direction, scope, status, request_payload, response_payload) VALUES(?, ?, 'pull', 'rates', 'queued', ?::jsonb, ?::jsonb)")
+                                    ->execute([$sConnId, $sPropId, $sPayload2, json_encode(['received_at' => gmdate('c')])]);
+                                $sNewLogId = (int) $pdo->lastInsertId();
+                                $pdo->prepare("UPDATE channel_sync_logs SET status='running', attempt_count=attempt_count+1 WHERE id=?")->execute([$sNewLogId]);
+                                $sJob2 = $pdo->query('SELECT * FROM channel_sync_logs WHERE id=' . $sNewLogId)->fetch();
+                                $sPl2 = json_decode((string) ($sJob2['request_payload'] ?? '{}'), true);
+                                if (!is_array($sPl2)) $sPl2 = [];
+                                $sRes2 = channel_webhook_apply($sJob2, $sPl2);
+                                $sUpd2 = $hasFxAudit
+                                    ? "UPDATE channel_sync_logs SET status=?, response_payload=?::jsonb, fx_audit=?::jsonb, error_message=NULL, completed_at=now() WHERE id=?"
+                                    : "UPDATE channel_sync_logs SET status=?, response_payload=?::jsonb, error_message=NULL, completed_at=now() WHERE id=?";
+                                $sArgs2 = $hasFxAudit
+                                    ? [$sRes2['ok'] ? 'success' : 'failed', json_encode(['applied' => $sRes2['applied']]), json_encode($sRes2['fx_audit'] ?? []), $sNewLogId]
+                                    : [$sRes2['ok'] ? 'success' : 'failed', json_encode(['applied' => $sRes2['applied']]), $sNewLogId];
+                                $pdo->prepare($sUpd2)->execute($sArgs2);
+
+                                // Takvim doğrulama
+                                $sInvQ = $pdo->prepare('SELECT base_price FROM inventory_calendar WHERE room_type_id=? AND rate_plan_id=? AND stay_date=?');
+                                $sInvQ->execute([(int) $sRoom['id'], $sConfPlan, $sTestDate]);
+                                $sBp = $sInvQ->fetchColumn();
+                                if ($sBp !== false) {
+                                    $sExpected = $sRate > 0 ? round(220.0 * $sRate, 2) : 220.0;
+                                    $sCurOk = abs((float) $sBp - $sExpected) < 0.01;
+                                    $sCurInfo = $sRate > 0 ? " ($sInCur→$sPlanCur, kur " . number_format($sRate, 4) . ")" : '';
+                                    $sCurOk
+                                        ? rec($sugMod, 'takvim yazımı', 'ok', number_format((float) $sBp, 2) . ' ' . $sPlanCur . $sCurInfo)
+                                        : rec($sugMod, 'takvim yazımı', 'fail', number_format((float) $sBp, 2) . ' vs beklenen ' . $sExpected);
+                                } else {
+                                    rec($sugMod, 'takvim yazımı', 'fail', 'satır bulunamadı');
+                                }
+
+                                // fx_audit doğrulama (kur varsa)
+                                if ($sRate > 0 && $hasFxAudit) {
+                                    $sFxAudit = json_decode((string) ($sRes2['fx_audit'] ?? '[]'), true);
+                                    is_array($sFxAudit) && count($sFxAudit) > 0
+                                        ? rec($sugMod, 'fx_audit', 'ok', count($sFxAudit) . ' dönüşüm kaydı')
+                                        : rec($sugMod, 'fx_audit', 'warn', 'fx_audit boş — kur dönüşümü oluşmamış');
+                                }
+
+                                // Temizlik
+                                if (!$KEEP) {
+                                    $pdo->prepare('DELETE FROM channel_room_mappings WHERE channel_connection_id=? AND external_room_id=?')->execute([$sConnId, $sCode]);
+                                    $pdo->prepare('DELETE FROM inventory_calendar WHERE room_type_id=? AND rate_plan_id=? AND stay_date>=?')->execute([(int) $sRoom['id'], $sConfPlan, $sTestDate]);
+                                    $pdo->prepare('DELETE FROM channel_sync_logs WHERE channel_connection_id=? AND request_payload::text LIKE ?')->execute([$sConnId, '%' . $sCode . '%']);
+                                    $pdo->prepare("DELETE FROM notifications WHERE type='channel_mapping_suggestion' AND message LIKE ?")->execute(['%' . $sCode . '%']);
+                                    rec($sugMod, 'temizlik', 'ok', 'test satırları silindi');
+                                } else {
+                                    rec($sugMod, 'temizlik', 'warn', '--keep: test satırları bırakıldı');
+                                }
+                            } else {
+                                $sActual = $sSugRow ? (string) ($sSugRow['status'] ?? '?') : 'yok';
+                                rec($sugMod, 'öneri oluştu', 'fail', 'suggested bekleniyordu, bulunan: ' . $sActual . ' — auto_map kapalı veya benzerlik eşiği yüksek');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        rec($sugMod ?? 'e2e-webhook.oneri', 'hata', 'fail', $e->getMessage());
+    }
 }
 
 // ─────────────────────────── RAPOR ───────────────────────────
@@ -434,7 +657,7 @@ foreach ($moduleOrder as $m) {
 echo str_repeat('═', 62) . "\n";
 echo "GENEL: $oks ✓ · $warns ⚠ · $fails ✗\n";
 echo "Süre: {$elapsedMs}ms\n";
-echo "Komut: " . ($E2E ? '--e2e' : '') . ($KEEP ? ' --keep' : '') . ($VERBOSE ? ' --verbose' : '') . "\n";
+echo "Komut: " . ($E2E ? '--e2e' : '') . ($SCOPE !== '' ? ' --scope ' . $SCOPE : '') . ($KEEP ? ' --keep' : '') . ($VERBOSE ? ' --verbose' : '') . "\n";
 if ($E2E) echo "İpucu: e2e her koşuda ilk aktif kanalı kullanır; --keep ile test satırları kalır.\n";
 
 // --e2e ile çalıştırıldıysa denetim kaydına yaz (modül durumları, süre, hatalar).

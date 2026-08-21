@@ -12,6 +12,7 @@ storage/
 # Editor and operating-system files
 .DS_Store
 Thumbs.db
+*.bak
 .idea/
 .vscode/
 

@@ -1,58 +1,369 @@
 <?php
-declare(strict_types=1); require __DIR__.'/../config/auth.php'; require __DIR__.'/../config/database.php'; require __DIR__.'/../config/platform_settings.php'; require __DIR__.'/../config/i18n.php'; require __DIR__.'/../config/chat_topics.php'; require __DIR__.'/../config/audit.php';
+declare(strict_types=1);
+require __DIR__.'/../config/auth.php';
+require __DIR__.'/../config/database.php';
+require __DIR__.'/../config/platform_settings.php';
+require __DIR__.'/../config/i18n.php';
+require __DIR__.'/../config/chat_topics.php';
+require __DIR__.'/../config/audit.php';
+
 // Manuel cop kutusu temizleme handler
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['purge_trash_action']??'')==='1' && hash_equals($_SESSION['admin_csrf']??'', (string)($_POST['csrf']??''))) {
-require_once __DIR__.'/../config/feature_lists.php';
-$pTtl=max(7,(int)platform_setting('feature_trash_ttl_days',30));
-$stale=db()->query("SELECT id,label FROM property_feature_catalog WHERE deleted_at IS NOT NULL AND ((purge_at IS NOT NULL AND purge_at<=now()) OR (purge_at IS NULL AND deleted_at<now()-interval '{$pTtl} days')) ORDER BY deleted_at")->fetchAll();
-$purged=0; $names=[];
-foreach($stale as $ps){
-  $fid=(int)$ps['id'];
-  db()->prepare('DELETE FROM feature_delete_backups WHERE feature_id=?')->execute([$fid]);
-  db()->prepare('DELETE FROM pending_trash_purges WHERE feature_id=?')->execute([$fid]);
-  db()->prepare('DELETE FROM property_feature_catalog WHERE id=?')->execute([$fid]);
-  $purged++; $names[]=(string)$ps['label'];
+    require_once __DIR__.'/../config/feature_lists.php';
+    $pTtl=max(7,(int)platform_setting('feature_trash_ttl_days',30));
+    $stale=db()->query("SELECT id,label FROM property_feature_catalog WHERE deleted_at IS NOT NULL AND ((purge_at IS NOT NULL AND purge_at<=now()) OR (purge_at IS NULL AND deleted_at<now()-interval '{$pTtl} days')) ORDER BY deleted_at")->fetchAll();
+    $purged=0; $names=[];
+    foreach($stale as $ps){
+        $fid=(int)$ps['id'];
+        db()->prepare('DELETE FROM feature_delete_backups WHERE feature_id=?')->execute([$fid]);
+        db()->prepare('DELETE FROM pending_trash_purges WHERE feature_id=?')->execute([$fid]);
+        db()->prepare('DELETE FROM property_feature_catalog WHERE id=?')->execute([$fid]);
+        $purged++; $names[]=(string)$ps['label'];
+    }
+    if($purged>0){audit_log('feature.trash_purge','feature_catalog',null,['count'=>$purged,'feature_names'=>array_slice($names,0,50),'trigger'=>'manual_panel']);$_SESSION['purge_result']=$purged.' ozellik silindi: '.implode(', ',array_slice($names,0,10)).(count($names)>10?' ...':'');}
+    else $_SESSION['purge_result']='Kalici silinecek ozellik yok.';
+    header('Location: /nexustraveltech/admin/kontrol-merkezi#trash-section'); exit;
 }
-if($purged>0){audit_log('feature.trash_purge','feature_catalog',null,['count'=>$purged,'feature_names'=>array_slice($names,0,50),'trigger'=>'manual_panel']);$_SESSION['purge_result']=$purged.' ozellik silindi: '.implode(', ',array_slice($names,0,10)).(count($names)>10?' ...':'');}
-else $_SESSION['purge_result']='Kalici silinecek ozellik yok.';
-header('Location: /nexustraveltech/admin/kontrol-merkezi#trash-section'); exit;
+
+function audit_saved_setting(string $key, mixed $new): void {$old=platform_setting($key,null);$a=json_encode($old,JSON_UNESCAPED_UNICODE);$b=json_encode($new,JSON_UNESCAPED_UNICODE);if($a!==$b)audit_log('platform.setting_change','platform_settings',null,['key'=>$key,'old'=>$old,'new'=>$new]);}
+
+require_admin();
+if(empty($_SESSION['admin_csrf']))$_SESSION['admin_csrf']=bin2hex(random_bytes(32));
+
+$message='';$error='';
+if($_SERVER['REQUEST_METHOD']==='POST'){
+    if(!hash_equals($_SESSION['admin_csrf'],(string)($_POST['csrf']??'')))
+        $error='Güvenlik doğrulaması geçersiz.';
+    elseif(($_POST['digest_remove']??'')!==''){
+        $parts=explode(':',(string)$_POST['digest_remove'],2);
+        $digest=(array)platform_setting('panel_weekly_digest',[]);
+        if(isset($parts[1])&&in_array($parts[0],['supplier','agency'],true)){
+            $digestOld=$digest;unset($digest[$parts[0]][$parts[1]]);
+            save_platform_setting('panel_weekly_digest',$digest);
+            audit_log('platform.setting_change','platform_settings',null,['key'=>'panel_weekly_digest','old'=>$digestOld,'new'=>$digest]);
+            $message='Katılımcı haftalık özetten çıkarıldı.';
+        }else{$error='Katılımcı kaldırma isteği geçersiz.';}
+    }else{
+        // Tüm ayar kaydetme işlemleri (mevcut kod aynen korunur)
+        $threshold=(int)($_POST['gemini_visual_similarity_threshold']??90);
+        $email=trim((string)($_POST['admin_alert_email']??''));
+        if($threshold<50||$threshold>100)$error='Görsel benzerlik eşiği 50 ile 100 arasında olmalıdır.';
+        elseif($email!==''&&!filter_var($email,FILTER_VALIDATE_EMAIL))$error='Uyarı e-posta adresi geçerli değil.';
+        else{
+            save_platform_setting('gemini_visual_similarity_threshold',$threshold);
+            audit_saved_setting('gemini_visual_similarity_threshold',$threshold);
+            save_platform_setting('gemini_auto_pause_duplicate',isset($_POST['gemini_auto_pause_duplicate']));
+            audit_saved_setting('gemini_auto_pause_duplicate',isset($_POST['gemini_auto_pause_duplicate']));
+            save_platform_setting('kps_identity_verification_enabled',isset($_POST['kps_identity_verification_enabled']));
+            audit_saved_setting('kps_identity_verification_enabled',isset($_POST['kps_identity_verification_enabled']));
+            save_platform_setting('admin_alert_email',$email);
+            audit_saved_setting('admin_alert_email',$email);
+            $blocklistRaw=(string)($_POST['chat_blocklist']??'');
+            $blocklist=array_values(array_filter(array_map('trim',preg_split('/\r\n|\r|\n/',$blocklistRaw)),fn($l)=>$l!==''));
+            save_platform_setting('chat_blocklist',$blocklist);
+            audit_saved_setting('chat_blocklist',$blocklist);
+            $minLenRaw=(int)($_POST['chat_min_length']??5);
+            $minLenRaw=max(1,min(100,$minLenRaw));
+            save_platform_setting('chat_min_length',$minLenRaw);
+            audit_saved_setting('chat_min_length',$minLenRaw);
+            save_platform_setting('chat_require_space',isset($_POST['chat_require_space']));
+            audit_saved_setting('chat_require_space',isset($_POST['chat_require_space']));
+            save_platform_setting('chat_topic_instant',isset($_POST['chat_topic_instant']));
+            audit_saved_setting('chat_topic_instant',isset($_POST['chat_topic_instant']));
+            $topicRaw=(array)($_POST['chat_topic_responses']??[]);
+            $topicSaved=[];
+            foreach(array_keys(chat_topic_defs()) as $t){
+                $text=trim((string)($topicRaw[$t]['text']??''));
+                $link=trim((string)($topicRaw[$t]['link']??''));
+                if($text===''&&$link==='')continue;
+                $topicSaved[$t]=['text'=>mb_substr($text,0,500),'link'=>mb_substr($link,0,190)];
+            }
+            save_platform_setting('chat_topic_responses',$topicSaved);
+            audit_saved_setting('chat_topic_responses',$topicSaved);
+            save_platform_setting('ical_url_published_only',isset($_POST['ical_url_published_only']));
+            audit_saved_setting('ical_url_published_only',isset($_POST['ical_url_published_only']));
+            $webhookCurrency=strtoupper(trim((string)($_POST['channel_webhook_default_currency']??'EUR')));
+            if(!preg_match('/^[A-Z]{3}$/',$webhookCurrency))$webhookCurrency='EUR';
+            save_platform_setting('channel_webhook_default_currency',$webhookCurrency);
+            audit_saved_setting('channel_webhook_default_currency',$webhookCurrency);
+            save_platform_setting('channel_webhook_auto_map',isset($_POST['channel_webhook_auto_map']));
+            audit_saved_setting('channel_webhook_auto_map',isset($_POST['channel_webhook_auto_map']));
+            save_platform_setting('supplier_notify_email',isset($_POST['supplier_notify_email']));
+            audit_saved_setting('supplier_notify_email',isset($_POST['supplier_notify_email']));
+            save_platform_setting('orphan_cleanup_require_password',isset($_POST['orphan_cleanup_require_password']));
+            audit_saved_setting('orphan_cleanup_require_password',isset($_POST['orphan_cleanup_require_password']));
+            $webhookLoopThreshold=max(3,min(100,(int)($_POST['channel_webhook_loop_threshold']??3)));
+            save_platform_setting('channel_webhook_loop_threshold',$webhookLoopThreshold);
+            audit_saved_setting('channel_webhook_loop_threshold',$webhookLoopThreshold);
+            $icalRepeatThreshold=max(3,min(100,(int)($_POST['ical_repeat_threshold']??3)));
+            save_platform_setting('ical_repeat_threshold',$icalRepeatThreshold);
+            audit_saved_setting('ical_repeat_threshold',$icalRepeatThreshold);
+            save_platform_setting('ical_auto_pause_repeat',isset($_POST['ical_auto_pause_repeat']));
+            audit_saved_setting('ical_auto_pause_repeat',isset($_POST['ical_auto_pause_repeat']));
+            $webhookMaxRetries=max(2,min(10,(int)($_POST['channel_webhook_max_retries']??3)));
+            save_platform_setting('channel_webhook_max_retries',$webhookMaxRetries);
+            audit_saved_setting('channel_webhook_max_retries',$webhookMaxRetries);
+            $simThreshold=max(1,min(100,(int)($_POST['channel_webhook_similarity_threshold']??45)));
+            save_platform_setting('channel_webhook_similarity_threshold',$simThreshold);
+            audit_saved_setting('channel_webhook_similarity_threshold',$simThreshold);
+            $trashTtl=max(7,min(365,(int)($_POST['feature_trash_ttl_days']??30)));
+            save_platform_setting('feature_trash_ttl_days',$trashTtl);
+            audit_saved_setting('feature_trash_ttl_days',$trashTtl);
+            $warnDays=max(1,min(30,(int)($_POST['trash_upcoming_warning_days']??3)));
+            save_platform_setting('trash_upcoming_warning_days',$warnDays);
+            audit_saved_setting('trash_upcoming_warning_days',$warnDays);
+            save_platform_setting('readiness_all_auto_open',isset($_POST['readiness_all_auto_open']));
+            audit_saved_setting('readiness_all_auto_open',isset($_POST['readiness_all_auto_open']));
+            $readinessThreshold=max(1,min(100,(int)($_POST['readiness_all_auto_open_threshold']??70)));
+            save_platform_setting('readiness_all_auto_open_threshold',$readinessThreshold);
+            audit_saved_setting('readiness_all_auto_open_threshold',$readinessThreshold);
+            $healthWarnLog=max(5,min(500,(int)($_POST['health_warn_error_logs']??20)));
+            save_platform_setting('health_warn_error_logs',$healthWarnLog);
+            audit_saved_setting('health_warn_error_logs',$healthWarnLog);
+            $healthWarnEmail=max(5,min(1000,(int)($_POST['health_warn_email_queue']??50)));
+            save_platform_setting('health_warn_email_queue',$healthWarnEmail);
+            audit_saved_setting('health_warn_email_queue',$healthWarnEmail);
+            $healthWarnWebhook=max(1,min(200,(int)($_POST['health_warn_webhook_fail']??10)));
+            save_platform_setting('health_warn_webhook_fail',$healthWarnWebhook);
+            audit_saved_setting('health_warn_webhook_fail',$healthWarnWebhook);
+            $healthWarnIcal=max(1,min(100,(int)($_POST['health_warn_ical_fail']??3)));
+            save_platform_setting('health_warn_ical_fail',$healthWarnIcal);
+            audit_saved_setting('health_warn_ical_fail',$healthWarnIcal);
+            $sugTtl=max(7,min(365,(int)($_POST['channel_suggestion_ttl_days']??30)));
+            save_platform_setting('channel_suggestion_ttl_days',$sugTtl);
+            audit_saved_setting('channel_suggestion_ttl_days',$sugTtl);
+            $tooltipLangRaw=strtolower(trim((string)($_POST['tooltip_language']??'tr')));
+            $tooltipLang=in_array($tooltipLangRaw,['tr','en','de','ru','ar','fr'],true)?$tooltipLangRaw:'tr';
+            save_platform_setting('tooltip_language',$tooltipLang);
+            audit_saved_setting('tooltip_language',$tooltipLang);
+            $occCrit=max(50,min(100,(int)($_POST['inventory_occ_critical']??90)));
+            save_platform_setting('inventory_occ_critical',$occCrit);
+            audit_saved_setting('inventory_occ_critical',$occCrit);
+            $occWarn=max(10,min(99,(int)($_POST['inventory_occ_warn']??70)));
+            save_platform_setting('inventory_occ_warn',$occWarn);
+            audit_saved_setting('inventory_occ_warn',$occWarn);
+            foreach(['rooms','rates','inventory','media','description','location','channel','pool','home_port','crew','ical'] as $wk){
+                $wv=max(1,min(10,(int)($_POST['readiness_weight_'.$wk]??0)));
+                if($wv>0){save_platform_setting('readiness_weight_'.$wk,$wv);audit_saved_setting('readiness_weight_'.$wk,$wv);}
+            }
+            $message='Kontrol merkezi ayarları kaydedildi.';
+        }
+    }
 }
-function audit_saved_setting(string $key, mixed $new): void {$old=platform_setting($key,null);$a=json_encode($old,JSON_UNESCAPED_UNICODE);$b=json_encode($new,JSON_UNESCAPED_UNICODE);if($a!==$b)audit_log('platform.setting_change','platform_settings',null,['key'=>$key,'old'=>$old,'new'=>$new]);} require_admin(); if(empty($_SESSION['admin_csrf']))$_SESSION['admin_csrf']=bin2hex(random_bytes(32));$message='';$error='';if($_SERVER['REQUEST_METHOD']==='POST'){if(!hash_equals($_SESSION['admin_csrf'],(string)($_POST['csrf']??'')))$error='Güvenlik doğrulaması geçersiz.';elseif(($_POST['digest_remove']??'')!==''){$parts=explode(':',(string)$_POST['digest_remove'],2);$digest=(array)platform_setting('panel_weekly_digest',[]);if(isset($parts[1])&&in_array($parts[0],['supplier','agency'],true)){$digestOld=$digest;unset($digest[$parts[0]][$parts[1]]);save_platform_setting('panel_weekly_digest',$digest);audit_log('platform.setting_change','platform_settings',null,['key'=>'panel_weekly_digest','old'=>$digestOld,'new'=>$digest]);$message='Katılımcı haftalık özetten çıkarıldı.';}else{$error='Katılımcı kaldırma isteği geçersiz.';}}else{$threshold=(int)($_POST['gemini_visual_similarity_threshold']??90);$email=trim((string)($_POST['admin_alert_email']??''));if($threshold<50||$threshold>100)$error='Görsel benzerlik eşiği 50 ile 100 arasında olmalıdır.';elseif($email!==''&&!filter_var($email,FILTER_VALIDATE_EMAIL))$error='Uyarı e-posta adresi geçerli değil.';else{save_platform_setting('gemini_visual_similarity_threshold',$threshold);audit_saved_setting('gemini_visual_similarity_threshold',$threshold);save_platform_setting('gemini_auto_pause_duplicate',isset($_POST['gemini_auto_pause_duplicate']));audit_saved_setting('gemini_auto_pause_duplicate',isset($_POST['gemini_auto_pause_duplicate']));save_platform_setting('kps_identity_verification_enabled',isset($_POST['kps_identity_verification_enabled']));audit_saved_setting('kps_identity_verification_enabled',isset($_POST['kps_identity_verification_enabled']));save_platform_setting('admin_alert_email',$email);audit_saved_setting('admin_alert_email',$email);$blocklistRaw=(string)($_POST['chat_blocklist']??'');$blocklist=array_values(array_filter(array_map('trim',preg_split('/\r\n|\r|\n/',$blocklistRaw)),fn($l)=>$l!==''));save_platform_setting('chat_blocklist',$blocklist);audit_saved_setting('chat_blocklist',$blocklist);$minLenRaw=(int)($_POST['chat_min_length']??5);$minLenRaw=max(1,min(100,$minLenRaw));save_platform_setting('chat_min_length',$minLenRaw);audit_saved_setting('chat_min_length',$minLenRaw);save_platform_setting('chat_require_space',isset($_POST['chat_require_space']));audit_saved_setting('chat_require_space',isset($_POST['chat_require_space']));save_platform_setting('chat_topic_instant',isset($_POST['chat_topic_instant']));audit_saved_setting('chat_topic_instant',isset($_POST['chat_topic_instant']));$topicRaw=(array)($_POST['chat_topic_responses']??[]);$topicSaved=[];foreach(array_keys(chat_topic_defs()) as $t){$text=trim((string)($topicRaw[$t]['text']??''));$link=trim((string)($topicRaw[$t]['link']??''));if($text===''&&$link==='')continue;$topicSaved[$t]=['text'=>mb_substr($text,0,500),'link'=>mb_substr($link,0,190)];}save_platform_setting('chat_topic_responses',$topicSaved);audit_saved_setting('chat_topic_responses',$topicSaved);save_platform_setting('ical_url_published_only',isset($_POST['ical_url_published_only']));audit_saved_setting('ical_url_published_only',isset($_POST['ical_url_published_only']));$webhookCurrency=strtoupper(trim((string)($_POST['channel_webhook_default_currency']??'EUR')));if(!preg_match('/^[A-Z]{3}$/',$webhookCurrency))$webhookCurrency='EUR';save_platform_setting('channel_webhook_default_currency',$webhookCurrency);audit_saved_setting('channel_webhook_default_currency',$webhookCurrency);save_platform_setting('channel_webhook_auto_map',isset($_POST['channel_webhook_auto_map']));
-audit_saved_setting('channel_webhook_auto_map',isset($_POST['channel_webhook_auto_map']));
-save_platform_setting('supplier_notify_email',isset($_POST['supplier_notify_email']));
-audit_saved_setting('supplier_notify_email',isset($_POST['supplier_notify_email']));
-save_platform_setting('orphan_cleanup_require_password',isset($_POST['orphan_cleanup_require_password']));
-audit_saved_setting('orphan_cleanup_require_password',isset($_POST['orphan_cleanup_require_password']));$webhookLoopThreshold=max(3,min(100,(int)($_POST['channel_webhook_loop_threshold']??3)));save_platform_setting('channel_webhook_loop_threshold',$webhookLoopThreshold);audit_saved_setting('channel_webhook_loop_threshold',$webhookLoopThreshold);$icalRepeatThreshold=max(3,min(100,(int)($_POST['ical_repeat_threshold']??3)));save_platform_setting('ical_repeat_threshold',$icalRepeatThreshold);audit_saved_setting('ical_repeat_threshold',$icalRepeatThreshold);save_platform_setting('ical_auto_pause_repeat',isset($_POST['ical_auto_pause_repeat']));audit_saved_setting('ical_auto_pause_repeat',isset($_POST['ical_auto_pause_repeat']));$webhookMaxRetries=max(2,min(10,(int)($_POST['channel_webhook_max_retries']??3)));save_platform_setting('channel_webhook_max_retries',$webhookMaxRetries);audit_saved_setting('channel_webhook_max_retries',$webhookMaxRetries);$simThreshold=max(1,min(100,(int)($_POST['channel_webhook_similarity_threshold']??45)));save_platform_setting('channel_webhook_similarity_threshold',$simThreshold);audit_saved_setting('channel_webhook_similarity_threshold',$simThreshold);$trashTtl=max(7,min(365,(int)($_POST['feature_trash_ttl_days']??30)));save_platform_setting('feature_trash_ttl_days',$trashTtl);audit_saved_setting('feature_trash_ttl_days',$trashTtl);
-$warnDays=max(1,min(30,(int)($_POST['trash_upcoming_warning_days']??3)));
-save_platform_setting('trash_upcoming_warning_days',$warnDays);
-audit_saved_setting('trash_upcoming_warning_days',$warnDays);save_platform_setting('readiness_all_auto_open',isset($_POST['readiness_all_auto_open']));audit_saved_setting('readiness_all_auto_open',isset($_POST['readiness_all_auto_open']));$readinessThreshold=max(1,min(100,(int)($_POST['readiness_all_auto_open_threshold']??70)));save_platform_setting('readiness_all_auto_open_threshold',$readinessThreshold);audit_saved_setting('readiness_all_auto_open_threshold',$readinessThreshold);$healthWarnLog=max(5,min(500,(int)($_POST['health_warn_error_logs']??20)));save_platform_setting('health_warn_error_logs',$healthWarnLog);audit_saved_setting('health_warn_error_logs',$healthWarnLog);$healthWarnEmail=max(5,min(1000,(int)($_POST['health_warn_email_queue']??50)));save_platform_setting('health_warn_email_queue',$healthWarnEmail);audit_saved_setting('health_warn_email_queue',$healthWarnEmail);$healthWarnWebhook=max(1,min(200,(int)($_POST['health_warn_webhook_fail']??10)));save_platform_setting('health_warn_webhook_fail',$healthWarnWebhook);audit_saved_setting('health_warn_webhook_fail',$healthWarnWebhook);$healthWarnIcal=max(1,min(100,(int)($_POST['health_warn_ical_fail']??3)));save_platform_setting('health_warn_ical_fail',$healthWarnIcal);audit_saved_setting('health_warn_ical_fail',$healthWarnIcal);$sugTtl=max(7,min(365,(int)($_POST['channel_suggestion_ttl_days']??30)));save_platform_setting('channel_suggestion_ttl_days',$sugTtl);audit_saved_setting('channel_suggestion_ttl_days',$sugTtl);$tooltipLangRaw=strtolower(trim((string)($_POST['tooltip_language']??'tr')));$tooltipLang=in_array($tooltipLangRaw,['tr','en','de','ru','ar','fr'],true)?$tooltipLangRaw:'tr';save_platform_setting('tooltip_language',$tooltipLang);audit_saved_setting('tooltip_language',$tooltipLang);$message='Kontrol merkezi ayarları veritabanına kaydedildi.';}}}$threshold=(int)platform_setting('gemini_visual_similarity_threshold',90);$autoPause=(bool)platform_setting('gemini_auto_pause_duplicate',true);$kpsEnabled=(bool)platform_setting('kps_identity_verification_enabled',false);$email=(string)platform_setting('admin_alert_email','');$icalPublishedOnly=(bool)platform_setting('ical_url_published_only',false);?><!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kontrol merkezi | NEXUS Admin</title><style>body{margin:0;background:#f7f7f2;color:#10211f;font-family:Arial}.wrap{width:min(850px,calc(100% - 32px));margin:40px auto}.card{background:#fff;border:1px solid #e1e5de;padding:24px;margin-top:20px}.form{display:grid;gap:15px}.form input{padding:11px;border:1px solid #d8ded8;font:inherit}.form button{border:0;background:#10211f;color:#fff;padding:12px;font-weight:bold}.toggle{display:flex;gap:10px;align-items:center}.muted{color:#64716d;line-height:1.5}.notice{background:#e6f8c7;padding:10px}.error{background:#ffe2de;padding:10px}.links{display:flex;gap:10px;flex-wrap:wrap}.links a{border:1px solid #d8ded8;padding:10px;color:#10211f}</style></head><body><main class="wrap"><a href="/nexustraveltech/admin/">← Panele dön</a><?php $purgeMsg=$_SESSION['purge_result']??''; unset($_SESSION['purge_result']); if($purgeMsg): ?><div style="background:#e6f8c7;border:1px solid #bcd98a;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px">🧹 <b>Çöp kutusu temizleme sonucu:</b> <?= htmlspecialchars($purgeMsg) ?></div><?php endif; ?><section class="card"><h1>Platform kontrol merkezi</h1><p class="muted">İş kuralları veritabanında tutulur ve kod değiştirmeden yönetilir. API anahtarları şifreli biçimde ayrı sağlayıcı ayarlarında saklanır.</p><?php if($message):?><p class="notice"><?=htmlspecialchars($message)?></p><?php endif;?><?php if($error):?><p class="error"><?=htmlspecialchars($error)?></p><?php endif;?><form method="post" class="form"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><label>Gemini görsel benzerlik eşiği (%)<input type="number" name="gemini_visual_similarity_threshold" min="50" max="100" value="<?=$threshold?>"></label><label class="toggle"><input type="checkbox" name="gemini_auto_pause_duplicate" <?=$autoPause?'checked':''?>> Gemini yüksek eşleşmede ilanı otomatik duraklatsın</label><label class="toggle"><input type="checkbox" name="kps_identity_verification_enabled" <?=$kpsEnabled?'checked':''?>> KPS kimlik doğrulama entegrasyonu aktif</label><label>Yönetici uyarı e-postası<input type="email" name="admin_alert_email" value="<?=htmlspecialchars($email)?>" placeholder="operasyon@sirketiniz.com"></label><label class="toggle"><input type="checkbox" name="ical_url_published_only" <?=$icalPublishedOnly?'checked':''?>> iCal URL kutusu yalnızca yayındaki ilanlarda gösterilsin (taslaklarda gizli)</label><label>Webhook fiyat varsayılan para birimi<small style="display:block;color:#64716d;font-weight:normal">Kanal yükte <b>currency</b> göndermezse gelen fiyatlar bu birimde kabul edilir; takvimin fiyat planı biriminden farklıysa fx_rates üzerinden çevrilir.</small><input name="channel_webhook_default_currency" maxlength="3" value="<?=htmlspecialchars((string)platform_setting('channel_webhook_default_currency','EUR'))?>" placeholder="EUR"></label><label class="toggle"><input type="checkbox" name="channel_webhook_auto_map" <?=(bool)platform_setting('channel_webhook_auto_map',true)?'checked':''?>> Tanınmayan dış oda kodu gelince onay bekleyen eşleştirme önerisi oluştur <small style="display:block;color:#64716d;font-weight:normal">Açıkken webhook satırı yazılmaz — öneri dağıtım merkezi bölüm 3'te listelenir, onaylanınca o koda ait veriler yazılmaya başlar. Kapalıyken eski davranış: ilk aktif oda tipine yazılır.</small></label><label class="toggle"><input type="checkbox" name="supplier_notify_email" <?=(bool)platform_setting('supplier_notify_email',false)?'checked':''?>> Eşleştirme önerisi bildirimlerini e-posta olarak da gönder <small style="display:block;color:#64716d;font-weight:normal">Açıkken webhook'ta tanınmayan oda/fiyat planı kodu geldiğinde oluşan onay bekleyen öneri, tedarikçinin panel bildirimine ek olarak tedarikçi kullanıcılarının e-postasına da gider (kuyruk üzerinden, cron/process-emails.php gönderir). Kapalıyken yalnızca panel bildirimi görünür.</small></label>
-<label class="toggle"><input type="checkbox" name="orphan_cleanup_require_password" <?=(bool)platform_setting('orphan_cleanup_require_password',false)?'checked':''?>> Yetim temizleme onayında yönetici parolası iste <small style="display:block;color:#64716d;font-weight:normal">Açıkken onay sayfası temizleme öncesi admin parolası doğrulaması ister (çalıştırma sonrası e-posta tokenı tek başına yetmez).</small></label><label>Webhook döngü uyarı eşiği (aynı yük son 24 saatte bu kadar kez başarısız olursa tedarikçi + admin uyarısı gönderilir)<input type="number" name="channel_webhook_loop_threshold" min="3" max="100" value="<?=(int)platform_setting('channel_webhook_loop_threshold',3)?>" placeholder="3"></label><label>iCal tekrar hata eşiği (aynı hata içeriği son 24 saatte bu kadar kez tekrarlanırsa tedarikçi + admin uyarısı gönderilir)<input type="number" name="ical_repeat_threshold" min="3" max="100" value="<?=(int)platform_setting('ical_repeat_threshold',3)?>" placeholder="3"></label><label class="toggle"><input type="checkbox" name="ical_auto_pause_repeat" <?=(bool)platform_setting('ical_auto_pause_repeat',false)?'checked':''?>> iCal tekrar hata eşiği aşılırsa bağlantıyı otomatik duraklat (kanal taşması koruması) <small style="display:block;color:#64716d;font-weight:normal">Eşik aşıldığında iCal bağlantısı 'paused' durumuna alınır, senkron durur; tedarikçi iCal takvimler sayfasından yeniden etkinleştirir. Denetim kaydına yazılır.</small></label><label>Webhook maksimum yeniden deneme sayısı (başarısız yükler otomatik kuyruğa geri alınır; geri adım: 1. deneme sonrası 5 dk, 2. sonrası 15 dk)<input type="number" name="channel_webhook_max_retries" min="2" max="10" value="<?=(int)platform_setting('channel_webhook_max_retries',3)?>" placeholder="3"></label><label>Otomatik eşleştirme benzerlik eşiği (%)<small style="display:block;color:#64716d;font-weight:normal">Tanınmayan dış oda/fiyat planı kodu için öneri oluşturulurken aranan isim benzerliği. Skor bu eşiğin altındaysa öneri oluşturulmaz (eski davranış: ilk aktif tip/plana yazılır). Varsayılan 45.</small><input type="number" name="channel_webhook_similarity_threshold" min="1" max="100" value="<?=(int)platform_setting('channel_webhook_similarity_threshold',45)?>" placeholder="45"></label><label>Arayüz dili (hazırlık paneli link ipuçları)<small style="display:block;color:#64716d;font-weight:normal">Tedarikçi hazırlık panellerindeki Doldur/İncele/Gör bağlantılarının üzerine gelince görünen ipuçları bu dilde gösterilir (ör. 'Görseller · sec-05'). Değişiklik anında tüm panellere yansır; kayıt denetim kaydına yazılır.</small><select name="tooltip_language" style="padding:11px;border:1px solid #d8ded8;font:inherit"><?php $tl=readiness_lang(); foreach(['tr'=>'Türkçe','en'=>'English','de'=>'Deutsch','ru'=>'Русский','ar'=>'العربية','fr'=>'Français'] as $tlCode=>$tlName): ?><option value="<?=$tlCode?>" <?=$tl===$tlCode?'selected':''?>><?=$tlName?></option><?php endforeach; ?></select></label><label>Özellik çöp kutusu TTL (gün) — bu süre dolan silinmiş özellikler kalıcı silinir, geri alınamaz (en az 7)<input type="number" name="feature_trash_ttl_days" min="7" max="365" value="<?=(int)platform_setting('feature_trash_ttl_days',30)?>" placeholder="30"><small style="display:block;color:#6b7774;font-weight:normal;margin-top:4px">Yaklasan kalici silme uyari penceresi (gun): <input type="number" name="trash_upcoming_warning_days" min="1" max="30" value="<?= (int) platform_setting('trash_upcoming_warning_days', 3) ?>" style="width:60px;padding:6px;border:1px solid #d8ded8;font:inherit"> -- bu sure icinde kalici silinecek ozellikler icin yoneticiye e-posta + panel rozet gosterilir.</small></label><?php $trashStats=null;try{$pdoT=db();$trashStats=['count'=>(int)$pdoT->query('SELECT COUNT(*) FROM property_feature_catalog WHERE deleted_at IS NOT NULL')->fetchColumn()];$oldQ=$pdoT->query('SELECT label,deleted_at,purge_at FROM property_feature_catalog WHERE deleted_at IS NOT NULL ORDER BY deleted_at ASC LIMIT 1');$old=$oldQ->fetch();if($old){$ttlTmp=max(7,(int)platform_setting('feature_trash_ttl_days',30));$dTs=strtotime((string)$old['deleted_at'])?:time();$custom=!empty($old['purge_at']);$pTs=$custom?(strtotime((string)$old['purge_at'])?:0):0;if($pTs<=0)$pTs=$dTs+$ttlTmp*86400;$trashStats['oldest']=['label'=>(string)$old['label'],'deleted_at'=>(string)$old['deleted_at'],'purge_date'=>date('Y-m-d',$pTs),'remain_days'=>max(0,(int)ceil(($pTs-time())/86400)),'custom'=>$custom];}}catch(Throwable $e){$trashStats=null;} ?><div style="margin:-4px 0 14px;background:#fdf9f2;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;font-size:13px;color:#6b7774;line-height:1.6"><?php if($trashStats===null): ?>🗑 Çöp kutusu durumu okunamadı (özellik kataloğu henüz kurulmamış olabilir).<?php elseif((int)$trashStats['count']===0): ?>🗑 Çöp kutusu boş — bekleyen silinmiş özellik yok.<?php else: ?>🗑 Çöp kutusunda <b style="color:#8a6100"><?=(int)$trashStats['count']?> özellik</b> bekliyor · en eskisi: <b><?=htmlspecialchars((string)($trashStats['oldest']['label']??''))?></b> <small style="color:#6b7774">(silindi <?=htmlspecialchars(mb_substr((string)($trashStats['oldest']['deleted_at']??''),0,10))?> · kalıcı silme <?=htmlspecialchars((string)($trashStats['oldest']['purge_date']??'—'))?> · <?=(int)($trashStats['oldest']['remain_days']??0)?> gün<?=!empty($trashStats['oldest']['custom'])?' · özel tarih':''?>)</small> · <a href="/nexustraveltech/admin/ozellik-listeleri#trash" style="color:#405b13;font-weight:bold;text-decoration:none">kataloğa git →</a><?php if((int)($trashStats['oldest']['remain_days']??99)<=0): ?><form method="post" style="display:inline" onsubmit="return confirm('Vadesi dolan ozellikleri kalici olarak silecektir. Emin misiniz?')"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="purge_trash_action" value="1"><button style="background:#8e2410;color:#fff;border:0;padding:3px 10px;font-size:12px;font-weight:bold;cursor:pointer;border-radius:4px;margin-left:6px" title="Vadesi dolan ozellikleri simde sil">🧹 Simde temizle</button></form><?php endif; ?><?php endif; ?>
-<?php
-// 30-gun cop kutusu hareket grafigi
-$trashGraph = [];
-try {
-  $tgQ = db()->prepare("SELECT action, created_at::date AS day, COUNT(*) AS cnt FROM admin_audit_logs WHERE action IN ('feature.delete','feature.restore','feature.trash_purge','feature.bulk_delete','feature.bulk_restore') AND created_at >= now()-interval '30 days' GROUP BY action, day ORDER BY day");
-  $tgQ->execute();
-  foreach ($tgQ->fetchAll() as $r) {
-    $d = (string)$r["day"];
-    if (!isset($trashGraph[$d])) $trashGraph[$d] = ["d"=>0,"r"=>0,"p"=>0];
-    $a = (string)$r["action"];
-    if ($a==="feature.delete"||$a==="feature.bulk_delete") $trashGraph[$d]["d"] += (int)$r["cnt"];
-    elseif ($a==="feature.restore"||$a==="feature.bulk_restore") $trashGraph[$d]["r"] += (int)$r["cnt"];
-    elseif ($a==="feature.trash_purge") $trashGraph[$d]["p"] += (int)$r["cnt"];
-  }
-} catch (Throwable $e) {}
-$tgTD=0; $tgTR=0; $tgTP=0; $tgMax=1;
-foreach ($trashGraph as $v) { $tgTD+=$v["d"]; $tgTR+=$v["r"]; $tgTP+=$v["p"]; $mx=max($v["d"],$v["r"],$v["p"]); if($mx>$tgMax) $tgMax=$mx; }
-$tgDays = [];
-for ($i=29; $i>=0; $i--) {
-  $dt = date("Y-m-d", strtotime("-$i days"));
-  $tgDays[] = ["date"=>$dt,"short"=>date("d",strtotime($dt)),"d"=>($trashGraph[$dt]["d"]??0),"r"=>($trashGraph[$dt]["r"]??0),"p"=>($trashGraph[$dt]["p"]??0)];
-}
+
+$threshold=(int)platform_setting('gemini_visual_similarity_threshold',90);
+$autoPause=(bool)platform_setting('gemini_auto_pause_duplicate',true);
+$kpsEnabled=(bool)platform_setting('kps_identity_verification_enabled',false);
+$email=(string)platform_setting('admin_alert_email','');
+$icalPublishedOnly=(bool)platform_setting('ical_url_published_only',false);
+
+require_once __DIR__.'/layout.php';
+admin_layout_start('Platform Kontrol Merkezi', 'kontrol-merkezi');
 ?>
-<div id="trash-section" style="margin:8px 0 14px;background:#fdf9f2;border:1px solid #e0c9a3;border-radius:8px;padding:10px 12px;font-size:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px"><b style="color:#6b7774;font-size:12px">&#x1F4CA; Son 30 g&#xFC;n &#x2014; &#xE7;&#xF6;p kutusu hareketi</b><span style="display:flex;gap:12px;color:#6b7774;font-size:12px"><span><span style="display:inline-block;width:10px;height:10px;background:#b0301a;border-radius:2px;vertical-align:-1px"></span> Silme: <b><?php echo $tgTD ?></span><span><span style="display:inline-block;width:10px;height:10px;background:#2e7d32;border-radius:2px;vertical-align:-1px"></span> Geri: <b><?php echo $tgTR ?></span><span><span style="display:inline-block;width:10px;height:10px;background:#6b7774;border-radius:2px;vertical-align:-1px"></span> Kal&#x131;c&#x131;: <b><?php echo $tgTP ?></span></span></div><div style="display:flex;align-items:flex-end;gap:1px;height:52px"><?php foreach ($tgDays as $tg): ?><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0" title="<?= htmlspecialchars($tg["date"]) ?>: silme <?= $tg["d"] ?> &#xB7; geri <?= $tg["r"] ?> &#xB7; kal&#x131;c&#x131; <?= $tg["p"] ?>"><div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;height:40px"><?php $bH = 0; if ($tg["p"]>0) { $bH = max(2, (int)round($tg["p"]/$tgMax*40)); ?><div style="background:#6b7774;height:<?= $bH ?>px;border-radius:1px 1px 0 0" title="Kal&#x131;c&#x131;: <?= $tg["p"] ?>"></div><?php } if ($tg["r"]>0) { $bH = max(2, (int)round($tg["r"]/$tgMax*40)); ?><div style="background:#2e7d32;height:<?= $bH ?>px;border-radius:0" title="Geri: <?= $tg["r"] ?>"></div><?php } if ($tg["d"]>0) { $bH = max(2, (int)round($tg["d"]/$tgMax*40)); ?><div style="background:#b0301a;height:<?= $bH ?>px" title="Silme: <?= $tg["d"] ?>"></div><?php } if ($tg["d"]==0 && $tg["r"]==0 && $tg["p"]==0) { ?><div style="background:#e8e5de;height:2px;border-radius:1px" title="-"></div><?php } ?></div><div style="font-size:8px;color:#999;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;text-align:center"><?= $tg["short"] ?></div></div><?php endforeach; ?></div></div><label class="toggle"><input type="checkbox" name="readiness_all_auto_open" <?=(bool)platform_setting('readiness_all_auto_open',false)?'checked':''?>> Tesisler kartında "Tüm kalemler" listesi skor düşükken varsayılan açık olsun</label><label>Varsayılan açık eşiği (hazırlık skoru bu değerin altındaysa liste açık gelir)<input type="number" name="readiness_all_auto_open_threshold" min="1" max="100" value="<?=(int)platform_setting('readiness_all_auto_open_threshold',70)?>"></label><div style="display:grid;gap:10px;border:1px dashed #d8ded8;padding:14px;border-radius:8px"><p class="muted" style="margin:0;font-weight:bold">🩺 Sağlık kontrolü uyarı eşikleri (günlük e-posta)</p><p class="muted" style="margin:0">Son 24 saatteki sayaçlar bu eşiği aşarsa sağlık kontrolü çıktısında ⚠ görünür ve günlük uyarı e-postasına eklenir. Kod değiştirmeden ayarlanır.</p><label>Hata logu uyarı eşiği (son 24 saat, error/critical, yeni)<input type="number" name="health_warn_error_logs" min="5" max="500" value="<?=(int)platform_setting('health_warn_error_logs',20)?>"></label><label>E-posta kuyruğu uyarı eşiği (son 24 saat, kuyrukta bekleyen)<input type="number" name="health_warn_email_queue" min="5" max="1000" value="<?=(int)platform_setting('health_warn_email_queue',50)?>"></label><label>Başarısız webhook yükü uyarı eşiği (son 24 saat)<input type="number" name="health_warn_webhook_fail" min="1" max="200" value="<?=(int)platform_setting('health_warn_webhook_fail',10)?>"></label><label>iCal senkron hata uyarı eşiği (son 24 saat)<input type="number" name="health_warn_ical_fail" min="1" max="100" value="<?=(int)platform_setting('health_warn_ical_fail',3)?>"></label></div><label>Onay bekleyen eşleştirme önerisi TTL (gün) — bu süre dolan öneriler otomatik temizlenir (en az 7)<input type="number" name="channel_suggestion_ttl_days" min="7" max="365" value="<?=(int)platform_setting('channel_suggestion_ttl_days',30)?>" placeholder="30"></label><label>Yasak kelimeler (ziyaretçi sohbeti; her satıra bir tane, /regex/ biçimi de desteklenir)<textarea name="chat_blocklist" rows="4" style="padding:11px;border:1px solid #d8ded8;font:inherit;font-family:monospace;resize:vertical"><?=htmlspecialchars(implode("\n",(array)platform_setting('chat_blocklist',[])))?></textarea></label><label>Minimum soru uzunluğu (karakter)<input type="number" name="chat_min_length" min="1" max="100" value="<?=(int)platform_setting('chat_min_length',5)?>"></label><label class="toggle"><input type="checkbox" name="chat_require_space" <?=(bool)platform_setting('chat_require_space',true)?'checked':''?>> Tek kelimelik soruları engelle</label><label class="toggle"><input type="checkbox" name="chat_topic_instant" <?=(bool)platform_setting('chat_topic_instant',true)?'checked':''?>> Konuya göre anında yanıtlar aktif (eşleşen konu için tanımlı metin/bağlantı varsa AI çağrısı yapılmaz)</label><div style="display:grid;gap:10px;border:1px dashed #d8ded8;padding:14px;border-radius:8px"><p class="muted" style="margin:0">Konu bazlı karşılama metni ve yönlendirme bağlantısı — metinde <b>{link}</b> yazarsanız yerine mutlak bağlantı konur; bağlantı boşsa eklenmez. İkisi de boşsa o konu için AI yanıtlar.</p><?php $topicResp=(array)platform_setting('chat_topic_responses',[]); foreach(array_keys(chat_topic_defs()) as $t): $r=(array)($topicResp[$t]??[]); ?><label style="border-top:1px solid #eef0ea;padding-top:10px"><b><?=htmlspecialchars($t)?></b><textarea name="chat_topic_responses[<?=htmlspecialchars($t)?>][text]" rows="2" placeholder="Karşılama/yönlendirme metni (boş bırakılırsa AI yanıtlar)" style="width:100%;padding:11px;border:1px solid #d8ded8;font:inherit;font-family:monospace;resize:vertical;margin-top:6px"><?=htmlspecialchars((string)($r['text']??''))?></textarea><input name="chat_topic_responses[<?=htmlspecialchars($t)?>][link]" value="<?=htmlspecialchars((string)($r['link']??''))?>" placeholder="Yönlendirme bağlantısı, örn. /tedarikciler" style="width:100%;padding:11px;border:1px solid #d8ded8;font:inherit;margin-top:6px"></label><?php endforeach; ?></div><button>Kuralları kaydet</button>
+
+<?php $purgeMsg=$_SESSION['purge_result']??''; unset($_SESSION['purge_result']); if($purgeMsg): ?>
+<div class="sui-alert success">🧹 <b>Çöp kutusu temizleme:</b> <?= htmlspecialchars($purgeMsg) ?></div>
+<?php endif; ?>
+
+<?php if($message): ?><div class="sui-alert success"><?= htmlspecialchars($message) ?></div><?php endif; ?>
+<?php if($error): ?><div class="sui-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+<form method="post" class="sui-card">
+    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+    
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">⚙️ Platform Ayarları</h2>
+            <p class="sui-card-subtitle">İş kuralları veritabanında tutulur ve kod değiştirmeden yönetilir.</p>
+        </div>
+    </div>
+
+    <div class="sui-grid-2" style="margin-bottom:20px">
+        <div class="sui-form-group">
+            <label class="sui-label">Gemini Görsel Benzerlik Eşiği (%)</label>
+            <input type="number" name="gemini_visual_similarity_threshold" min="50" max="100" value="<?= $threshold ?>" class="sui-input">
+        </div>
+        <div class="sui-form-group">
+            <label class="sui-label">Yönetici Uyarı E-postası</label>
+            <input type="email" name="admin_alert_email" value="<?= htmlspecialchars($email) ?>" placeholder="operasyon@sirketiniz.com" class="sui-input">
+        </div>
+    </div>
+
+    <div class="sui-grid-2" style="margin-bottom:20px">
+        <label class="sui-toggle"><input type="checkbox" name="gemini_auto_pause_duplicate" <?= $autoPause?'checked':''?>> Gemini yüksek eşleşmede ilanı otomatik duraklatsın</label>
+        <label class="sui-toggle"><input type="checkbox" name="kps_identity_verification_enabled" <?= $kpsEnabled?'checked':''?>> KPS kimlik doğrulama entegrasyonu aktif</label>
+        <label class="sui-toggle"><input type="checkbox" name="ical_url_published_only" <?= $icalPublishedOnly?'checked':''?>> iCal URL yalnızca yayındaki ilanlarda</label>
+        <label class="sui-toggle"><input type="checkbox" name="supplier_notify_email" <?=(bool)platform_setting('supplier_notify_email',false)?'checked':''?>> Öneri bildirimlerini e-posta ile de gönder</label>
+        <label class="sui-toggle"><input type="checkbox" name="orphan_cleanup_require_password" <?=(bool)platform_setting('orphan_cleanup_require_password',false)?'checked':''?>> Yetim temizlemede admin parolası iste</label>
+        <label class="sui-toggle"><input type="checkbox" name="channel_webhook_auto_map" <?=(bool)platform_setting('channel_webhook_auto_map',true)?'checked':''?>> Tanınmayan kod gelince onay bekleyen öneri oluştur</label>
+    </div>
+
+    <!-- Hazırlık Ağırlıkları -->
+    <div class="sui-section-group">
+        <p class="sui-section-group-title">⚖ Hazırlık Ağırlık Tablosu</p>
+        <p class="sui-section-group-desc">Her kalemin hesaplamadaki ham puanı. Toplam 100'e normalize edilir.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">
+            <?php foreach(['rooms'=>'Oda envanteri','rates'=>'Fiyat','inventory'=>'Stok','media'=>'Görseller','description'=>'Satış içeriği','location'=>'Konum','channel'=>'Kanal','pool'=>'Havuz','home_port'=>'Liman','crew'=>'Mürettebat','ical'=>'iCal'] as $wk=>$wl): ?>
+            <div class="sui-form-group" style="margin:0">
+                <label class="sui-label" style="font-size:11px"><?= $wl ?></label>
+                <input type="number" name="readiness_weight_<?= $wk ?>" min="1" max="10" value="<?= (int) platform_setting('readiness_weight_'.$wk, 3) ?>" class="sui-input" style="padding:7px 10px;font-size:12px">
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
+    <!-- Webhook Ayarları -->
+    <div class="sui-section-group">
+        <p class="sui-section-group-title">🔄 Webhook & Kanal Ayarları</p>
+        <div class="sui-grid-2">
+            <div class="sui-form-group">
+                <label class="sui-label">Varsayılan Para Birimi</label>
+                <input name="channel_webhook_default_currency" maxlength="3" value="<?= htmlspecialchars((string)platform_setting('channel_webhook_default_currency','EUR')) ?>" class="sui-input" style="text-transform:uppercase">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">Benzerlik Eşiği (%)</label>
+                <input type="number" name="channel_webhook_similarity_threshold" min="1" max="100" value="<?= (int)platform_setting('channel_webhook_similarity_threshold',45) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">Döngü Uyarı Eşiği</label>
+                <input type="number" name="channel_webhook_loop_threshold" min="3" max="100" value="<?= (int)platform_setting('channel_webhook_loop_threshold',3) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">Maks Yeniden Deneme</label>
+                <input type="number" name="channel_webhook_max_retries" min="2" max="10" value="<?= (int)platform_setting('channel_webhook_max_retries',3) ?>" class="sui-input">
+            </div>
+        </div>
+    </div>
+
+    <!-- iCal Ayarları -->
+    <div class="sui-section-group">
+        <p class="sui-section-group-title">📅 iCal Ayarları</p>
+        <div class="sui-grid-2">
+            <div class="sui-form-group">
+                <label class="sui-label">Tekrar Hata Eşiği</label>
+                <input type="number" name="ical_repeat_threshold" min="3" max="100" value="<?= (int)platform_setting('ical_repeat_threshold',3) ?>" class="sui-input">
+            </div>
+            <label class="sui-toggle"><input type="checkbox" name="ical_auto_pause_repeat" <?=(bool)platform_setting('ical_auto_pause_repeat',false)?'checked':''?>> Tekrar eşiği aşılınca otomatik duraklat</label>
+        </div>
+    </div>
+
+    <!-- Sağlık Kontrolü Eşikleri -->
+    <div class="sui-section-group">
+        <p class="sui-section-group-title">🩺 Sağlık Kontrolü Uyarı Eşikleri</p>
+        <p class="sui-section-group-desc">Son 24 saatteki sayaçlar bu eşiği aşarsa uyarı e-postası gider.</p>
+        <div class="sui-grid-2">
+            <div class="sui-form-group">
+                <label class="sui-label">Hata Logu Eşiği</label>
+                <input type="number" name="health_warn_error_logs" min="5" max="500" value="<?= (int)platform_setting('health_warn_error_logs',20) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">E-posta Kuyruğu Eşiği</label>
+                <input type="number" name="health_warn_email_queue" min="5" max="1000" value="<?= (int)platform_setting('health_warn_email_queue',50) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">Başarısız Webhook Eşiği</label>
+                <input type="number" name="health_warn_webhook_fail" min="1" max="200" value="<?= (int)platform_setting('health_warn_webhook_fail',10) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">iCal Hata Eşiği</label>
+                <input type="number" name="health_warn_ical_fail" min="1" max="100" value="<?= (int)platform_setting('health_warn_ical_fail',3) ?>" class="sui-input">
+            </div>
+        </div>
+    </div>
+
+    <!-- Çöp Kutusu -->
+    <div class="sui-section-group">
+        <p class="sui-section-group-title">🗑 Çöp Kutusu</p>
+        <div class="sui-grid-2">
+            <div class="sui-form-group">
+                <label class="sui-label">TTL (gün)</label>
+                <input type="number" name="feature_trash_ttl_days" min="7" max="365" value="<?= (int)platform_setting('feature_trash_ttl_days',30) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">Uyarı Penceresi (gün)</label>
+                <input type="number" name="trash_upcoming_warning_days" min="1" max="30" value="<?= (int)platform_setting('trash_upcoming_warning_days',3) ?>" class="sui-input">
+            </div>
+        </div>
+        <?php
+        $trashStats=null;
+        try{$pdoT=db();$trashStats=['count'=>(int)$pdoT->query('SELECT COUNT(*) FROM property_feature_catalog WHERE deleted_at IS NOT NULL')->fetchColumn()];
+        $oldQ=$pdoT->query('SELECT label,deleted_at,purge_at FROM property_feature_catalog WHERE deleted_at IS NOT NULL ORDER BY deleted_at ASC LIMIT 1');$old=$oldQ->fetch();
+        if($old){$ttlTmp=max(7,(int)platform_setting('feature_trash_ttl_days',30));$dTs=strtotime((string)$old['deleted_at'])?:time();$custom=!empty($old['purge_at']);$pTs=$custom?(strtotime((string)$old['purge_at'])?:0):0;if($pTs<=0)$pTs=$dTs+$ttlTmp*86400;$trashStats['oldest']=['label'=>(string)$old['label'],'deleted_at'=>(string)$old['deleted_at'],'purge_date'=>date('Y-m-d',$pTs),'remain_days'=>max(0,(int)ceil(($pTs-time())/86400)),'custom'=>$custom];}}catch(Throwable $e){$trashStats=null;}
+        ?>
+        <?php if($trashStats!==null && (int)$trashStats['count'] > 0): ?>
+        <div class="sui-alert warning" style="margin-top:8px">
+            🗑 <b><?= (int)$trashStats['count'] ?> özellik</b> bekliyor · en eskisi: <b><?= htmlspecialchars((string)($trashStats['oldest']['label']??'')) ?></b>
+            <small>(silindi <?= htmlspecialchars(mb_substr((string)($trashStats['oldest']['deleted_at']??''),0,10)) ?> · <?= (int)($trashStats['oldest']['remain_days']??0) ?> gün kaldı)</small>
+            · <a href="/nexustraveltech/admin/ozellik-listeleri#trash" style="color:#1a5e0a;font-weight:bold;text-decoration:none">kataloğa git →</a>
+            <?php if((int)($trashStats['oldest']['remain_days']??99)<=0): ?>
+            <form method="post" style="display:inline" onsubmit="return confirm('Vadesi dolan özellikleri kalıcı olarak silecektir. Emin misiniz?')">
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf']) ?>">
+                <input type="hidden" name="purge_trash_action" value="1">
+                <button class="sui-btn sui-btn-danger sui-btn-xs" style="margin-left:8px">🧹 Şimdi temizle</button>
+            </form>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- Hazırlık & Sağlık -->
+    <div class="sui-section-group">
+        <p class="sui-section-group-title">📋 Hazırlık & Sağlık</p>
+        <div class="sui-grid-2">
+            <label class="sui-toggle"><input type="checkbox" name="readiness_all_auto_open" <?=(bool)platform_setting('readiness_all_auto_open',false)?'checked':''?>> Düşük skorda tüm kalemler otomatik açık</label>
+            <div class="sui-form-group">
+                <label class="sui-label">Otomatik Açık Eşiği</label>
+                <input type="number" name="readiness_all_auto_open_threshold" min="1" max="100" value="<?= (int)platform_setting('readiness_all_auto_open_threshold',70) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">Öneri TTL (gün)</label>
+                <input type="number" name="channel_suggestion_ttl_days" min="7" max="365" value="<?= (int)platform_setting('channel_suggestion_ttl_days',30) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">Doluluk Eşiği — Kritik (%)</label>
+                <input type="number" name="inventory_occ_critical" min="50" max="100" value="<?= (int)platform_setting('inventory_occ_critical',90) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">Doluluk Eşiği — Uyarı (%)</label>
+                <input type="number" name="inventory_occ_warn" min="10" max="99" value="<?= (int)platform_setting('inventory_occ_warn',70) ?>" class="sui-input">
+            </div>
+            <div class="sui-form-group">
+                <label class="sui-label">Arayüz Dili (ipuçları)</label>
+                <select name="tooltip_language" class="sui-select">
+                    <?php $tl=readiness_lang(); foreach(['tr'=>'Türkçe','en'=>'English','de'=>'Deutsch','ru'=>'Русский','ar'=>'العربية','fr'=>'Français'] as $tlCode=>$tlName): ?>
+                    <option value="<?= $tlCode ?>" <?= $tl===$tlCode?'selected':''?>><?= $tlName ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sohbet Ayarları -->
+    <div class="sui-section-group">
+        <p class="sui-section-group-title">💬 Sohbet Ayarları</p>
+        <div class="sui-grid-2">
+            <div class="sui-form-group">
+                <label class="sui-label">Yasak Kelimeler <small>(her satıra bir tane)</small></label>
+                <textarea name="chat_blocklist" rows="3" class="sui-textarea" style="font-family:monospace;font-size:12px"><?= htmlspecialchars(implode("\n",(array)platform_setting('chat_blocklist',[]))) ?></textarea>
+            </div>
+            <div>
+                <div class="sui-form-group">
+                    <label class="sui-label">Min Soru Uzunluğu</label>
+                    <input type="number" name="chat_min_length" min="1" max="100" value="<?= (int)platform_setting('chat_min_length',5) ?>" class="sui-input">
+                </div>
+                <label class="sui-toggle"><input type="checkbox" name="chat_require_space" <?=(bool)platform_setting('chat_require_space',true)?'checked':''?>> Tek kelimeli soruları engelle</label>
+                <label class="sui-toggle"><input type="checkbox" name="chat_topic_instant" <?=(bool)platform_setting('chat_topic_instant',true)?'checked':''?>> Konuya göre anında yanıtlar aktif</label>
+            </div>
+        </div>
+    </div>
+
+    <div style="text-align:right;margin-top:20px">
+        <button class="sui-btn sui-btn-primary"><i class="fas fa-save"></i> Kuralları Kaydet</button>
+    </div>
+</form>
+
+<!-- Dağıtım Sağlığı Özeti -->
 <?php
-// Dağıtım sağlığı metrik kartı
 $dmOrphan=0;$dmPending=0;$dmPlanMissing=0;
 try{$p=db();
 if((bool)$p->query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='channel_room_mappings'")->fetchColumn()){
@@ -68,129 +379,106 @@ $pw=date('o-W',time()-7*86400);
 $oh=(array)platform_setting('distribution_health_orphan_history',[]);
 $ph=(array)platform_setting('distribution_health_pending_history',[]);
 $pmh=(array)platform_setting('distribution_health_plan_missing_history',[]);
-function _tl(?int $p,int $c):string{if($p===null)return'';$d=$c-$p;if($d>0)return' <span style="color:#b0301a;font-size:11px">▲+'.$d.'</span>';if($d<0)return' <span style="color:#0d7a4a;font-size:11px">▼'.$d.'</span>';return' <span style="color:#64716d;font-size:11px">=</span>';}
+function _tl(?int $p,int $c):string{if($p===null)return'';$d=$c-$p;if($d>0)return' <span style="color:#f31260;font-size:11px">▲+'.$d.'</span>';if($d<0)return' <span style="color:#17c964;font-size:11px">▼'.$d.'</span>';return' <span style="color:#6b7280;font-size:11px">=</span>';}
 ?>
-<section class="card" style="margin-top:14px">
-<h2 style="font-size:15px;margin:0 0 10px">📊 Dağıtım sağlığı özeti</h2>
-<div style="display:flex;gap:12px;flex-wrap:wrap">
-<?php if($dmOrphan>0):?><a href="/nexustraveltech/admin/orphan-mappings" style="display:inline-flex;align-items:center;gap:6px;padding:10px 14px;background:#fdecea;border:1px solid #f0c4bc;border-radius:8px;text-decoration:none;color:#b0301a;font-weight:bold;font-size:13px">🧹 Yetim: <?=$dmOrphan?><?= _tl($oh[$pw]??null,$dmOrphan)?></a><?php endif;?>
-<?php if($dmPending>0):?><a href="/nexustraveltech/admin/orphan-mappings" style="display:inline-flex;align-items:center;gap:6px;padding:10px 14px;background:#fff8e6;border:1px solid #ead9a8;border-radius:8px;text-decoration:none;color:#8a6100;font-weight:bold;font-size:13px">⏳ Öneri: <?=$dmPending?><?= _tl($ph[$pw]??null,$dmPending)?></a><?php endif;?>
-<?php if($dmPlanMissing>0):?><a href="/nexustraveltech/admin/orphan-mappings" style="display:inline-flex;align-items:center;gap:6px;padding:10px 14px;background:#fff3cd;border:1px solid #e0c9a3;border-radius:8px;text-decoration:none;color:#8a6100;font-weight:bold;font-size:13px">⚠ Plan eksik: <?=$dmPlanMissing?><?= _tl($pmh[$pw]??null,$dmPlanMissing)?></a><?php endif;?>
+
+<div class="sui-card">
+    <div class="sui-card-header">
+        <div>
+            <h2 class="sui-card-title">📊 Dağıtım Sağlığı Özeti</h2>
+            <p class="sui-card-subtitle">Son haftalık dağıtım sağlık özetindeki değerler</p>
+        </div>
+        <a href="/nexustraveltech/admin/orphan-mappings" class="sui-btn sui-btn-outline sui-btn-sm">Yönetim →</a>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <?php if($dmOrphan>0): ?>
+        <a href="/nexustraveltech/admin/orphan-mappings" class="sui-badge red" style="text-decoration:none;padding:8px 14px;font-size:13px">🧹 Yetim: <?= $dmOrphan ?><?= _tl($oh[$pw]??null,$dmOrphan) ?></a>
+        <?php endif; ?>
+        <?php if($dmPending>0): ?>
+        <a href="/nexustraveltech/admin/orphan-mappings" class="sui-badge yellow" style="text-decoration:none;padding:8px 14px;font-size:13px">⏳ Öneri: <?= $dmPending ?><?= _tl($ph[$pw]??null,$dmPending) ?></a>
+        <?php endif; ?>
+        <?php if($dmPlanMissing>0): ?>
+        <a href="/nexustraveltech/admin/orphan-mappings" class="sui-badge yellow" style="text-decoration:none;padding:8px 14px;font-size:13px">⚠ Plan eksik: <?= $dmPlanMissing ?><?= _tl($pmh[$pw]??null,$dmPlanMissing) ?></a>
+        <?php endif; ?>
+        <?php if($dmOrphan===0 && $dmPending===0 && $dmPlanMissing===0): ?>
+        <span class="sui-badge green">✓ Tüm eşleştirmeler tutarlı</span>
+        <?php endif; ?>
+    </div>
 </div>
-<p style="margin:8px 0 0;font-size:11px;color:#64716d">Son haftalık dağıtım sağlık özetindeki değerler · tıkla: yönetim sayfasına git</p>
-</section>
-</form></section><section class="card" style="border-color:#b0301a;background:#fffbf9">
-<h2>🚨 Kritik uyarılar</h2>
-<p class="muted" style="margin:0 0 12px">Sistem durumunun tek kartlık özeti. Her satır eşiği aşınca kırmızı, normalde yeşil.</p>
+
+<!-- Kritik Uyarılar -->
 <?php
 $critItems = [];
-// 1) Advisory lock
-$lockHeld = false;
 try {
-    $lockCheck = db()->prepare("SELECT pid, state, state_change, now()-state_change AS age FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid WHERE l.locktype='advisory' AND l.classid=0 AND l.objid=424242 AND l.granted=true AND a.pid<>pg_backend_pid()");
-    $lockCheck->execute();
-    $lockRow = $lockCheck->fetch();
-    if ($lockRow) { $lockHeld = true; $critItems[] = ['icon'=>'🔒','label'=>'Advisory kilit','value'=>'Daha zorunda (PID '.(int)$lockRow['pid'].')','ok'=>false,'detail'=>'Yaş: '.(int)($lockRow['age'] ?? 0).' saniye']; }
-    else { $critItems[] = ['icon'=>'🔒','label'=>'Advisory kilit','value'=>'Serbest','ok'=>true]; }
-} catch (Throwable $e) { $critItems[] = ['icon'=>'🔒','label'=>'Advisory kilit','value'=>'Kontrol edilemedi','ok'=>false]; }
+    $lockCheck = db()->prepare("SELECT pid, state_change, now()-state_change AS age FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid WHERE l.locktype='advisory' AND l.classid=0 AND l.objid=424242 AND l.granted=true AND a.pid<>pg_backend_pid()");
+    $lockCheck->execute(); $lockRow = $lockCheck->fetch();
+    if ($lockRow) { $critItems[] = ['icon'=>'🔒','label'=>'Advisory Kilit','value'=>'Tutuluyor (PID '.(int)$lockRow['pid'].')','ok'=>false]; }
+    else { $critItems[] = ['icon'=>'🔒','label'=>'Advisory Kilit','value'=>'Serbest','ok'=>true]; }
+} catch (Throwable $e) { $critItems[] = ['icon'=>'🔒','label'=>'Advisory Kilit','value'=>'Kontrol edilemedi','ok'=>false]; }
 
-// 2) Failed migrations
-$migFail = 0; $migTotal = 0;
-try {
-    $migTotal = (int) db()->query("SELECT COUNT(*) FROM schema_migrations")->fetchColumn();
-    // Check for tables missing critical columns
-    $critCols = db()->query("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name='channel_room_mappings' AND column_name='channel_connection_id' OR table_name='channel_rate_plan_mappings' AND column_name='channel_connection_id' OR table_name='property_feature_catalog' AND column_name='previous_purge_at')")->fetchAll();
-    $migFail = count($critCols);
-    $ok = $migFail === 0 && $migTotal >= 55;
-    $critItems[] = ['icon'=>'📊','label'=>'Migration','value'=>$migTotal.' uygulanan'.($migFail > 0 ? ' · '.$migFail.' eksik kolon' : ''),'ok'=>$ok,'detail'=>$migFail > 0 ? 'Eksik kolonlar: '.implode(', ', array_map(fn($c)=>$c['table_name'].'.'.$c['column_name'], $critCols)) : null];
-} catch (Throwable $e) { $critItems[] = ['icon'=>'📊','label'=>'Migration','value'=>'Kontrol edilemedi','ok'=>false]; }
+$migTotal = (int) db()->query("SELECT COUNT(*) FROM schema_migrations")->fetchColumn();
+$critCols = db()->query("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name='channel_room_mappings' AND column_name='channel_connection_id' OR table_name='channel_rate_plan_mappings' AND column_name='channel_connection_id' OR table_name='property_feature_catalog' AND column_name='previous_purge_at')")->fetchAll();
+$migFail = count($critCols);
+$critItems[] = ['icon'=>'📊','label'=>'Migration','value'=>$migTotal.($migFail > 0 ? ' · '.$migFail.' eksik' : ''),'ok'=>$migFail===0 && $migTotal>=55];
 
-// 3) Token / channel connections
-$tokBad = 0; $tokTotal = 0;
-try {
-    $tokTotal = (int) db()->query("SELECT COUNT(*) FROM channel_connections WHERE status='active'")->fetchColumn();
-    $tokBad = (int) db()->query("SELECT COUNT(*) FROM channel_connections WHERE status='active' AND (access_token IS NULL OR access_token='')")->fetchColumn();
-    $critItems[] = ['icon'=>'🔑','label'=>'Kanal tokenı','value'=>$tokTotal.' aktif'.($tokBad > 0 ? ' · '.$tokBad.' eksik' : ''),'ok'=>$tokBad === 0];
-} catch (Throwable $e) { $critItems[] = ['icon'=>'🔑','label'=>'Kanal tokenı','value'=>'Tablo yok','ok'=>false]; }
+$tokBad = (int) db()->query("SELECT COUNT(*) FROM channel_connections WHERE status='active' AND (access_token IS NULL OR access_token='')")->fetchColumn();
+$critItems[] = ['icon'=>'🔑','label'=>'Kanal Tokenı','value'=>$tokBad > 0 ? $tokBad.' eksik' : 'Tümü tamam','ok'=>$tokBad===0];
 
-// 4) Error logs (last 24h)
-$errCount = 0;
-try {
-    $errCount = (int) db()->query("SELECT COUNT(*) FROM error_logs WHERE level IN ('error','critical') AND created_at >= now()-interval '24 hours'")->fetchColumn();
-    $errThresh = (int) platform_setting('health_warn_error_logs', 20);
-    $critItems[] = ['icon'=>'⚠️','label'=>'Hata logu (24s)','value'=>$errCount.' hata','ok'=>$errCount < $errThresh];
-} catch (Throwable $e) { $critItems[] = ['icon'=>'⚠️','label'=>'Hata logu (24s)','Tablo yok','ok'=>true]; }
+$errCount = (int) db()->query("SELECT COUNT(*) FROM error_logs WHERE level IN ('error','critical') AND created_at >= now()-interval '24 hours'")->fetchColumn();
+$critItems[] = ['icon'=>'⚠️','label'=>'Hata Logu (24s)',$errCount.' hata','ok'=>$errCount < (int)platform_setting('health_warn_error_logs',20)];
 
-// 5) Email queue
-$emailQ = 0;
-try {
-    $emailQ = (int) db()->query("SELECT COUNT(*) FROM email_outbox WHERE status='pending'")->fetchColumn();
-    $emailThresh = (int) platform_setting('health_warn_email_queue', 50);
-    $critItems[] = ['icon'=>'📧','label'=>'E-posta kuyruğu','value'=>$emailQ.' bekliyor','ok'=>$emailQ < $emailThresh];
-} catch (Throwable $e) { $critItems[] = ['icon'=>'📧','label'=>'E-posta kuyruğu','Tablo yok','ok'=>true]; }
+$emailQ = (int) db()->query("SELECT COUNT(*) FROM email_outbox WHERE status='pending'")->fetchColumn();
+$critItems[] = ['icon'=>'📧','label'=>'E-posta Kuyruğu',$emailQ.' bekliyor','ok'=>$emailQ < (int)platform_setting('health_warn_email_queue',50)];
 
-// 6) Failed webhook (last 24h)
-$whFail = 0;
-try {
-    $whFail = (int) db()->query("SELECT COUNT(*) FROM channel_sync_logs WHERE status='failed' AND direction='pull' AND created_at>=now()-interval '24 hours'")->fetchColumn();
-    $whThresh = (int) platform_setting('health_warn_webhook_fail', 10);
-    $critItems[] = ['icon'=>'🔄','label'=>'Başarısız webhook (24s)','value'=>$whFail.' başarısız','ok'=>$whFail < $whThresh];
-} catch (Throwable $e) { $critItems[] = ['icon'=>'🔄','label'=>'Başarısız webhook (24s)','Tablo yok','ok'=>true]; }
+$whFail = (int) db()->query("SELECT COUNT(*) FROM channel_sync_logs WHERE status='failed' AND direction='pull' AND created_at>=now()-interval '24 hours'")->fetchColumn();
+$critItems[] = ['icon'=>'🔄','label'=>'Webhook Hata (24s)',$whFail.' başarısız','ok'=>$whFail < (int)platform_setting('health_warn_webhook_fail',10)];
 
-// 7) iCal failures (last 24h)
-$icalFail = 0;
-try {
-    $icalFail = (int) db()->query("SELECT COUNT(*) FROM ical_sync_logs WHERE status='failed' AND created_at>=now()-interval '24 hours'")->fetchColumn();
-    $icalThresh = (int) platform_setting('health_warn_ical_fail', 3);
-    $critItems[] = ['icon'=>'📅','label'=>'iCal hata (24s)','value'=>$icalFail.' hata','ok'=>$icalFail < $icalThresh];
-} catch (Throwable $e) { $critItems[] = ['icon'=>'📅','label'=>'iCal hata (24s)','Tablo yok','ok'=>true]; }
+$icalFail = (int) db()->query("SELECT COUNT(*) FROM ical_sync_logs WHERE status='failed' AND created_at>=now()-interval '24 hours'")->fetchColumn();
+$critItems[] = ['icon'=>'📅','label'=>'iCal Hata (24s)',$icalFail.' hata','ok'=>$icalFail < (int)platform_setting('health_warn_ical_fail',3)];
 
-// 8) Paused iCal connections
-$pausedIcal = 0;
-try {
-    $pausedIcal = (int) db()->query("SELECT COUNT(*) FROM ical_connections WHERE status='paused'")->fetchColumn();
-    $critItems[] = ['icon'=>'⏸','label'=>'Duraklatılmış iCal','value'=>$pausedIcal.' bağlantı','ok'=>$pausedIcal === 0];
-} catch (Throwable $e) { $critItems[] = ['icon'=>'⏸','label'=>'Duraklatılmış iCal','Tablo yok','ok'=>true]; }
+$pausedIcal = (int) db()->query("SELECT COUNT(*) FROM ical_connections WHERE status='paused'")->fetchColumn();
+$critItems[] = ['icon'=>'⏸','label'=>'Duraklatılmış iCal',$pausedIcal.' bağlantı','ok'=>$pausedIcal===0];
 
-// 9) Pending room/plan mappings
-$pendingMap = 0;
-try {
-    $pendingMap = (int) db()->query("SELECT COUNT(*) FROM channel_room_mappings WHERE status='suggested'")->fetchColumn();
-    $pendingPlan = (int) db()->query("SELECT COUNT(*) FROM channel_rate_plan_mappings WHERE status='suggested'")->fetchColumn();
-    $totalPending = $pendingMap + $pendingPlan;
-    $critItems[] = ['icon'=>'🛏','label'=>'Onay bekleyen öneri','value'=>$totalPending.' öneri'.($pendingMap > 0 ? ' ('.$pendingMap.' oda)' : '').($pendingPlan > 0 ? ' ('.$pendingPlan.' plan)' : ''),'ok'=>$totalPending === 0];
-} catch (Throwable $e) { $critItems[] = ['icon'=>'🛏','label'=>'Onay bekleyen öneri','Tablo yok','ok'=>true]; }
+$totalPending = (int) db()->query("SELECT COUNT(*) FROM channel_room_mappings WHERE status='suggested'")->fetchColumn() + (int) db()->query("SELECT COUNT(*) FROM channel_rate_plan_mappings WHERE status='suggested'")->fetchColumn();
+$critItems[] = ['icon'=>'🛏','label'=>'Onay Bekleyen',$totalPending.' öneri','ok'=>$totalPending===0];
 
-// 10) Trash fill + pending purge approvals
-$trashCount = 0; $trashPendingCount = 0;
-try {
-    $trashCount = (int) db()->query("SELECT COUNT(*) FROM property_feature_catalog WHERE deleted_at IS NOT NULL")->fetchColumn();
-    $trashPendingCount = (int) db()->query("SELECT COUNT(*) FROM pending_trash_purges WHERE approved_at IS NULL AND expires_at > now()")->fetchColumn();
-    $trashVal = $trashCount . ' özellik';
-    if ($trashPendingCount > 0) $trashVal .= ' · ' . $trashPendingCount . ' onay bekliyor';
-    $critItems[] = ['icon'=>'🗑','label'=>'Çöp kutusu','value'=>$trashVal,'ok'=>$trashCount === 0 && $trashPendingCount === 0];
-} catch (Throwable $e) { $critItems[] = ['icon'=>'🗑','label'=>'Çöp kutusu','Tablo yok','ok'=>true]; }
-
-// Render
-$critOk = array_reduce($critItems, fn($carry, $i) => $carry && $i['ok'], true);
+$trashCount = (int) db()->query("SELECT COUNT(*) FROM property_feature_catalog WHERE deleted_at IS NOT NULL")->fetchColumn();
+$critItems[] = ['icon'=>'🗑','label'=>'Çöp Kutusu',$trashCount.' özellik','ok'=>$trashCount===0];
 ?>
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
-<?php foreach ($critItems as $ci): ?>
-<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;background:<?= $ci['ok'] ? '#f4fbea' : '#fff3f1' ?>;border:1px solid <?= $ci['ok'] ? '#bcd98a' : '#f3c4ba' ?>;border-radius:8px">
-<span style="font-size:20px;flex-shrink:0"><?= $ci['icon'] ?></span>
-<div style="min-width:0"><div style="font-size:11px;color:#6b7774;text-transform:uppercase;letter-spacing:.5px;font-weight:bold"><?= htmlspecialchars($ci['label']) ?></div>
-<div style="font-size:14px;font-weight:bold;color:<?= $ci['ok'] ? '#1a3d6d' : '#b0301a' ?>;margin-top:2px"><?= htmlspecialchars((string)$ci['value']) ?></div>
-<?php if (!empty($ci['detail'])): ?><div style="font-size:11px;color:#64716d;margin-top:2px"><?= htmlspecialchars($ci['detail']) ?></div><?php endif; ?>
-</div></div>
-<?php endforeach; ?>
+
+<div class="sui-card" style="border-color:#f3c4ba;background:#fffbf9">
+    <div class="sui-card-header">
+        <h2 class="sui-card-title">🚨 Kritik Uyarılar</h2>
+    </div>
+    <div class="sui-stats" style="margin-bottom:0">
+        <?php foreach ($critItems as $ci): ?>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:<?= $ci['ok'] ? '#e6f8c7' : '#fff3f1' ?>;border:1px solid <?= $ci['ok'] ? '#bcd98a' : '#f3c4ba' ?>;border-radius:var(--sui-radius-sm)">
+            <span style="font-size:22px;flex-shrink:0"><?= $ci['icon'] ?></span>
+            <div style="min-width:0">
+                <div class="sui-stat-label"><?= htmlspecialchars($ci['label']) ?></div>
+                <div style="font-size:14px;font-weight:700;color:<?= $ci['ok'] ? '#17c964' : '#f31260' ?>;margin-top:2px"><?= htmlspecialchars((string)$ci['value']) ?></div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <p style="margin:14px 0 0;font-size:13px;font-weight:600;color:<?= empty(array_filter($critItems,fn($i)=>!$i['ok'])) ? '#17c964' : '#f31260' ?>">
+        <?= empty(array_filter($critItems,fn($i)=>!$i['ok'])) ? '✓ Tüm sistemler normal.' : '⚠ Bazı sistemlerde sorun var.' ?>
+    </p>
 </div>
-<p style="margin:12px 0 0;font-size:12px;color:<?= $critOk ? '#405b13' : '#b0301a' ?>;font-weight:bold"><?= $critOk ? '✓ Tüm sistemler normal.' : '⚠ Bazı sistemlerde sorun var — yukarıdaki Kartlara tıklayarak ilgili sayfaya gidin.' ?></p><p class="muted">Tedarikçi/acente panellerindeki "Her pazartesi haftalık sohbet özetimi e-postama gönder" kutusuyla katılan hesaplar; buradan tek tıkla çıkarabilirsiniz.</p><?php $digest=(array)platform_setting('panel_weekly_digest',[]);$supMap=(array)($digest['supplier']??[]);$agyMap=(array)($digest['agency']??[]);$names=[];if($supMap!==[]){$q=db()->prepare('SELECT id,company_name FROM suppliers WHERE id = ANY(?::bigint[])');$q->execute(['{'.implode(',',array_keys($supMap)).'}']);foreach($q->fetchAll() as $r)$names['supplier_'.$r['id']]=(string)$r['company_name'];}if($agyMap!==[]){$q=db()->prepare('SELECT id,company_name FROM agencies WHERE id = ANY(?::bigint[])');$q->execute(['{'.implode(',',array_keys($agyMap)).'}']);foreach($q->fetchAll() as $r)$names['agency_'.$r['id']]=(string)$r['company_name'];}?><?php if($supMap===[ ]&&$agyMap===[]):?><p class="muted">Henüz katılımcı yok.</p><?php else:?><table style="width:100%;border-collapse:collapse;margin-top:10px"><tr><th style="text-align:left;padding:8px 10px;border-bottom:1px solid #e1e5de;font-size:11px;text-transform:uppercase;color:#64716d">Tip</th><th style="text-align:left;padding:8px 10px;border-bottom:1px solid #e1e5de;font-size:11px;text-transform:uppercase;color:#64716d">Şirket</th><th style="text-align:left;padding:8px 10px;border-bottom:1px solid #e1e5de;font-size:11px;text-transform:uppercase;color:#64716d">E-posta</th><th style="padding:8px 10px;border-bottom:1px solid #e1e5de"></th></tr><?php foreach($supMap as $sid=>$email):?><tr><td style="padding:8px 10px;border-bottom:1px solid #e1e5de">🏨 Tedarikçi</td><td style="padding:8px 10px;border-bottom:1px solid #e1e5de"><b><?=htmlspecialchars($names['supplier_'.$sid]??'#' . $sid)?></b></td><td style="padding:8px 10px;border-bottom:1px solid #e1e5de"><?=htmlspecialchars((string)$email)?></td><td style="padding:8px 10px;border-bottom:1px solid #e1e5de;text-align:right"><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="digest_remove" value="supplier:<?=(int)$sid?>"><button style="background:#8e2410;color:#fff;border:0;padding:6px 12px;font-size:12px;cursor:pointer">Çıkar</button></form></td></tr><?php endforeach;?><?php foreach($agyMap as $aid=>$email):?><tr><td style="padding:8px 10px;border-bottom:1px solid #e1e5de">🧳 Acente</td><td style="padding:8px 10px;border-bottom:1px solid #e1e5de"><b><?=htmlspecialchars($names['agency_'.$aid]??'#' . $aid)?></b></td><td style="padding:8px 10px;border-bottom:1px solid #e1e5de"><?=htmlspecialchars((string)$email)?></td><td style="padding:8px 10px;border-bottom:1px solid #e1e5de;text-align:right"><form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?=htmlspecialchars($_SESSION['admin_csrf'])?>"><input type="hidden" name="digest_remove" value="agency:<?=(int)$aid?>"><button style="background:#8e2410;color:#fff;border:0;padding:6px 12px;font-size:12px;cursor:pointer">Çıkar</button></form></td></tr><?php endforeach;?></table><?php endif;?></section><section class="card"><h2>🔔 Webhook döngü durumu</h2><?php
-$webhookDefault=max(3,(int)platform_setting('channel_webhook_loop_threshold',3));
-$hasCol=(bool)db()->query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='channel_connections' AND column_name='webhook_loop_threshold'")->fetchColumn();
-$connOverrides=$hasCol?(int)db()->query('SELECT COUNT(*) FROM channel_connections WHERE webhook_loop_threshold IS NOT NULL')->fetchColumn():0;
-$over=[];try{
-if($hasCol){$overSql="SELECT c.display_name,c.channel_code,s.company_name,c.webhook_loop_threshold,COUNT(*) attempt_count,MIN(l.created_at) first_at,MAX(l.created_at) last_at FROM channel_sync_logs l JOIN channel_connections c ON c.id=l.channel_connection_id JOIN suppliers s ON s.id=c.supplier_id WHERE l.direction='pull' AND l.status='failed' AND l.created_at>=now()-interval '24 hours' AND l.request_payload IS NOT NULL GROUP BY c.id,md5(l.request_payload::text),c.display_name,c.channel_code,s.company_name,c.webhook_loop_threshold HAVING COUNT(*)>=COALESCE(c.webhook_loop_threshold,{$webhookDefault}) ORDER BY attempt_count DESC LIMIT 15";}else{$overSql="SELECT c.display_name,c.channel_code,s.company_name,COUNT(*) attempt_count,MIN(l.created_at) first_at,MAX(l.created_at) last_at FROM channel_sync_logs l JOIN channel_connections c ON c.id=l.channel_connection_id JOIN suppliers s ON s.id=c.supplier_id WHERE l.direction='pull' AND l.status='failed' AND l.created_at>=now()-interval '24 hours' AND l.request_payload IS NOT NULL GROUP BY c.id,md5(l.request_payload::text),c.display_name,c.channel_code,s.company_name HAVING COUNT(*)>={$webhookDefault} ORDER BY attempt_count DESC LIMIT 15";}
-$over=db()->query($overSql)->fetchAll();}catch(Throwable $e){$over=[];}
-$alerts=[];try{$alerts=db()->query("SELECT n.type,n.message,n.created_at,c.display_name,s.company_name FROM notifications n JOIN channel_connections c ON c.id=(regexp_split_to_array(n.type,'_'))[3]::bigint LEFT JOIN suppliers s ON s.id=c.supplier_id WHERE n.type LIKE 'webhook_loop_%' ORDER BY n.created_at DESC LIMIT 10")->fetchAll();}catch(Throwable $e){$alerts=[];}
-?><p class="muted">Aynı webhook yükü son 24 saatte başarısız olmaya devam ederse tedarikçiye panel bildirimi + yöneticiye e-posta gider. Varsayılan eşik <b><?=$webhookDefault?></b>; kanal bazlı geçersiz kılmalar: <b><?=$connOverrides?> bağlantı</b> (dağıtım merkezi bölüm 1'den düzenlenir).</p><h3 style="margin:14px 0 6px;font-size:14px">⚠ Şu an eşiği aşan bağlantılar (son 24 saat)</h3><?php if(!$over):?><p class="muted" style="color:#405b13">✓ Son 24 saatte eşiği aşan bağlantı yok.</p><?php else:?><table style="width:100%;border-collapse:collapse;font-size:13px"><?php foreach($over as $o):?><tr><td style="padding:7px 10px;border:1px solid #e1e5de"><b><?=htmlspecialchars($o['display_name'])?></b> (<?=htmlspecialchars($o['channel_code'])?>) · <?=htmlspecialchars($o['company_name'])?></td><td style="padding:7px 10px;border:1px solid #e1e5de;color:#b0301a"><b><?=(int)$o['attempt_count']?> kez</b></td><td style="padding:7px 10px;border:1px solid #e1e5de">eşik: <?=$hasCol&&$o['webhook_loop_threshold']!==null?(int)$o['webhook_loop_threshold']:'varsayılan '.$webhookDefault?></td><td style="padding:7px 10px;border:1px solid #e1e5de;color:#64716d"><?=htmlspecialchars((string)$o['first_at'])?> → <?=htmlspecialchars((string)$o['last_at'])?></td></tr><?php endforeach;?></table><?php endif;?><h3 style="margin:16px 0 6px;font-size:14px">🔔 Son tetiklenen döngü uyarıları</h3><?php if(!$alerts):?><p class="muted">Henüz döngü uyarısı tetiklenmedi.</p><?php else:?><?php foreach($alerts as $a):?><p style="margin:0 0 8px;padding:8px 10px;background:#fff8f0;border:1px solid #f3d9b8;border-radius:6px;font-size:13px"><b><?=htmlspecialchars($a['display_name']??'#kanal')?></b> · <?=htmlspecialchars((string)$a['created_at'])?><br><?=htmlspecialchars(mb_substr((string)$a['message'],0,160))?></p><?php endforeach;?><?php endif;?></section><?php require __DIR__ . "/_ttl-panel.php"; ?>
-<section class="card"><h2>Şifreli API ayarları</h2><div class="links"><a href="/nexustraveltech/admin/ai-ayarlari">DeepSeek metin AI</a><a href="/nexustraveltech/admin/gemini-ayarlari">Gemini görsel AI</a><a href="/nexustraveltech/admin/tedarikci-onaylari">Tedarikçi onayları</a><a href="/nexustraveltech/admin/ozellik-listeleri">Katalog & sınıflandırma yönetimi</a></div></section></main><?php require_once __DIR__.'/../config/ai_widget.php'; ai_widget('/nexustraveltech/admin/ai-chat','admin_csrf'); ?></body></html>
+
+<!-- Bağlantılar -->
+<div class="sui-card">
+    <div class="sui-card-header">
+        <h2 class="sui-card-title">🔗 Hızlı Erişim</h2>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="/nexustraveltech/admin/ai-ayarlari" class="sui-btn sui-btn-outline sui-btn-sm">🤖 DeepSeek AI</a>
+        <a href="/nexustraveltech/admin/gemini-ayarlari" class="sui-btn sui-btn-outline sui-btn-sm">🎨 Gemini AI</a>
+        <a href="/nexustraveltech/admin/tedarikci-onaylari" class="sui-btn sui-btn-outline sui-btn-sm">📋 Tedarikçi Onayları</a>
+        <a href="/nexustraveltech/admin/ozellik-listeleri" class="sui-btn sui-btn-outline sui-btn-sm">📑 Katalog Yönetimi</a>
+        <a href="/nexustraveltech/admin/denetim-kayitlari" class="sui-btn sui-btn-outline sui-btn-sm">📝 Denetim Kayıtları</a>
+        <a href="/nexustraveltech/admin/timerlar" class="sui-btn sui-btn-outline sui-btn-sm">⏱ Zamanlayıcılar</a>
+    </div>
+</div>
+
+<?php admin_layout_end(); ?>

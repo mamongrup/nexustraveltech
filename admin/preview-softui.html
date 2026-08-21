@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard | NEXUS Admin — Soft UI Preview</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="../assets/admin-softui.css">
+</head>
+<body class="sui">
+
+<!-- Sidebar -->
+<aside class="sui-sidebar">
+    <a href="#" class="sui-sidebar-logo">
+        <span style="font-size:22px;font-weight:900;background:linear-gradient(135deg,#7928ca,#ff0080);-webkit-background-clip:text;-webkit-text-fill-color:transparent">N∿XUS</span>
+        <span style="font-size:11px;color:var(--sui-muted);font-weight:500">Admin Panel</span>
+    </a>
+    <hr>
+    <nav>
+        <div class="sui-nav-section">Genel</div>
+        <a href="#" class="sui-nav-item active">
+            <span class="nav-icon">📊</span>
+            <span>Dashboard</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">⚙️</span>
+            <span>Kontrol Merkezi</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">🔔</span>
+            <span>Uyarı Merkezi</span>
+        </a>
+        <div class="sui-nav-section">Yönetim</div>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">🏨</span>
+            <span>Tedarikçiler</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">🧳</span>
+            <span>Acenteler</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">📋</span>
+            <span>İlan Yönetimi</span>
+            <span class="sui-nav-badge">3</span>
+        </a>
+        <div class="sui-nav-section">Dağıtım & Kanal</div>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">📈</span>
+            <span>Dağıtım Sağlığı</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">📊</span>
+            <span>Hazırlık Özeti</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">🔄</span>
+            <span>Dağıtım Merkezi</span>
+            <span class="sui-nav-badge warn">5</span>
+        </a>
+        <div class="sui-nav-section">Ayarlar</div>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">📦</span>
+            <span>Ürün Şablonları</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">📑</span>
+            <span>Katalog Yönetimi</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">⏱</span>
+            <span>Zamanlayıcılar</span>
+        </a>
+        <div class="sui-nav-section">Güvenlik</div>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">📝</span>
+            <span>Denetim Kayıtları</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">🐛</span>
+            <span>Hata İzleme</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">🤖</span>
+            <span>DeepSeek AI</span>
+        </a>
+        <a href="#" class="sui-nav-item">
+            <span class="nav-icon">🎨</span>
+            <span>Gemini AI</span>
+        </a>
+    </nav>
+    <div style="margin-top:auto;padding:12px 20px;border-top:1px solid var(--sui-border)">
+        <a href="#" style="display:flex;align-items:center;gap:8px;padding:8px 0;color:var(--sui-muted);text-decoration:none;font-size:13px;font-weight:500">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Çıkış Yap</span>
+        </a>
+    </div>
+</aside>
+
+<!-- Main Content -->
+<main class="sui-main">
+    <!-- Navbar -->
+    <nav class="sui-navbar">
+        <div>
+            <div class="sui-breadcrumb">
+                <a href="#">Admin</a>
+                <span class="sep">/</span>
+                <span>Dashboard</span>
+            </div>
+            <h1 class="sui-page-title">Dashboard</h1>
+        </div>
+        <div class="sui-navbar-actions">
+            <a href="#" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fas fa-home"></i></a>
+            <a href="#" class="sui-btn sui-btn-outline sui-btn-sm"><i class="fas fa-cog"></i></a>
+        </div>
+    </nav>
+
+    <!-- Stats Row -->
+    <div class="sui-stats">
+        <a href="#" class="sui-stat">
+            <div class="sui-stat-icon purple"><i class="fas fa-hotel"></i></div>
+            <div class="sui-stat-info">
+                <div class="sui-stat-label">Toplam Başvuru</div>
+                <div class="sui-stat-value">247</div>
+            </div>
+        </a>
+        <a href="#" class="sui-stat">
+            <div class="sui-stat-icon red"><i class="fas fa-ban"></i></div>
+            <div class="sui-stat-info">
+                <div class="sui-stat-label">Engelli IP</div>
+                <div class="sui-stat-value">12</div>
+            </div>
+        </a>
+        <a href="#" class="sui-stat">
+            <div class="sui-stat-icon orange"><i class="fas fa-flag"></i></div>
+            <div class="sui-stat-info">
+                <div class="sui-stat-label">Bayraklı IP</div>
+                <div class="sui-stat-value">5</div>
+            </div>
+        </a>
+        <a href="#" class="sui-stat">
+            <div class="sui-stat-icon teal"><i class="fas fa-exchange-alt"></i></div>
+            <div class="sui-stat-info">
+                <div class="sui-stat-label">Bekleyen Öneri</div>
+                <div class="sui-stat-value">8</div>
+                <span class="sui-stat-change down">+3</span>
+            </div>
+        </a>
+        <a href="#" class="sui-stat">
+            <div class="sui-stat-icon red"><i class="fas fa-trash-alt"></i></div>
+            <div class="sui-stat-info">
+                <div class="sui-stat-label">Yaklaşan Silme</div>
+                <div class="sui-stat-value">3</div>
+            </div>
+        </a>
+    </div>
+
+    <!-- Alert -->
+    <div class="sui-alert warning">
+        ⚠️ <b>2 kimlik doğrulama uyarısı</b> — <a href="#" style="color:inherit;font-weight:700;text-decoration:underline">Onay sayfasına git →</a>
+    </div>
+
+    <!-- Chat Summary Card -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <div>
+                <h2 class="sui-card-title">💬 Sohbet Özeti</h2>
+                <p class="sui-card-subtitle">Son 7 gün · Ziyaretçi asistanı performansı</p>
+            </div>
+            <a href="#" class="sui-btn sui-btn-outline sui-btn-sm">Düzenle →</a>
+        </div>
+        <div class="sui-stats" style="margin-bottom:0">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f8f9fa;border-radius:var(--sui-radius-xs)">
+                <div class="sui-stat-icon blue" style="width:36px;height:36px;font-size:14px"><i class="fas fa-comment-dots"></i></div>
+                <div><div class="sui-stat-label">Bugünkü Soru</div><div style="font-size:18px;font-weight:700">47</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f8f9fa;border-radius:var(--sui-radius-xs)">
+                <div class="sui-stat-icon green" style="width:36px;height:36px;font-size:14px"><i class="fas fa-key"></i></div>
+                <div><div class="sui-stat-label">DeepSeek Anahtarı</div><div style="font-size:14px;font-weight:700;color:#17c964">✅ Aktif</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f8f9fa;border-radius:var(--sui-radius-xs)">
+                <div class="sui-stat-icon indigo" style="width:36px;height:36px;font-size:14px"><i class="fas fa-clock"></i></div>
+                <div><div class="sui-stat-label">Ortalama Süre</div><div style="font-size:18px;font-weight:700">1,240 ms</div></div>
+            </div>
+        </div>
+        <div style="margin-top:16px">
+            <div style="font-size:12px;font-weight:600;color:var(--sui-muted);margin-bottom:8px">Son 7 Gün Soru Eğilimi</div>
+            <div style="display:flex;align-items:flex-end;gap:3px;height:40px">
+                <div style="flex:1;background:linear-gradient(180deg,#7928ca,#ff0080);border-radius:3px 3px 0 0;height:15px"></div>
+                <div style="flex:1;background:linear-gradient(180deg,#7928ca,#ff0080);border-radius:3px 3px 0 0;height:22px"></div>
+                <div style="flex:1;background:linear-gradient(180deg,#7928ca,#ff0080);border-radius:3px 3px 0 0;height:35px"></div>
+                <div style="flex:1;background:linear-gradient(180deg,#7928ca,#ff0080);border-radius:3px 3px 0 0;height:28px"></div>
+                <div style="flex:1;background:linear-gradient(180deg,#7928ca,#ff0080);border-radius:3px 3px 0 0;height:18px"></div>
+                <div style="flex:1;background:linear-gradient(180deg,#7928ca,#ff0080);border-radius:3px 3px 0 0;height:40px"></div>
+                <div style="flex:1;background:linear-gradient(180deg,#7928ca,#ff0080);border-radius:3px 3px 0 0;height:12px"></div>
+            </div>
+            <div style="display:flex;gap:3px;margin-top:4px">
+                <div style="flex:1;text-align:center;font-size:9px;color:var(--sui-muted)">Pzt</div>
+                <div style="flex:1;text-align:center;font-size:9px;color:var(--sui-muted)">Sal</div>
+                <div style="flex:1;text-align:center;font-size:9px;color:var(--sui-muted)">Çar</div>
+                <div style="flex:1;text-align:center;font-size:9px;color:var(--sui-muted)">Per</div>
+                <div style="flex:1;text-align:center;font-size:9px;color:var(--sui-muted)">Cum</div>
+                <div style="flex:1;text-align:center;font-size:9px;color:var(--sui-muted)">Cmt</div>
+                <div style="flex:1;text-align:center;font-size:9px;color:var(--sui-muted)">Paz</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Links -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">🔗 Hızlı Erişim</h2>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+            <a href="#" style="display:flex;align-items:center;gap:10px;padding:14px;background:#fff;border:1px solid var(--sui-border);border-radius:var(--sui-radius-sm);text-decoration:none;color:var(--sui-text);transition:all 0.2s" onmouseover="this.style.boxShadow='var(--sui-shadow)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
+                <span style="font-size:20px">⚙️</span>
+                <span style="font-size:13px;font-weight:600">Platform Kontrol Merkezi</span>
+            </a>
+            <a href="#" style="display:flex;align-items:center;gap:10px;padding:14px;background:#fff;border:1px solid var(--sui-border);border-radius:var(--sui-radius-sm);text-decoration:none;color:var(--sui-text);transition:all 0.2s" onmouseover="this.style.boxShadow='var(--sui-shadow)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
+                <span style="font-size:20px">📈</span>
+                <span style="font-size:13px;font-weight:600">Dağıtım Sağlığı</span>
+            </a>
+            <a href="#" style="display:flex;align-items:center;gap:10px;padding:14px;background:#fff;border:1px solid var(--sui-border);border-radius:var(--sui-radius-sm);text-decoration:none;color:var(--sui-text);transition:all 0.2s" onmouseover="this.style.boxShadow='var(--sui-shadow)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
+                <span style="font-size:20px">📦</span>
+                <span style="font-size:13px;font-weight:600">Ürün Şablonları</span>
+            </a>
+            <a href="#" style="display:flex;align-items:center;gap:10px;padding:14px;background:#fff;border:1px solid var(--sui-border);border-radius:var(--sui-radius-sm);text-decoration:none;color:var(--sui-text);transition:all 0.2s" onmouseover="this.style.boxShadow='var(--sui-shadow)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
+                <span style="font-size:20px">📝</span>
+                <span style="font-size:13px;font-weight:600">Denetim Kayıtları</span>
+            </a>
+            <a href="#" style="display:flex;align-items:center;gap:10px;padding:14px;background:#fff;border:1px solid var(--sui-border);border-radius:var(--sui-radius-sm);text-decoration:none;color:var(--sui-text);transition:all 0.2s" onmouseover="this.style.boxShadow='var(--sui-shadow)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
+                <span style="font-size:20px">🤖</span>
+                <span style="font-size:13px;font-weight:600">DeepSeek AI</span>
+            </a>
+            <a href="#" style="display:flex;align-items:center;gap:10px;padding:14px;background:#fff;border:1px solid var(--sui-border);border-radius:var(--sui-radius-sm);text-decoration:none;color:var(--sui-text);transition:all 0.2s" onmouseover="this.style.boxShadow='var(--sui-shadow)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
+                <span style="font-size:20px">📖</span>
+                <span style="font-size:13px;font-weight:600">Kullanım Kılavuzu</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Critical Alerts -->
+    <div class="sui-card" style="border-color:#f3c4ba;background:#fffbf9">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">🚨 Kritik Uyarılar</h2>
+        </div>
+        <div class="sui-stats" style="margin-bottom:0">
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:#e6f8c7;border:1px solid #bcd98a;border-radius:var(--sui-radius-sm)">
+                <span style="font-size:22px;flex-shrink:0">🔒</span>
+                <div style="min-width:0">
+                    <div class="sui-stat-label">Advisory Kilit</div>
+                    <div style="font-size:14px;font-weight:700;color:#17c964;margin-top:2px">Serbest</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:#e6f8c7;border:1px solid #bcd98a;border-radius:var(--sui-radius-sm)">
+                <span style="font-size:22px;flex-shrink:0">📊</span>
+                <div style="min-width:0">
+                    <div class="sui-stat-label">Migration</div>
+                    <div style="font-size:14px;font-weight:700;color:#17c964;margin-top:2px">58 uygulanan</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:#e6f8c7;border:1px solid #bcd98a;border-radius:var(--sui-radius-sm)">
+                <span style="font-size:22px;flex-shrink:0">🔑</span>
+                <div style="min-width:0">
+                    <div class="sui-stat-label">Kanal Tokenı</div>
+                    <div style="font-size:14px;font-weight:700;color:#17c964;margin-top:2px">Tümü tamam</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:#fff3f1;border:1px solid #f3c4ba;border-radius:var(--sui-radius-sm)">
+                <span style="font-size:22px;flex-shrink:0">⚠️</span>
+                <div style="min-width:0">
+                    <div class="sui-stat-label">Hata Logu (24s)</div>
+                    <div style="font-size:14px;font-weight:700;color:#f31260;margin-top:2px">3 hata</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:#e6f8c7;border:1px solid #bcd98a;border-radius:var(--sui-radius-sm)">
+                <span style="font-size:22px;flex-shrink:0">📧</span>
+                <div style="min-width:0">
+                    <div class="sui-stat-label">E-posta Kuyruğu</div>
+                    <div style="font-size:14px;font-weight:700;color:#17c964;margin-top:2px">2 bekliyor</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:#e6f8c7;border:1px solid #bcd98a;border-radius:var(--sui-radius-sm)">
+                <span style="font-size:22px;flex-shrink:0">🛏</span>
+                <div style="min-width:0">
+                    <div class="sui-stat-label">Onay Bekleyen</div>
+                    <div style="font-size:14px;font-weight:700;color:#17c964;margin-top:2px">0 öneri</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:#e6f8c7;border:1px solid #bcd98a;border-radius:var(--sui-radius-sm)">
+                <span style="font-size:22px;flex-shrink:0">🗑</span>
+                <div style="min-width:0">
+                    <div class="sui-stat-label">Çöp Kutusu</div>
+                    <div style="font-size:14px;font-weight:700;color:#17c964;margin-top:2px">0 özellik</div>
+                </div>
+            </div>
+        </div>
+        <p style="margin:14px 0 0;font-size:13px;font-weight:600;color:#17c964">✓ Tüm sistemler normal.</p>
+    </div>
+
+    <!-- Sample Table -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <h2 class="sui-card-title">📋 Son Başvurular</h2>
+            <span class="sui-badge purple">247 toplam</span>
+        </div>
+        <div class="sui-table-wrap">
+            <table class="sui-table">
+                <thead>
+                    <tr>
+                        <th>Tarih</th>
+                        <th>E-posta</th>
+                        <th>Rol</th>
+                        <th>Dil</th>
+                        <th>Para</th>
+                        <th>IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="white-space:nowrap">2026-08-18 14:32</td>
+                        <td><b>mehmet@otel.com</b></td>
+                        <td><span class="sui-badge blue">supplier</span></td>
+                        <td>TR</td>
+                        <td>TRY</td>
+                        <td class="sui-mono" style="color:var(--sui-muted)">192.168.1.45</td>
+                    </tr>
+                    <tr>
+                        <td style="white-space:nowrap">2026-08-18 12:15</td>
+                        <td><b>info@acente.com</b></td>
+                        <td><span class="sui-badge green">agency</span></td>
+                        <td>EN</td>
+                        <td>EUR</td>
+                        <td class="sui-mono" style="color:var(--sui-muted)">10.0.0.22</td>
+                    </tr>
+                    <tr>
+                        <td style="white-space:nowrap">2026-08-17 09:48</td>
+                        <td><b>villa@tatil.com</b></td>
+                        <td><span class="sui-badge blue">supplier</span></td>
+                        <td>DE</td>
+                        <td>EUR</td>
+                        <td class="sui-mono" style="color:var(--sui-muted)">172.16.0.8</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Distribution Health -->
+    <div class="sui-card">
+        <div class="sui-card-header">
+            <div>
+                <h2 class="sui-card-title">📊 Dağıtım Sağlığı Özeti</h2>
+                <p class="sui-card-subtitle">Son haftalık dağıtım sağlık özetindeki değerler</p>
+            </div>
+            <a href="#" class="sui-btn sui-btn-outline sui-btn-sm">Yönetim →</a>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <a href="#" class="sui-badge red" style="text-decoration:none;padding:8px 14px;font-size:13px">🧹 Yetim: 4 ▲+1</a>
+            <a href="#" class="sui-badge yellow" style="text-decoration:none;padding:8px 14px;font-size:13px">⏳ Öneri: 8 ▲+3</a>
+            <a href="#" class="sui-badge yellow" style="text-decoration:none;padding:8px 14px;font-size:13px">⚠ Plan eksik: 2 =</a>
+        </div>
+    </div>
+
+</main>
+
+</body>
+</html>

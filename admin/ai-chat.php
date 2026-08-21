@@ -18,7 +18,9 @@ try {
         exit;
     }
     $messages = is_array($in['messages'] ?? null) ? $in['messages'] : [];
-    $reply = ai_assistant_chat('admin', $messages, ['admin_id' => (int) ($_SESSION['admin_id'] ?? 0)]);
+    $lang = trim((string) ($in['lang'] ?? ''));
+    if ($lang === '' && !empty($_SESSION['tooltip_language'])) $lang = $_SESSION['tooltip_language'];
+    $reply = ai_assistant_chat('admin', $messages, ['admin_id' => (int) ($_SESSION['admin_id'] ?? 0), 'lang' => $lang ?: 'tr']);
     echo json_encode(['reply' => $reply], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     http_response_code(500);

@@ -18,7 +18,9 @@ try {
         exit;
     }
     $messages = is_array($in['messages'] ?? null) ? $in['messages'] : [];
-    $reply = ai_assistant_chat('supplier', $messages, ['supplier_id' => (int) ($u['supplier_id'] ?? $u['id'] ?? 0)]);
+    $lang = trim((string) ($in['lang'] ?? ''));
+    if ($lang === '' && isset($_SESSION['supplier_user']['language'])) $lang = $_SESSION['supplier_user']['language'];
+    $reply = ai_assistant_chat('supplier', $messages, ['supplier_id' => (int) ($u['supplier_id'] ?? $u['id'] ?? 0), 'lang' => $lang ?: 'tr']);
     echo json_encode(['reply' => $reply], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     http_response_code(500);

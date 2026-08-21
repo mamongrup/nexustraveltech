@@ -1,4 +1,24 @@
 <?php
 declare(strict_types=1);
+
 require_once __DIR__ . '/../config/database.php';
-$pdo=db();$rows=$pdo->query("SELECT r.*,p.id property_id FROM revenue_snapshots r JOIN properties p ON p.id=r.property_id WHERE r.snapshot_date BETWEEN current_date+1 AND current_date+30 ORDER BY r.snapshot_date")->fetchAll();$created=0;foreach($rows as $r){$type=null;$value=null;$reason='';if((float)$r['occupancy_percent']>=85&&$r['pickup_count']>0){$type='raise_rate';$value=round((float)$r['adr']*1.12,2);$reason='Yüksek doluluk ve pozitif pickup.';}if((float)$r['occupancy_percent']<=35&&$r['cancellation_count']>$r['pickup_count']){$type='lower_rate';$value=round((float)$r['adr']*0.9,2);$reason='Düşük doluluk ve iptal baskısı.';}if($type){$q=$pdo->prepare("SELECT 1 FROM revenue_recommendations WHERE property_id=? AND stay_date=? AND recommendation_type=? AND status='new'");$q->execute([$r['property_id'],$r['snapshot_date'],$type]);if(!$q->fetch()){$pdo->prepare('INSERT INTO revenue_recommendations(property_id,stay_date,recommendation_type,recommended_value,currency,confidence,reason) VALUES(?,?,?,?,?,?,?)')->execute([$r['property_id'],$r['snapshot_date'],$type,$value,'EUR',75,$reason]);$created++;}}}echo json_encode(['created'=>$created],JSON_UNESCAPED_UNICODE).PHP_EOL;
+require_once __DIR__ . '/../config/pricing.php';
+
+$pdo = db();
+$properties = $pdo->query("SELECT id, name FROM properties WHERE status = 'active'")->fetchAll();
+$totalGenerated = 0;
+$totalApplied = 0;
+
+foreach ($properties as $prop) {
+    $res = run_dynamic_revenue_engine((int) $prop['id'], false);
+    $totalGenerated += $res['generated'];
+    $totalApplied += $res['applied'];
+}
+
+echo json_encode([
+    'ok' => true,
+    'properties_checked' => count($properties),
+    'recommendations_generated' => $totalGenerated,
+    'auto_applied' => $totalApplied,
+    'timestamp' => date('c'),
+], JSON_UNESCAPED_UNICODE) . PHP_EOL;

@@ -54,6 +54,29 @@ done
 echo "Uygulanan: $OK · Başarısız: $FAIL${FAILED_FILES:+ → $FAILED_FILES}"
 
 echo
+echo "=== Migration listesi (commit_hash ile) ==="
+sudo -u postgres psql -d "$APP_DB_NAME" -c "
+SELECT
+  file,
+  COALESCE(substr(commit_hash,1,7), '—') AS commit,
+  applied_at::date AS tarih,
+  CASE WHEN commit_hash IS NOT NULL THEN '✓' ELSE '○' END AS durum
+FROM schema_migrations
+ORDER BY id DESC
+LIMIT 20;
+"
+
+# Bekleyen migration'lar için git blame ile hangi commit'te eklendiğini göster
+echo "--- Bekleyen migration'lar (henüz uygulanmamış) ---"
+for f in database/migrations/*.sql; do
+  [ -f "$f" ] || continue
+  base=$(basename "$f")
+  if printf '%s\n' "$APPLIED" | grep -qx "$base"; then continue; fi
+  blame_commit=$(git log --diff-filter=A --format='%h' -- "$f" 2>/dev/null | head -1)
+  echo "  ○ $base  → introduced: ${blame_commit:-bilinmiyor}"
+done
+
+echo
 echo "=== 3) Sahiplik devri (tüm public şema → app kullanıcısı) ==="
 sudo -u postgres psql -d "$APP_DB_NAME" -v app_user="$APP_DB_USER" <<'SQL'
 DO $do$

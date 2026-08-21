@@ -91,6 +91,35 @@ $kkSectionLabels = [
 ];
 $linkTooltips = readiness_tooltips();
 
+/* ── Düzenleyici adım özeti: ürün türü adımlarından hangileri 🖊 (düzenleyicide tamamlanacak) ── */
+$stepQ = $pdo->prepare('SELECT steps, step_targets FROM product_type_catalog WHERE code=?');
+$stepQ->execute([$type]);
+$stepRow = $stepQ->fetch();
+$editorSteps = [];
+$creationSteps = [];
+if ($stepRow) {
+    $sNames = json_decode((string) $stepRow['steps'], true) ?: [];
+    $sTargets = json_decode((string) $stepRow['step_targets'], true) ?: [];
+    $creationSecs = ['sec-01', 'sec-02'];
+    foreach ($sNames as $si => $sName) {
+        $target = (string) ($sTargets[$si] ?? '');
+        $secLabel = $kkSectionLabels[$target] ?? $target;
+        if ($target !== '' && !in_array($target, $creationSecs, true)) {
+            $filled = false;
+            $keyMap = ['sec-03' => 'amenities', 'sec-04' => 'rooms', 'sec-05' => 'media', 'sec-06' => 'rules', 'sec-07' => 'rules'];
+            $rKey = $keyMap[$target] ?? '';
+            if ($rKey !== '') {
+                foreach ($items as $ri) {
+                    if ($ri['key'] === $rKey) { $filled = !empty($ri['ok']); break; }
+                }
+            }
+            $editorSteps[] = ['name' => $sName, 'target' => $target, 'secLabel' => $secLabel, 'filled' => $filled];
+        } else {
+            $creationSteps[] = ['name' => $sName, 'target' => $target];
+        }
+    }
+}
+
 // "İlk eksik bölüme git" — eski yönlendirme sırasıyla aynı öncelik:
 // location → description → media → rooms/inventory → rates; villa/yat'ta pool/liman/mürettebat + iCal.
 $secOrder = ['location', 'description', 'media', 'rooms', 'inventory', 'rates'];
@@ -128,11 +157,28 @@ supply_start('Karşı karşıya — hazırlık özeti', $active_module);
     <div class="kk-score">
       <div class="readiness-bar kk-bar"><i style="width:<?= (int) $rd['score'] ?>%"></i></div>
       <b><?= (int) $rd['score'] ?>/100</b>
-      <?php if ($rd['missing_count'] > 0): ?><small class="kk-scorecard"><?= (int) $rd['ok_count'] ?> kalem tamam — kalan <?= (int) $rd['missing_count'] ?> kalem tamamlanınca 100 olur.</small><?php endif; ?>
+      <?php if ($rd['missing_count'] > 0): ?>
+      <?php $__remPts = 0; foreach($miss as $__mx){ if($__mx['key']!=='rules') $__remPts += (int)($__mx['weight']??0); } ?>
+      <small class="kk-scorecard"><?= score_done_text((int) $rd['ok_count']) ?> — <?= score_remain_text((int) $rd['missing_count']) ?><?php if($__remPts > 0): ?> · kalan <?= $rd['missing_count'] ?> kalem · +<?= $__remPts ?> puan<?php endif; ?>.</small><?php endif; ?>
     </div>
+    <?php if ($miss !== []): ?>
+    <div class="kk-weight-list">
+      <small>Eksik kalemlerin puan katkısı:</small>
+      <ul>
+        <?php foreach ($miss as $mi): ?>
+          <?php if ($mi['key'] === 'rules') continue; ?>
+          <li>
+            <span class="kk-weight-label"><?= htmlspecialchars($mi['label']) ?></span>
+            <span class="kk-weight-value">+<?= (int) ($mi['weight'] ?? 0) ?> puan</span>
+          </li>
+        <?php endforeach; ?>
+      </ul>
+      <small class="kk-weight-total">Toplam kalan: +<?= array_sum(array_map(fn($m) => $m['key'] !== 'rules' ? (int) ($m['weight'] ?? 0) : 0, $miss)) ?> puan</small>
+    </div>
+    <?php endif; ?>
     <?php if ($firstMiss !== null): ?>
       <div class="kk-actions">
-        <a class="primary-button kk-cta" href="<?= htmlspecialchars($firstLink) ?>">İlk eksik bölüme git → <small><?= htmlspecialchars($firstMiss['label']) ?><?= isset($kkSecTitles[$firstMiss['key']]) ? ' · ' . htmlspecialchars($kkSecTitles[$firstMiss['key']]) : '' ?></small></a>
+        <a class="primary-button kk-cta" href="<?= htmlspecialchars($firstLink) ?>"><?= count($miss) ?> eksik · <small><?= htmlspecialchars($firstMiss['label']) ?><?= isset($kkSecTitles[$firstMiss['key']]) ? ' · ' . htmlspecialchars($kkSecTitles[$firstMiss['key']]) : '' ?></small></a>
         <a class="ghost-button" href="/nexustraveltech/tedarikci/tesisler">Tesislerime dön</a>
       </div>
     <?php else: ?>
@@ -144,6 +190,29 @@ supply_start('Karşı karşıya — hazırlık özeti', $active_module);
   </div>
 
   <div class="kk-cols">
+
+  <?php if ($editorSteps !== []): ?>
+  <div class="kk-editor-steps">
+    <h3>🖊 Düzenleyici adımları <small>(oluşturma sonrası tamamlanacak)</small></h3>
+    <div class="kk-step-chips">
+      <?php foreach ($editorSteps as $es): ?>
+      <a class="kk-step-chip <?= $es['filled'] ? 'chip-done' : 'chip-pending' ?>"
+         href="<?= htmlspecialchars($editBase . '#' . $es['target']) ?>"
+         title="<?= htmlspecialchars($es['name']) ?> → <?= htmlspecialchars($es['secLabel']) ?>">
+        <?= $es['filled'] ? '✓' : '🖊' ?> <?= htmlspecialchars($es['name']) ?>
+        <small><?= htmlspecialchars($es['secLabel']) ?></small>
+      </a>
+      <?php endforeach; ?>
+    </div>
+    <p class="kk-step-hint">
+      <?php $filledCount = count(array_filter($editorSteps, fn($e) => $e['filled'])); ?>
+      <?= $filledCount ?>/<?= count($editorSteps) ?> düzenleyici adım tamamlandı.
+      <?php if ($filledCount < count($editorSteps)): ?>
+        Kalan: <?= htmlspecialchars(implode(', ', array_map(fn($e) => $e['name'], array_filter($editorSteps, fn($e) => !$e['filled'])))) ?>.
+      <?php endif; ?>
+    </p>
+  </div>
+  <?php endif; ?>
     <?php if ($miss !== []): ?>
     <div class="kk-col kk-col-miss">
       <h3>✗ Eksik kalemler <b><?= count($miss) ?></b></h3>
@@ -151,12 +220,12 @@ supply_start('Karşı karşıya — hazırlık özeti', $active_module);
         <?php foreach ($miss as $m): ?>
         <li>
           <div class="kk-row-text">
-            <b><?= htmlspecialchars($m['label']) ?><?php if ($m['key'] === 'rules'): ?> <em>(opsiyonel)</em><?php endif; ?></b>
+            <b><?= htmlspecialchars($m['label']) ?><?php if ($m['key'] === 'rules'): ?> <em>(<?= readiness_labels()['optional'] ?>)</em><?php endif; ?></b>
             <small><?= htmlspecialchars($m['detail']) ?></small>
-            <?php if ($m['key'] !== 'rules'): ?> <em class="readiness-gain" title="Bu kalem tamamlanınca hazırlık skoruna eklenir">+<?= (int) ($m['weight'] ?? 0) ?></em><?php endif; ?>
+            <?php if ($m['key'] !== 'rules'): ?> <em class="readiness-gain" title="<?= readiness_gain_tooltip() ?>">+<?= (int) ($m['weight'] ?? 0) ?></em><?php endif; ?>
             <?php if (isset($kkSecTitles[$m['key']])): ?> <em class="readiness-sec-hint"><?= htmlspecialchars($kkSecTitles[$m['key']]) ?></em><?php endif; ?>
           </div>
-          <a title="<?= htmlspecialchars($linkTooltips[$m['key']] ?? '') ?>" href="<?= htmlspecialchars($kkLinks[$m['key']] ?? $editBase) ?>">Doldur →</a>
+          <a title="<?= htmlspecialchars($linkTooltips[$m['key']] ?? '') ?>" href="<?= htmlspecialchars($kkLinks[$m['key']] ?? $editBase) ?>"><?= readiness_labels()['fill'] ?> →</a>
         </li>
         <?php endforeach; ?>
       </ul>
@@ -174,7 +243,7 @@ supply_start('Karşı karşıya — hazırlık özeti', $active_module);
             <small><?= htmlspecialchars($w['detail']) ?></small>
             <?php if (isset($kkSecTitles[$w['key']])): ?> <em class="readiness-sec-hint"><?= htmlspecialchars($kkSecTitles[$w['key']]) ?></em><?php endif; ?>
           </div>
-          <a title="<?= htmlspecialchars($linkTooltips[$w['key']] ?? '') ?>" href="<?= htmlspecialchars($kkLinks[$w['key']] ?? $editBase) ?>">İncele →</a>
+          <a title="<?= htmlspecialchars($linkTooltips[$w['key']] ?? '') ?>" href="<?= htmlspecialchars($kkLinks[$w['key']] ?? $editBase) ?>"><?= readiness_labels()['inspect'] ?> →</a>
         </li>
         <?php endforeach; ?>
       </ul>
@@ -190,7 +259,7 @@ supply_start('Karşı karşıya — hazırlık özeti', $active_module);
             <b><?= htmlspecialchars($d['label']) ?></b>
             <small><?= htmlspecialchars($d['detail']) ?></small>
           </div>
-          <a class="kk-view" title="<?= htmlspecialchars($linkTooltips[$d['key']] ?? '') ?>" href="<?= htmlspecialchars($kkLinks[$d['key']] ?? $editBase) ?>">Gör →</a>
+          <a class="kk-view" title="<?= htmlspecialchars($linkTooltips[$d['key']] ?? '') ?>" href="<?= htmlspecialchars($kkLinks[$d['key']] ?? $editBase) ?>"><?= readiness_labels()['view'] ?> →</a>
         </li>
         <?php endforeach; ?>
         <?php if ($done === []): ?><li class="kk-empty">Henüz tamamlanan kalem yok.</li><?php endif; ?>
@@ -198,4 +267,25 @@ supply_start('Karşı karşıya — hazırlık özeti', $active_module);
     </div>
   </div>
 </section>
+<style>
+.kk-editor-steps{background:#f5f8ff;border:1px solid #d0dff0;border-radius:10px;padding:16px 20px;margin:16px 0}
+.kk-editor-steps h3{margin:0 0 10px;font-size:14px;color:#1a3a5c}
+.kk-editor-steps h3 small{font-weight:normal;color:#64716d}
+.kk-step-chips{display:flex;flex-wrap:wrap;gap:8px}
+.kk-step-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;text-decoration:none;border:1px solid #d8ded8;transition:all .15s}
+.kk-step-chip small{font-size:11px;color:#64716d}
+.kk-step-chip.chip-done{background:#e6f8c7;border-color:#a5d6a7;color:#2e7d32}
+.kk-step-chip.chip-pending{background:#fffaf0;border-color:#e0c080;color:#8a6100}
+.kk-step-chip:hover{box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.kk-step-hint{margin:10px 0 0;font-size:12px;color:#64716d;line-height:1.4}
+</style>
+<style>
+.kk-weight-list{margin:12px 0 0;padding:10px 14px;background:#f9f9f6;border:1px solid #e1e5de;border-radius:8px}
+.kk-weight-list small{color:#64716d;font-size:12px}
+.kk-weight-list ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 12px}
+.kk-weight-list li{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#444}
+.kk-weight-label{color:#10211f}
+.kk-weight-value{font-weight:700;color:#5f9008;font-size:11px}
+.kk-weight-total{display:block;margin-top:6px;font-weight:700;color:#8a6100}
+</style>
 <?php supply_end(); ?>

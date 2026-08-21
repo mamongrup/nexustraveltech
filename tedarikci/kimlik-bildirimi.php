@@ -41,6 +41,27 @@ function identity_value(?string $encrypted, ?string $masked): string {
   try{return decrypt_ai_secret($encrypted);}catch(Throwable $e){return (string)($masked??'—');}
 }
 
+if(($_GET['export']??'')==='kbs_xml'){
+  header('Content-Type: application/xml; charset=utf-8');
+  header('Content-Disposition: attachment; filename="kbs-bildirim-'.$from.'-'.$to.'.xml"');
+  $xml = new SimpleXMLElement('<?xml version="1.0" encoding="utf-8"?><KBSBildirimListesi/>');
+  $xml->addAttribute('Tarih', date('Y-m-d H:i:s'));
+  $xml->addAttribute('KayitSayisi', (string)count($rows));
+  foreach($rows as $r){
+    $item = $xml->addChild('Konaklayan');
+    $item->addChild('TesisAdi', htmlspecialchars($r['property_name']));
+    $item->addChild('RezervasyonNo', htmlspecialchars($r['booking_reference']));
+    $item->addChild('Adi', htmlspecialchars($r['first_name']));
+    $item->addChild('Soyadi', htmlspecialchars($r['last_name']));
+    $item->addChild('Uyruk', htmlspecialchars($r['nationality'] ?? 'TR'));
+    $item->addChild('BelgeTuru', htmlspecialchars((string)($r['identity_type']??$r['document_type'])));
+    $item->addChild('KimlikNo', htmlspecialchars(identity_value((string)$r['identity_number'], (string)$r['document_number_masked'])));
+    $item->addChild('GirisTarihi', htmlspecialchars($r['created_at']));
+  }
+  echo $xml->asXML();
+  exit;
+}
+
 if(($_GET['export']??'')==='csv'){
   header('Content-Type: text/csv; charset=utf-8');
   header('Content-Disposition: attachment; filename="kimlik-bildirimi-'.$from.'-'.$to.'.csv"');
@@ -54,8 +75,12 @@ if(($_GET['export']??'')==='csv'){
   exit;
 }
 
-supply_start('Kimlik bildirimi',$active_module);?>
-<section class="page-intro"><p>Online check-in sırasında toplanan misafir kimlik kayıtları. Yasal yükümlülükler kapsamında yetkili makamlara bildirim için kayıtları görüntüleyin ve CSV olarak dışa aktarın.</p></section>
+supply_start('Kimlik bildirimi (KBS)',$active_module);?>
+<section class="page-intro"><p>Online check-in sırasında toplanan misafir kimlik kayıtları. Emniyet ve Jandarma KBS entegrasyonu için kayıtları görüntüleyin, KBS XML veya CSV formatında tek tıkla dışa aktarın.</p></section>
+<div style="display:flex;gap:10px;margin-bottom:16px">
+  <a class="btn-primary" href="?export=kbs_xml&from=<?=htmlspecialchars($from)?>&to=<?=htmlspecialchars($to)?>" style="background:#13593b;color:#fff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:bold">📄 Emniyet/Jandarma KBS XML İndir</a>
+  <a class="btn-primary" href="?export=csv&from=<?=htmlspecialchars($from)?>&to=<?=htmlspecialchars($to)?>" style="background:#10211f;color:#fff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:bold">📊 Excel (CSV) İndir</a>
+</div>
 <?php if($message):?><p class="save-success">✓ <?=htmlspecialchars($message)?></p><?php endif;?>
 <?php if($error):?><p class="login-error"><?=htmlspecialchars($error)?></p><?php endif;?>
 <form method="get" class="supply-form" style="max-width:760px"><div class="form-row">

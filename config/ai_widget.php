@@ -19,6 +19,19 @@ function ai_widget(string $endpoint, string $sessionCsrfKey): void
     }
     $token = (string) $_SESSION[$sessionCsrfKey];
     $url = htmlspecialchars($endpoint, ENT_QUOTES, 'UTF-8');
+
+    // Dil destekli UI metinleri
+    $ui = function_exists('ai_widget_ui_texts') ? ai_widget_ui_texts() : [
+        'welcome' => 'Merhaba 👋 Size nasıl yardımcı olabilirim?',
+        'placeholder' => 'Sorunuzu yazın…',
+        'send' => 'Gönder',
+        'title' => 'NEXUS AI asistan',
+        'subtitle' => 'Soruları yanıtlar, yönlendirir, güvenli işlemleri yapar',
+        'error_connection' => '⚠ Bağlantı hatası. Lütfen tekrar deneyin.',
+        'error_parse' => '⚠ Yanıt okunamadı',
+        'lang_hint' => '',
+    ];
+    $curLang = function_exists('readiness_lang') ? readiness_lang() : 'tr';
     ?>
 <style>
 #nexus-ai-fab{position:fixed;right:18px;bottom:18px;z-index:99990;width:56px;height:56px;border-radius:50%;border:0;cursor:pointer;background:#10211f;color:#d7ff48;font-weight:800;font-size:11px;font-family:Arial,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.35);display:grid;place-items:center;line-height:1.1;letter-spacing:.5px}
@@ -40,11 +53,11 @@ function ai_widget(string $endpoint, string $sessionCsrfKey): void
 #nexus-ai-send:disabled{opacity:.5;cursor:wait}
 @media (max-width:520px){#nexus-ai-fab{right:12px;bottom:12px}#nexus-ai-panel{right:12px;bottom:76px}}
 </style>
-<button id="nexus-ai-fab" type="button" title="NEXUS AI asistan">NEXUS<br>AI</button>
-<div id="nexus-ai-panel" aria-label="NEXUS AI asistan">
-  <div id="nexus-ai-head"><div><b>NEXUS AI asistan</b><small>Soruları yanıtlar, yönlendirir, güvenli işlemleri yapar</small></div><button id="nexus-ai-close" type="button" aria-label="Kapat">✕</button></div>
-  <div id="nexus-ai-msgs"><div class="m b">Merhaba 👋 Size nasıl yardımcı olabilirim? Örn. <i>“Bugün kaç misafir geliyor?”</i> veya <i>“Son hataları göster”</i> yazabilirsiniz.</div></div>
-  <div id="nexus-ai-foot"><input id="nexus-ai-input" type="text" placeholder="Sorunuzu yazın…" autocomplete="off"><button id="nexus-ai-send" type="button">Gönder</button></div>
+<button id="nexus-ai-fab" type="button" title="<?= htmlspecialchars($ui['title']) ?>">NEXUS<br>AI</button>
+<div id="nexus-ai-panel" aria-label="<?= htmlspecialchars($ui['title']) ?>">
+  <div id="nexus-ai-head"><div><b><?= htmlspecialchars($ui['title']) ?></b><small><?= htmlspecialchars($ui['subtitle']) ?></small></div><button id="nexus-ai-close" type="button" aria-label="Kapat">✕</button></div>
+  <div id="nexus-ai-msgs"><div class="m b"><?= htmlspecialchars($ui['welcome']) ?></div><?= $ui['lang_hint'] ? '<div class="m hint">' . htmlspecialchars($ui['lang_hint']) . '</div>' : '' ?></div>
+  <div id="nexus-ai-foot"><input id="nexus-ai-input" type="text" placeholder="<?= htmlspecialchars($ui['placeholder']) ?>" autocomplete="off"><button id="nexus-ai-send" type="button"><?= htmlspecialchars($ui['send']) ?></button></div>
 </div>
 <script>
 (function(){
@@ -83,14 +96,14 @@ function ai_widget(string $endpoint, string $sessionCsrfKey): void
     fetch(URL, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({csrf: TOKEN, messages: hist})
+      body: JSON.stringify({csrf: TOKEN, messages: hist, lang: <?= json_encode($curLang, JSON_UNESCAPED_SLASHES) ?>})
     })
-    .then(function(r){ return r.json().catch(function(){ return {error:'Yanıt okunamadı (HTTP ' + r.status + ')'}; }); })
+    .then(function(r){ return r.json().catch(function(){ return {error: <?= json_encode($ui['error_parse'], JSON_UNESCAPED_SLASHES) ?> + ' (HTTP ' + r.status + ')'}; }); })
     .then(function(d){
       if (d.reply){ hist.push({role:'assistant', content:d.reply}); addMsg('b', d.reply); }
       else { addMsg('b', '⚠ ' + (d.error || 'Yanıt alınamadı.')); }
     })
-    .catch(function(){ addMsg('b', '⚠ Bağlantı hatası. Lütfen tekrar deneyin.'); })
+    .catch(function(){ addMsg('b', <?= json_encode($ui['error_connection'], JSON_UNESCAPED_SLASHES) ?>); })
     .then(function(){ send.disabled = false; });
   }
   send.addEventListener('click', sendMsg);
