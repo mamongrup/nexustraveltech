@@ -11,6 +11,20 @@ require_once __DIR__ . '/../config/trash-helpers.php';
 require_admin();
 if (empty($_SESSION['admin_csrf'])) $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
 
+// admin_audit_logs tablosu eksikse otomatik oluştur
+try {
+    db()->exec("CREATE TABLE IF NOT EXISTS admin_audit_logs (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        action VARCHAR(100) NOT NULL,
+        entity_type VARCHAR(100),
+        entity_id BIGINT,
+        admin_username VARCHAR(100) DEFAULT 'admin',
+        details JSONB DEFAULT '{}'::jsonb,
+        ip_address VARCHAR(45),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )");
+} catch (Throwable $e) {}
+
 // Hızlı bakış uç noktası — toplu işlem detayındaki ID chip'ine tıklayınca özelliğin
 // o anki durumunu döndürür (aktif/pasif/çöp kutusu + kalan gün).
 if (($_GET['qview'] ?? '') === 'feature') {
@@ -311,14 +325,19 @@ foreach (['Bugün' => [$today, $today], 'Son 7 gün' => [$weekAgo, $today], 'Bu 
     $qrUrl = $baseAudit . '?' . ($action !== '' ? 'action=' . urlencode($action) . '&' : '') . 'date_from=' . $qrFrom . '&date_to=' . $qrTo . ($adminName !== '' ? '&admin=' . urlencode($adminName) : '');
     $quickRangeHtml .= '<a href="' . htmlspecialchars($qrUrl) . '" style="padding:4px 10px;background:' . ($qrActive ? '#10211f;color:#fff' : '#f4f6f1;color:#10211f') . ';border:1px solid #d8ded8;border-radius:12px;text-decoration:none;font-size:12px;font-weight:bold"' . ($qrActive ? ' title="Şu an bu aralık aktif"' : '') . '>' . htmlspecialchars($qrLabel) . '</a>';
 }
-$q = db()->prepare($limitSql);
-$q->execute($params);
-$rows = $q->fetchAll();
-
-$actions = db()->query('SELECT action,COUNT(*) c FROM admin_audit_logs GROUP BY action ORDER BY c DESC LIMIT 30')->fetchAll();
+$rows = [];
+$actions = [];
 $actionCounts = [];
-foreach ($actions as $_ac) $actionCounts[$_ac['action']] = (int) $_ac['c'];
-$admins = db()->query("SELECT DISTINCT admin_username FROM admin_audit_logs WHERE admin_username IS NOT NULL AND admin_username <> '' ORDER BY admin_username LIMIT 100")->fetchAll(PDO::FETCH_COLUMN);
+$admins = [];
+try {
+    $q = db()->prepare($limitSql);
+    $q->execute($params);
+    $rows = $q->fetchAll();
+
+    $actions = db()->query('SELECT action,COUNT(*) c FROM admin_audit_logs GROUP BY action ORDER BY c DESC LIMIT 30')->fetchAll();
+    foreach ($actions as $_ac) $actionCounts[$_ac['action']] = (int) $_ac['c'];
+    $admins = db()->query("SELECT DISTINCT admin_username FROM admin_audit_logs WHERE admin_username IS NOT NULL AND admin_username <> '' ORDER BY admin_username LIMIT 100")->fetchAll(PDO::FETCH_COLUMN);
+} catch (Throwable $e) {}
 
 require_once __DIR__ . '/layout.php';
 admin_layout_start('Yönetim Denetim ve Audit Kayıtları', 'denetim-kayitlari');
