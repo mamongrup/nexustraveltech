@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <?php $seo_page = 'home'; ?>
 <html lang="tr">
   <head>
@@ -49,7 +49,15 @@
             <div class="board-footer"><span data-i18n="flow_supplier">TEDARİKÇİ</span><b>&#8594;</b><span data-i18n="flow_pool">BİLGİ HAVUZU</span><b>&#8594;</b><span data-i18n="flow_agency">ACENTE</span></div>
           </div>
         </div>
-        <div class="hero-foot"><span>OTEL</span><span>VİLLA</span><span>YAT</span><span>TUR</span><span>TRANSFER</span><span>ARAÇ</span><span>UÇUŞ</span></div>
+        <div class="hero-foot">
+          <span data-i18n="cat_hotel">OTEL</span>
+          <span data-i18n="cat_villa">VİLLA</span>
+          <span data-i18n="cat_yacht">YAT</span>
+          <span data-i18n="cat_tour">TUR</span>
+          <span data-i18n="cat_activity">AKTİVİTE</span>
+          <span data-i18n="cat_event">ETKİNLİK</span>
+          <span data-i18n="cat_transfer">TRANSFER</span>
+        </div>
       </section>
 
       <section id="nasil-calisir" class="flow-section">

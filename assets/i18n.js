@@ -57,7 +57,14 @@ const locales = {
     footer_copy: "Turizmin canlı bilgi ağı.",
     footer_contact: "İletişim",
     footer_privacy: "Gizlilik",
-    footer_cookies: "Çerezler"
+    footer_cookies: "Çerezler",
+    cat_hotel: "OTEL",
+    cat_villa: "VİLLA",
+    cat_yacht: "YAT",
+    cat_tour: "TUR",
+    cat_activity: "AKTİVİTE",
+    cat_event: "ETKİNLİK",
+    cat_transfer: "TRANSFER"
   },
   en: {
     nav_platform: "Platform",
@@ -117,7 +124,14 @@ const locales = {
     footer_copy: "The live information network for travel.",
     footer_contact: "Contact",
     footer_privacy: "Privacy",
-    footer_cookies: "Cookies"
+    footer_cookies: "Cookies",
+    cat_hotel: "HOTEL",
+    cat_villa: "VILLA",
+    cat_yacht: "YACHT",
+    cat_tour: "TOUR",
+    cat_activity: "ACTIVITY",
+    cat_event: "EVENT",
+    cat_transfer: "TRANSFER"
   },
   de: {
     nav_platform: "Plattform",
@@ -177,7 +191,14 @@ const locales = {
     footer_copy: "Das Live-Informationsnetz für Reisen.",
     footer_contact: "Kontakt",
     footer_privacy: "Datenschutz",
-    footer_cookies: "Cookies"
+    footer_cookies: "Cookies",
+    cat_hotel: "HOTEL",
+    cat_villa: "VILLA",
+    cat_yacht: "YACHT",
+    cat_tour: "TOUR",
+    cat_activity: "AKTIVITÄT",
+    cat_event: "EVENT",
+    cat_transfer: "TRANSFER"
   },
   ru: {
     nav_platform: "Платформа",
@@ -237,7 +258,14 @@ const locales = {
     footer_copy: "Живая информационная сеть туризма.",
     footer_contact: "Контакты",
     footer_privacy: "Конфиденциальность",
-    footer_cookies: "Куки"
+    footer_cookies: "Куки",
+    cat_hotel: "ОТЕЛЬ",
+    cat_villa: "ВИЛЛА",
+    cat_yacht: "ЯХТА",
+    cat_tour: "ТУР",
+    cat_activity: "АКТИВНОСТЬ",
+    cat_event: "СОБЫТИЕ",
+    cat_transfer: "ТРАНСФЕР"
   },
   ar: {
     nav_platform: "المنصة",
@@ -297,7 +325,14 @@ const locales = {
     footer_copy: "شبكة معلومات مباشرة للسفر.",
     footer_contact: "اتصل بنا",
     footer_privacy: "الخصوصية",
-    footer_cookies: "ملفات تعريف الارتباط"
+    footer_cookies: "ملفات تعريف الارتباط",
+    cat_hotel: "فندق",
+    cat_villa: "فيلا",
+    cat_yacht: "يخت",
+    cat_tour: "جولة",
+    cat_activity: "نشاط",
+    cat_event: "فعالية",
+    cat_transfer: "نقل"
   },
   fr: {
     nav_platform: "Plateforme",
@@ -357,7 +392,14 @@ const locales = {
     footer_copy: "Le réseau d'information live du voyage.",
     footer_contact: "Contact",
     footer_privacy: "Confidentialité",
-    footer_cookies: "Cookies"
+    footer_cookies: "Cookies",
+    cat_hotel: "HÔTEL",
+    cat_villa: "VILLA",
+    cat_yacht: "YACHT",
+    cat_tour: "CIRCUIT",
+    cat_activity: "ACTIVITÉ",
+    cat_event: "ÉVÉNEMENT",
+    cat_transfer: "TRANSFERT"
   }
 };
 
@@ -419,26 +461,30 @@ function boot() {
   const language = getStoredChoice("lang", defaultLanguage, Object.keys(locales));
   const currency = getStoredChoice("currency", defaultCurrency, supportedCurrencies);
 
-  languageSelect.value = language;
-  currencySelect.value = currency;
+  if (languageSelect) languageSelect.value = language;
+  if (currencySelect) currencySelect.value = currency;
   applyLanguage(language);
   applyCurrency(currency);
 
-  languageSelect.addEventListener("change", (event) => {
-    const nextLanguage = event.target.value;
-    window.localStorage.setItem("nexus-lang", nextLanguage);
-    document.cookie = `nexus-language=${nextLanguage};path=/;max-age=31536000;SameSite=Lax`;
-    setQueryParam("lang", nextLanguage);
-    applyLanguage(nextLanguage);
-  });
+  if (languageSelect) {
+    languageSelect.addEventListener("change", (event) => {
+      const nextLanguage = event.target.value;
+      window.localStorage.setItem("nexus-lang", nextLanguage);
+      document.cookie = `nexus-language=${nextLanguage};path=/;max-age=31536000;SameSite=Lax`;
+      setQueryParam("lang", nextLanguage);
+      applyLanguage(nextLanguage);
+    });
+  }
 
-  currencySelect.addEventListener("change", (event) => {
-    const nextCurrency = event.target.value;
-    window.localStorage.setItem("nexus-currency", nextCurrency);
-    document.cookie = `nexus-currency=${nextCurrency};path=/;max-age=31536000;SameSite=Lax`;
-    setQueryParam("currency", nextCurrency);
-    applyCurrency(nextCurrency);
-  });
+  if (currencySelect) {
+    currencySelect.addEventListener("change", (event) => {
+      const nextCurrency = event.target.value;
+      window.localStorage.setItem("nexus-currency", nextCurrency);
+      document.cookie = `nexus-currency=${nextCurrency};path=/;max-age=31536000;SameSite=Lax`;
+      setQueryParam("currency", nextCurrency);
+      applyCurrency(nextCurrency);
+    });
+  }
 }
 
 document.addEventListener("DOMContentLoaded", boot);
