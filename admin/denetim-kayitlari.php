@@ -315,6 +315,11 @@ $q = db()->prepare($limitSql);
 $q->execute($params);
 $rows = $q->fetchAll();
 
+$actions = db()->query('SELECT action,COUNT(*) c FROM admin_audit_logs GROUP BY action ORDER BY c DESC LIMIT 30')->fetchAll();
+$actionCounts = [];
+foreach ($actions as $_ac) $actionCounts[$_ac['action']] = (int) $_ac['c'];
+$admins = db()->query("SELECT DISTINCT admin_username FROM admin_audit_logs WHERE admin_username IS NOT NULL AND admin_username <> '' ORDER BY admin_username LIMIT 100")->fetchAll(PDO::FETCH_COLUMN);
+
 require_once __DIR__ . '/layout.php';
 admin_layout_start('Yönetim Denetim ve Audit Kayıtları', 'denetim-kayitlari');
 ?>
