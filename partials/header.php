@@ -168,15 +168,15 @@ $nl = $navLabels[$lang] ?? $navLabels['tr'];
     <div class="nexus-dropdown">
       <a href="/nexustraveltech/cozumler#otel-cozumleri" class="nexus-drop-btn"><?= htmlspecialchars($nl['hotel']) ?></a>
       <div class="nexus-drop-content">
-        <a href="/nexustraveltech/cozumler#on-buro"><?= htmlspecialchars($nl['hotel_pms']) ?></a>
-        <a href="/nexustraveltech/cozumler#online-rezervasyon"><?= htmlspecialchars($nl['hotel_ibe']) ?></a>
-        <a href="/nexustraveltech/cozumler#kanal-yonetimi"><?= htmlspecialchars($nl['hotel_cm']) ?></a>
-        <a href="/nexustraveltech/cozumler#dinamik-fiyat"><?= htmlspecialchars($nl['hotel_rev']) ?></a>
-        <a href="/nexustraveltech/cozumler#kbs-bildirim"><?= htmlspecialchars($nl['hotel_kbs']) ?></a>
-        <a href="/nexustraveltech/cozumler#mobil-checkin"><?= htmlspecialchars($nl['hotel_checkin']) ?></a>
-        <a href="/nexustraveltech/cozumler#kat-hizmetleri"><?= htmlspecialchars($nl['hotel_hk']) ?></a>
-        <a href="/nexustraveltech/cozumler#sadakat-crm"><?= htmlspecialchars($nl['hotel_crm']) ?></a>
-        <a href="/nexustraveltech/cozumler#whatsapp-api"><?= htmlspecialchars($nl['hotel_wa']) ?></a>
+        <a href="/nexustraveltech/modul?slug=on-buro"><?= htmlspecialchars($nl['hotel_pms']) ?></a>
+        <a href="/nexustraveltech/modul?slug=online-rezervasyon"><?= htmlspecialchars($nl['hotel_ibe']) ?></a>
+        <a href="/nexustraveltech/modul?slug=kanal-yonetimi"><?= htmlspecialchars($nl['hotel_cm']) ?></a>
+        <a href="/nexustraveltech/modul?slug=dinamik-fiyat"><?= htmlspecialchars($nl['hotel_rev']) ?></a>
+        <a href="/nexustraveltech/modul?slug=kbs-bildirim"><?= htmlspecialchars($nl['hotel_kbs']) ?></a>
+        <a href="/nexustraveltech/modul?slug=mobil-kimlik-okur"><?= htmlspecialchars($nl['hotel_checkin']) ?></a>
+        <a href="/nexustraveltech/modul?slug=kat-hizmetleri"><?= htmlspecialchars($nl['hotel_hk']) ?></a>
+        <a href="/nexustraveltech/modul?slug=sadakat-crm"><?= htmlspecialchars($nl['hotel_crm']) ?></a>
+        <a href="/nexustraveltech/modul?slug=whatsapp-api"><?= htmlspecialchars($nl['hotel_wa']) ?></a>
       </div>
     </div>
 
@@ -184,10 +184,10 @@ $nl = $navLabels[$lang] ?? $navLabels['tr'];
     <div class="nexus-dropdown">
       <a href="/nexustraveltech/cozumler#pos-restoran" class="nexus-drop-btn"><?= htmlspecialchars($nl['pos']) ?></a>
       <div class="nexus-drop-content">
-        <a href="/nexustraveltech/cozumler#restoran-pos"><?= htmlspecialchars($nl['pos_rest']) ?></a>
-        <a href="/nexustraveltech/cozumler#online-masa"><?= htmlspecialchars($nl['pos_table']) ?></a>
-        <a href="/nexustraveltech/cozumler#qr-menu"><?= htmlspecialchars($nl['pos_qr']) ?></a>
-        <a href="/nexustraveltech/cozumler#spa-fitness"><?= htmlspecialchars($nl['pos_spa']) ?></a>
+        <a href="/nexustraveltech/modul?slug=restoran-pos"><?= htmlspecialchars($nl['pos_rest']) ?></a>
+        <a href="/nexustraveltech/modul?slug=online-masa"><?= htmlspecialchars($nl['pos_table']) ?></a>
+        <a href="/nexustraveltech/modul?slug=qr-menu"><?= htmlspecialchars($nl['pos_qr']) ?></a>
+        <a href="/nexustraveltech/modul?slug=spa-fitness"><?= htmlspecialchars($nl['pos_spa']) ?></a>
         <a href="/nexustraveltech/cozumler#banket-etkinlik"><?= htmlspecialchars($nl['pos_banquet']) ?></a>
       </div>
     </div>
@@ -196,8 +196,8 @@ $nl = $navLabels[$lang] ?? $navLabels['tr'];
     <div class="nexus-dropdown">
       <a href="/nexustraveltech/cozumler#erp-finans" class="nexus-drop-btn"><?= htmlspecialchars($nl['erp']) ?></a>
       <div class="nexus-drop-content">
-        <a href="/nexustraveltech/cozumler#muhasebe"><?= htmlspecialchars($nl['erp_acc']) ?></a>
-        <a href="/nexustraveltech/cozumler#e-donusum"><?= htmlspecialchars($nl['erp_einv']) ?></a>
+        <a href="/nexustraveltech/modul?slug=muhasebe"><?= htmlspecialchars($nl['erp_acc']) ?></a>
+        <a href="/nexustraveltech/modul?slug=e-donusum"><?= htmlspecialchars($nl['erp_einv']) ?></a>
         <a href="/nexustraveltech/cozumler#stok-depo"><?= htmlspecialchars($nl['erp_stock']) ?></a>
         <a href="/nexustraveltech/cozumler#satin-alma"><?= htmlspecialchars($nl['erp_buy']) ?></a>
         <a href="/nexustraveltech/cozumler#banka-entegrasyon"><?= htmlspecialchars($nl['erp_bank']) ?></a>
@@ -209,11 +209,11 @@ $nl = $navLabels[$lang] ?? $navLabels['tr'];
     <div class="nexus-dropdown">
       <a href="/nexustraveltech/cozumler#ozel-cozumler" class="nexus-drop-btn"><?= htmlspecialchars($nl['other']) ?></a>
       <div class="nexus-drop-content">
-        <a href="/nexustraveltech/cozumler#tur-operatoru"><?= htmlspecialchars($nl['oth_tour']) ?></a>
-        <a href="/nexustraveltech/cozumler#marina-yat"><?= htmlspecialchars($nl['oth_marina']) ?></a>
-        <a href="/nexustraveltech/cozumler#villa-devremulk"><?= htmlspecialchars($nl['oth_villa']) ?></a>
-        <a href="/nexustraveltech/cozumler#tga-entegrasyon"><?= htmlspecialchars($nl['oth_tga']) ?></a>
-        <a href="/nexustraveltech/cozumler#hotspot-loglama"><?= htmlspecialchars($nl['oth_wifi']) ?></a>
+        <a href="/nexustraveltech/modul?slug=tur-operatoru"><?= htmlspecialchars($nl['oth_tour']) ?></a>
+        <a href="/nexustraveltech/modul?slug=marina-yat"><?= htmlspecialchars($nl['oth_marina']) ?></a>
+        <a href="/nexustraveltech/modul?slug=villa-devremulk"><?= htmlspecialchars($nl['oth_villa']) ?></a>
+        <a href="/nexustraveltech/modul?slug=tga-entegrasyon"><?= htmlspecialchars($nl['oth_tga']) ?></a>
+        <a href="/nexustraveltech/modul?slug=hotspot-loglama"><?= htmlspecialchars($nl['oth_wifi']) ?></a>
         <a href="/nexustraveltech/cozumler#cloud-yedekleme"><?= htmlspecialchars($nl['oth_cloud']) ?></a>
       </div>
     </div>
